@@ -104,7 +104,7 @@ pnpm test:joint-conformance -- --manifest /path/to/shipapi-artifacts.json
 Start with [`AGENTS.md`](AGENTS.md), the
 [`rearchitecture program`](docs/architecture/REARCHITECTURE_PROGRAM.md), and the
 [`testing gates`](docs/architecture/TESTING_GATES.md). Contributions use Conventional
-Commits and the templates under `.github/`.
+Commits and the templates under the root `.github/`.
 
 ## Status and releases
 

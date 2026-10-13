@@ -1,14 +1,14 @@
 # AGENTS.md — ShipAngular framework
 
-This file is the canonical reference for AI coding agents (Claude Code, Cursor, Cline, Aider, Copilot) working in this repository. Tool-specific files (`CLAUDE.md`, `.cursor/rules/*.mdc`) defer to this document for shared content.
+This file is the canonical reference for AI coding agents working on the Angular framework within the Ship monorepo. Tool-specific files (`CLAUDE.md`, `.cursor/rules/*.mdc`) defer to this document for shared content.
 
 ---
 
 ## What this repository is
 
-**ShipAngular is a frontend-only framework.** It is the Angular half of a two-framework stack:
+**ShipAngular is a frontend-only framework.** This guide covers the Angular half of the Ship monorepo:
 
-- **ShipAngular** — Angular 20 frontend (this repo).
+- **ShipAngular** — Angular 20 frontend (`packages/angular`).
 - **ShipAPI** — Drizzle-based backend (sister framework in this workspace, independent release cadence).
 
 Server functions, RPC, and database access live in **ShipAPI**, not here. Prospects evaluating ShipAngular against full-stack frames (Next.js, Redwood, T3) should evaluate the **ShipAngular + ShipAPI** pair, not ShipAngular alone. Treat the two-framework split as deliberate and load-bearing — do not propose collapsing them.
@@ -19,53 +19,30 @@ The current stable line is **4.x**. `dev` is the active trunk with alpha snapsho
 
 ## Where things live
 
-```
-ship-angular/
-├── packages/
-│   └── core/                          # @sixthsummit/ship-angular (published)
-│       ├── src/
-│       │   ├── public-api.ts          # legacy/root public surface
-│       │   ├── version.ts             # auto-generated from package.json — do not hand-edit
-│       │   ├── auth/                  # AuthService, adapters, guards
-│       │   ├── api/                   # generic REST and legacy v4 compatibility surfaces
-│       │   ├── forms/                 # createSchemaForm (schema-driven typed forms)
-│       │   ├── online/                # OnlineService (signal-first health/online state)
-│       │   ├── pipes/, logger/, env/, eslint/, types/
-│       ├── operations/                # structural client, results, policies, resources/mutations, SSR context
-│       ├── ship-api/                  # import-free adapter for ShipAPI's structural browser client
-│       ├── auth/                      # operation-backed session integration
-│       ├── firebase-auth/             # optional Firebase provider adapter
-│       ├── download/, upload/         # explicit binary/progress capabilities
-│       ├── stream/, socket/           # typed protocol capabilities
-│       ├── realtime/                  # declared realtime publication (manifest channels)
-│       ├── forms/                     # client-safe generated form bindings
-│       ├── hono-v4/                   # temporary compatibility adapter only
-│       ├── legacy-rest/               # temporary pre-Hono URL migration adapter
-│       ├── testing/                   # public conformance helpers
-│       ├── cli/                       # ship-angular CLI (becomes thin schematics wrapper in Phase 3)
-│       ├── schematics/                # ng-add + ng-generate (Phase 1a → Phase 3)
-│       ├── templates/default/         # the project scaffold copied at `create` time
-│       ├── ng-package.json            # entryFile: src/public-api.ts
-│       └── package.json
-├── conformance/                       # packed synthetic contract/client + strict consumers
-├── scripts/
-│   ├── sync-version.js                # writes ../packages/angular/src/version.ts
-│   ├── build-core.js                  # validates package output and schematic module mode
-│   ├── verify-packed-conformance.mjs  # tarball/type/runtime/forbidden-import proof
-│   └── measure-bundle.js              # bundle-size capture (CI gate from Phase 1b on)
-├── .changeset/                        # changesets release flow (config incl. snapshot template; no pre.json)
-├── docs/
-│   ├── architecture/decisions/0002-*  # active structural operation-client decision
-│   ├── architecture/CONTRACT.md       # superseded Hono decision/history
-│   ├── INTERIM_BACKEND.md             # integration choices while artifacts are pending
-│   ├── ROADMAP.md                     # remaining release/migration work
-│   └── ...
-├── .claude/                           # Claude Code plugin surface (commands, skills, agents, hooks)
-│   └── agents/qa-brief.md             # QA-handoff agent: Sherpa-ready brief from a frontend diff (also via /ship:sherpa-brief; mirrored into templates/default)
-├── .cursor/rules/                     # Cursor MDC rules (mirrors AGENTS.md per concern)
-├── .github/workflows/                 # CI, release (changesets), e2e, evals
-├── AGENTS.md (this file), CLAUDE.md, README.md, SECURITY.md
-└── package.json                       # workspace root
+```text
+Ship/
+├── packages/angular/                # @sixthsummit/ship-angular (published)
+│   ├── src/                         # root public API and compatibility surfaces
+│   ├── operations/, ship-api/        # structural operation client and API adapter
+│   ├── auth/, firebase-auth/         # authentication entrypoints
+│   ├── download/, upload/, stream/, socket/, realtime/
+│   ├── forms/, query/, testing/      # typed forms, TanStack Query, conformance helpers
+│   ├── hono-v4/, legacy-rest/        # migration-only compatibility
+│   ├── cli/, schematics/, eslint/    # consumer tooling
+│   ├── templates/default/           # generated application scaffold
+│   └── package.json                 # published version source of truth
+├── apps/angular-docs/               # Starlight site; content generated from angular/docs
+├── angular/                        # private Angular tooling workspace
+│   ├── conformance/                 # synthetic fixtures and packed consumer checks
+│   ├── scripts/                     # version sync, docs, bundles, conformance
+│   ├── docs/                        # canonical Angular documentation and ADRs
+│   ├── .claude/, .cursor/           # Angular agent conventions
+│   ├── AGENTS.md                    # this guide
+│   └── package.json                 # Angular verification commands and tools
+├── .changeset/                      # independent releases for both frameworks
+├── .github/workflows/               # shared CI and manually enabled publishing
+├── pnpm-workspace.yaml, pnpm-lock.yaml, turbo.json
+└── package.json                     # shared workspace commands
 ```
 
 ---
@@ -128,7 +105,7 @@ Releases use the root [Ship release guide](../RELEASE_GUIDE.md). Changesets live
 - Coverage must be at least 80% for statements, branches, functions, and lines globally and for materially changed files.
 - Required tests do not skip because a sibling checkout, live service, or local dependency is absent. Any non-required skip states its reason, owner, and removal condition.
 - AI-generated tests are expected but must be reviewed for correct assertions, regression sensitivity, errors, and edge cases.
-- Use `.github/PULL_REQUEST_TEMPLATE.md` and include commands/CI, coverage, skipped-test count, compatibility, risk, rollout, rollback, and Changeset evidence.
+- Use the root `.github/PULL_REQUEST_TEMPLATE.md` and include commands/CI, coverage, skipped-test count, compatibility, risk, rollout, rollback, and Changeset evidence.
 
 ---
 
@@ -173,7 +150,7 @@ Schematics run through `pnpm exec ng generate @sixthsummit/ship-angular:<name>`.
 | app-owned features                                       | generate under `src/app/modules/<name>`; there is no framework source-copy catalog                                                            |
 | `../packages/angular/templates/default/`                 | this is shipped to every new project; assume third-party app developers read it                                                               |
 | `tsconfig.json`, `eslint.config.js`                      | conventions are enforced here; coordinate with `../packages/angular/eslint/rules/`                                                            |
-| Release-related files                                    | `RELEASE_GUIDE.md`, `.changeset/config.json`, and `.github/workflows/release.yml`                                                             |
+| Release-related files                                    | the root `RELEASE_GUIDE.md`, `.changeset/config.json`, and `.github/workflows/release.yml`                                                    |
 
 ---
 
