@@ -1,5 +1,7 @@
 name: Release
 on:
+  push:
+    branches: [dev, main]
   workflow_dispatch:
     inputs:
       bootstrap:
@@ -12,13 +14,12 @@ concurrency:
   group: ship-release
   cancel-in-progress: false
 jobs:
-  release:
+  prepare:
+    name: Prepare release
     if: vars.SHIP_PUBLISH_ENABLED == 'true'
     runs-on: ubuntu-latest
-    environment: npm
-    permissions:
-      contents: read
-      id-token: write
+    outputs:
+      count: ${{ steps.plan.outputs.count }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,9 +61,31 @@ jobs:
           name: npm-release-artifacts
           path: .release/
           include-hidden-files: true
+
+  publish:
+    name: Approve and publish release
+    needs: prepare
+    if: needs.prepare.outputs.count != '0' && needs.prepare.outputs.count != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: "24"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-release-artifacts
+          path: .release/
       - name: Install npm with trusted publishing support
-        if: steps.plan.outputs.count != '0'
         run: npm install --global npm@11.6.2
       - name: Publish verified archives with npm trusted publishing
-        if: steps.plan.outputs.count != '0'
         run: pnpm run release

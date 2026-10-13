@@ -35,7 +35,7 @@ Client applications, private deployment records, and customer-specific fixtures 
 
 ## Release status
 
-This public repository distributes independently versioned packages under `@sixthsummit` on npmjs. Publishing is manually dispatched and gated by `SHIP_PUBLISH_ENABLED`; pushes do not publish. CI selects API, Angular and docs checks from the complete change set and previews pending Changesets versions. Development and alpha snapshots use `dev`; stable releases use `main`. See the [release guide](RELEASE_GUIDE.md).
+This public repository distributes independently versioned packages under `@sixthsummit` on npmjs. Pushes to `dev` and `main` prepare eligible releases automatically; publishing requires approval in the `npm` environment and is gated by `SHIP_PUBLISH_ENABLED`. CI selects API, Angular and docs checks from the complete change set and previews pending Changesets versions. Development and alpha snapshots use `dev`; stable releases use `main`. See the [release guide](RELEASE_GUIDE.md).
 
 ## License
 

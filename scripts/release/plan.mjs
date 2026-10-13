@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } f
 import { pathToFileURL } from "node:url";
 import { getReleasePlan } from "@changesets/get-release-plan";
 import { classifyChanges } from "../ci/plan.mjs";
+import { changelogEntry } from "./notes.mjs";
 
 export const REGISTRY = "https://registry.npmjs.org";
 export function manifests() {
@@ -153,9 +154,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     selected.map((pkg) => `- ${pkg.name}@${pkg.version} (${channel})`).join("\n") ||
     "Nothing to publish.";
   console.log(summary);
-  if (process.env.GITHUB_STEP_SUMMARY)
-    appendFileSync(
-      process.env.GITHUB_STEP_SUMMARY,
-      `## Exact npm publication plan\n\n${summary}\n`,
-    );
+  const notes = !selected.length
+    ? ""
+    : channel === "alpha"
+      ? status.changesets.map((entry) => `### ${entry.id}\n\n${entry.summary}`).join("\n\n")
+      : selected
+          .map(
+            (pkg) =>
+              `### ${pkg.name}@${pkg.version}\n\n${changelogEntry(readFileSync(`${pkg.path}/CHANGELOG.md`, "utf8"), pkg.version)}`,
+          )
+          .join("\n\n");
+  const review = `## Exact npm publication plan\n\n${summary}\n\n${notes}\n`;
+  writeFileSync(".release/review.md", review);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, review);
 }
