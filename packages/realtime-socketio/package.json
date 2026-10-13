@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-realtime-socketio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Socket.IO and Redis realtime gateway adapter for declared Ship channels",
   "type": "module",
   "main": "./lib/index.js",

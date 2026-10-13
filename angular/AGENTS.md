@@ -95,7 +95,7 @@ pnpm knip                # every maintained entrypoint/type fixture
 node ../packages/angular/cli/ship-angular.js create test-project --skip-install
 ```
 
-Releases use the root [Ship release guide](../RELEASE_GUIDE.md). Changesets live at the workspace root; publishing is initially disabled and manually dispatched. Run Angular commands from `angular/` or use `pnpm --filter ship-angular` from the root.
+Releases use the root [Ship release guide](../RELEASE_GUIDE.md). Changesets live at the workspace root; publishing is manually dispatched and gated by `SHIP_PUBLISH_ENABLED`. Run Angular commands from `angular/` or use `pnpm --filter ship-angular` from the root.
 
 ### Contribution and test standards
 

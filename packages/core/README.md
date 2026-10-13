@@ -14,7 +14,7 @@ A library + CLI for building production-grade TypeScript HTTP services. The defi
 
 ## Install
 
-The framework targets public npmjs packages under `@sixthsummit`, with no read token. The first npm publication is pending launch. After publication:
+The framework is distributed on public npmjs under `@sixthsummit`, with no read token. Install stable versions with `latest`, or explicitly select `alpha` for development snapshots:
 
 ```sh
 npx @sixthsummit/ship-api create my-app

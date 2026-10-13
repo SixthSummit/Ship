@@ -88,7 +88,7 @@ git add .changeset && git commit
 
 For PRs that are purely internal (CI tweaks, refactors with no observable impact, docs-only edits in `apps/docs/`), no changeset is needed — Conventional Commit type guides reviewers, but versioning only fires when a changeset is present.
 
-CI previews the combined Changesets plan. Publishing is a separate manual workflow, initially disabled: `dev` produces alpha snapshots, while `main` publishes stable versions after a version-bookkeeping PR. Packages target public npmjs. See the [release guide](RELEASE_GUIDE.md) for setup and exact steps.
+CI previews the combined Changesets plan. Publishing is a separate manual workflow, gated by `SHIP_PUBLISH_ENABLED`: `dev` produces alpha snapshots, while `main` publishes stable versions after a version-bookkeeping PR. Packages target public npmjs. See the [release guide](RELEASE_GUIDE.md) for setup and exact steps.
 
 ## PR checklist
 
