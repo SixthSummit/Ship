@@ -3,10 +3,8 @@
 Create the smallest operation-native ShipAPI service and verify the complete
 contract before adding business behavior.
 
-> **Registry:** packages use GitHub Packages. Configure
-> `@sixthsummit:registry=https://npm.pkg.github.com` and any required read token
-> in user-level npm configuration. Replace `<exact-version>` below with a released
-> CLI version from its package changelog; never commit credentials.
+> **Registry:** new monorepo releases target public npmjs packages. The first npm
+> publication is pending launch; no read token will be required. See the root release guide.
 
 ## 1. Create the application
 

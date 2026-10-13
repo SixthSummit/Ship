@@ -1,9 +1,9 @@
 # Installation
 
 Stable versions are released from `main`; `dev` produces alpha snapshots. Framework
-development uses pnpm; consumers may use another package manager. Packages currently
-use GitHub Packages: configure `@sixthsummit:registry=https://npm.pkg.github.com`
-and keep any required read token in user-level npm configuration, outside the repository.
+development uses pnpm; consumers may use another package manager. Packages target
+public npmjs releases under `@sixthsummit`; no read token is needed. The first npm
+publication is pending launch. See the root `RELEASE_GUIDE.md` for release status and setup.
 
 ## Framework checkout
 

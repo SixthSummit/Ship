@@ -125,7 +125,7 @@
     "drizzle-zod": "^0.8.3",
     "file-type": "^21.3.4",
     "firebase-admin": "^13.10.0",
-    "hono": "^4.12.15",
+    "hono": "^4.13.7",
     "ioredis": "^5.10.1",
     "jose": "^6.2.3",
     "lru-cache": "^11.3.5",
@@ -171,7 +171,8 @@
     "NOTICE"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "repository": {
     "type": "git",

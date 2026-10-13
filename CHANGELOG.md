@@ -31,3 +31,10 @@ publishes them. Apache-2.0 preparation is currently a pending Changeset.
 
 [Architecture milestones](docs/rearchitecture/CHANGELOG.md) record implementation
 history separately from package release membership.
+
+## Unreleased — npm and CI preparation
+
+- Target public npmjs packages under `@sixthsummit`; remove GitHub package authentication from Angular scaffolds. Publication remains disabled.
+- Select API, Angular and documentation checks from changed paths, retain the required CI summary, and preview the combined Changesets release plan.
+- Select and validate exact release archives before publication; require explicit first-publication bootstrap.
+- Patch remaining Hono and ip-address advisory matches; document the private-workspace AngularJS audit false match in `docs/DEPENDENCY_TRIAGE.md`.

@@ -72,7 +72,7 @@ requires an `unsafe:reason` comment and security review.
 - pnpm installs are frozen and strict about undeclared dependencies.
 - Biome, ESLint, TypeScript, Vitest coverage, packed conformance, bundle budgets, and Knip
   are merge gates.
-- Releases use Changesets, GitHub Packages, and GitHub build-provenance attestations.
+- Releases use Changesets and target npmjs with trusted publishing and provenance; see the root release guide for launch setup.
 - Optional provider dependencies stay in isolated secondary entrypoints.
 
 ## Outside the frontend boundary

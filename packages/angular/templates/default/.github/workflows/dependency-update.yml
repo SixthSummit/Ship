@@ -34,13 +34,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: |
-          printf '%s\n' '@sixthsummit:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
-          trap 'rm -f "$NPM_CONFIG_USERCONFIG"' EXIT
-          pnpm install --frozen-lockfile
-        env:
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/ship-package-step.npmrc
-          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: pnpm install --frozen-lockfile
 
       - name: Check for outdated packages
         run: |
@@ -78,13 +72,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: |
-          printf '%s\n' '@sixthsummit:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
-          trap 'rm -f "$NPM_CONFIG_USERCONFIG"' EXIT
-          pnpm install --frozen-lockfile
-        env:
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/ship-package-step.npmrc
-          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: pnpm install --frozen-lockfile
 
       - name: Check Angular version
         run: |

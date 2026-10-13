@@ -35,7 +35,7 @@ Client applications, private deployment records, and customer-specific fixtures 
 
 ## Release status
 
-This is the preparation workspace for the combined repository. Existing package names and versions are retained; migration does not publish a release. Publishing is manually dispatched and disabled until the repository variable `SHIP_PUBLISH_ENABLED` is set to `true`. Preparation happens on `dev`; stable releases use `main`. See the [release guide](RELEASE_GUIDE.md).
+This is the preparation workspace for the combined repository. Existing package names and versions are retained; migration does not publish a release. Publishing is manually dispatched and disabled until the repository variable `SHIP_PUBLISH_ENABLED` is set to `true`. Packages target public npmjs under `@sixthsummit`, with no consumer read token; first publication is still pending. CI selects API, Angular and docs checks from the complete change set and previews pending Changesets versions. Preparation happens on `dev`; stable releases use `main`. See the [release guide](RELEASE_GUIDE.md).
 
 ## License
 

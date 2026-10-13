@@ -35,3 +35,6 @@ packages/angular/schematics/**/*.js
 packages/angular/schematics/**/*.d.ts
 !packages/angular/schematics/package.json
 .ship/
+ci-plan.json
+release-plan.json
+.release/
