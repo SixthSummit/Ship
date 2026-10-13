@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { getReleasePlan } from "@changesets/get-release-plan";
 import { classifyChanges } from "../ci/plan.mjs";
 
 export const REGISTRY = "https://registry.npmjs.org";
@@ -99,8 +100,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   assert(["alpha", "latest"].includes(channel));
   mkdirSync(".release", { recursive: true });
   const before = manifests();
-  run(["exec", "changeset", "status", "--output", ".release/status.json"]);
-  const status = JSON.parse(readFileSync(".release/status.json", "utf8"));
+  const status = await getReleasePlan(process.cwd());
+  writeFileSync(".release/status.json", `${JSON.stringify(status, null, 2)}\n`);
   if (channel === "alpha") {
     if (bootstrap)
       writeFileSync(
@@ -108,12 +109,24 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         `---\n${before.map((pkg) => `"${pkg.name}": patch`).join("\n")}\n---\n\nInitial npm snapshot bootstrap.\n`,
       );
     // Refresh status after the explicitly requested bootstrap additions.
-    run(["exec", "changeset", "status", "--output", ".release/status.json"]);
+    writeFileSync(
+      ".release/status.json",
+      `${JSON.stringify(await getReleasePlan(process.cwd()), null, 2)}\n`,
+    );
     execFileSync(process.execPath, ["scripts/snapshot-dependents.mjs", ".release/status.json"], {
       stdio: "inherit",
     });
     run(["exec", "changeset", "version", "--snapshot", "alpha"]);
     run(["--filter", "ship-angular", "sync-version"]);
+    // Changesets emits Markdown that differs from Angular's enforced formatting.
+    run([
+      "--filter",
+      "ship-angular",
+      "exec",
+      "prettier",
+      "--write",
+      "../packages/angular/CHANGELOG.md",
+    ]);
   } else
     assert.equal(
       status.changesets.length,

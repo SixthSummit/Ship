@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-drizzle",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Drizzle unit-of-work and repository adapters for the Ship application kernel",
   "type": "module",
   "main": "./lib/index.js",

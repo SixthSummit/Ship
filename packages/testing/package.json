@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-testing",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Portable parity fixtures and real PostgreSQL test harnesses for Ship applications",
   "type": "module",
   "main": "./lib/index.js",

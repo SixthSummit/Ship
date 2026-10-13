@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-core",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Transport- and infrastructure-independent Ship application kernel",
   "type": "module",
   "main": "./lib/index.js",

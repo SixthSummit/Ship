@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-angular",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "Frontend-only Angular framework for typed ShipAPI operations and agent-safe applications",
   "type": "module",
   "main": "lib/fesm2022/sixthsummit-ship-angular.mjs",

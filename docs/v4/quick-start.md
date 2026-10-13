@@ -3,8 +3,9 @@
 Create the smallest operation-native ShipAPI service and verify the complete
 contract before adding business behavior.
 
-> **Registry:** new monorepo releases target public npmjs packages. The first npm
-> publication is pending launch; no read token will be required. See the root release guide.
+> **Registry:** monorepo releases use public npmjs packages; no read token is required.
+> Use stable versions for applications and explicitly select `alpha` for development
+> snapshots. See the root release guide.
 
 ## 1. Create the application
 
