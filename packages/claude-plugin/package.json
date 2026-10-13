@@ -40,7 +40,8 @@
     "drizzle"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   },
   "devDependencies": {
     "@sixthsummit/ship-api-mcp-server": "workspace:^"

@@ -99,10 +99,9 @@ testing, and booting them.
 ## Installation
 
 Use Node.js 22.22 or newer and the pnpm version pinned in `package.json`.
-Packages currently use GitHub Packages; making the source public does not change
-the registry. Configure `@sixthsummit:registry=https://npm.pkg.github.com` and
-provide a read token through your user-level npm configuration when required.
-Never commit the token. Pin exact released versions for deployed applications.
+Packages target public npmjs releases under `@sixthsummit`; no read token is required.
+The first npm publication is pending launch. See [the release guide](RELEASE_GUIDE.md).
+Pin exact released versions for deployed applications.
 
 ## Verification
 

@@ -1,6 +1,6 @@
 # ADR-0002: Adopt pnpm first and defer Turborepo
 
-- **Status:** Accepted
+- **Status:** Superseded for repository orchestration and registry choice by [the Ship monorepo decision](../../architecture/0001-ship-monorepo.md) and [npm/selective CI decision](../../architecture/0002-npm-and-selective-ci.md). Historical rationale is retained.
 - **Date:** 2026-09-03
 - **Scope:** ShipAPI framework monorepo dependency and task orchestration
 

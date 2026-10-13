@@ -27,6 +27,7 @@ build/
 
 # Coverage reports
 coverage/
+coverage-query-generator/
 
 # Environment files
 .env

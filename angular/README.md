@@ -62,9 +62,8 @@ a source-copy feature catalog.
 ## Installation
 
 Use Angular 20 and an exact framework version from [the package changelog](../packages/angular/CHANGELOG.md).
-Packages currently use GitHub Packages. Configure
-`@sixthsummit:registry=https://npm.pkg.github.com` and provide any required read token
-in your user-level npm configuration, never in the repository.
+Packages target public npmjs releases under `@sixthsummit`, without a read token.
+The first npm publication is pending launch; see [the release guide](../RELEASE_GUIDE.md).
 See [installation](docs/getting-started/INSTALLATION.md) and the
 [query guide](docs/guides/TANSTACK_QUERY.md) for optional TanStack Query setup.
 

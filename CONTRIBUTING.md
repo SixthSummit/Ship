@@ -88,13 +88,7 @@ git add .changeset && git commit
 
 For PRs that are purely internal (CI tweaks, refactors with no observable impact, docs-only edits in `apps/docs/`), no changeset is needed — Conventional Commit type guides reviewers, but versioning only fires when a changeset is present.
 
-The release flow:
-
-1. Merging to `dev` publishes a **snapshot prerelease** of every package with a pending changeset under the `alpha` dist-tag (e.g. `4.0.1-alpha-20260918031512`) once CI passes. Nothing is committed and no bot PR opens.
-2. `dev` → `main` is a plain merge PR. On `main`, `changesets/action` aggregates the queued changesets into a **"chore: version packages"** PR.
-3. Review the diff (version bumps + prepended CHANGELOG entries); merge it. The action publishes stable versions to GitHub Packages (`latest`), creates GitHub Releases, and tags. Then merge `main` back into `dev`.
-
-Changesets pre mode is retired; `.changeset/pre.json` must not exist on any branch. See [`docs/maintainers/RELEASE_GUIDE.md`](docs/maintainers/RELEASE_GUIDE.md).
+CI previews the combined Changesets plan. Publishing is a separate manual workflow, initially disabled: `dev` produces alpha snapshots, while `main` publishes stable versions after a version-bookkeeping PR. Packages target public npmjs. See the [release guide](RELEASE_GUIDE.md) for setup and exact steps.
 
 ## PR checklist
 

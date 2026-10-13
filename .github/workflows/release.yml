@@ -1,9 +1,13 @@
 name: Release
 on:
   workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: Allow first publication of packages absent from npm
+        type: boolean
+        default: false
 permissions:
   contents: read
-  packages: write
 concurrency:
   group: ship-release
   cancel-in-progress: false
@@ -11,42 +15,53 @@ jobs:
   release:
     if: vars.SHIP_PUBLISH_ENABLED == 'true'
     runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Make Changesets base branch available
+        run: git show-ref --verify --quiet refs/heads/dev || git branch dev origin/dev
       - uses: ./.github/actions/setup-node-pnpm
         with:
           node-version: "24"
       - name: Check release branch
         run: |
-          case "$GITHUB_REF_NAME" in dev|main) ;; *) exit 1 ;; esac
+          case "$GITHUB_REF_NAME" in
+            dev) echo 'RELEASE_CHANNEL=alpha' >> "$GITHUB_ENV" ;;
+            main) echo 'RELEASE_CHANNEL=latest' >> "$GITHUB_ENV" ;;
+            *) exit 1 ;;
+          esac
           test ! -f .changeset/pre.json
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter ship-angular exec playwright install --with-deps chromium
-      - run: pnpm run ci
-      - name: Require stable version bookkeeping
-        if: github.ref_name == 'main'
-        run: |
-          test -z "$(find .changeset -name '*.md' ! -name README.md -print -quit)"
-      - name: Version alpha snapshot
-        if: github.ref_name == 'dev'
-        run: pnpm exec changeset version --snapshot alpha
-      - run: pnpm --filter ship-angular sync-version
-      - run: pnpm build
-      - name: Configure registry authentication
+      - name: Plan exact publication set
+        id: plan
+        run: node scripts/release/plan.mjs
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          printf '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' > "$RUNNER_TEMP/ship.npmrc"
-          echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/ship.npmrc" >> "$GITHUB_ENV"
-      - name: Publish alpha
-        if: github.ref_name == 'dev'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec changeset publish --tag alpha --no-git-tag
-      - name: Publish stable
-        if: github.ref_name == 'main'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec changeset publish --no-git-tag
+          RELEASE_BOOTSTRAP: ${{ inputs.bootstrap }}
+      - name: Verify API
+        if: steps.plan.outputs.api == 'true'
+        run: pnpm run ci:api
+      - name: Install browser
+        if: steps.plan.outputs.angular == 'true'
+        run: pnpm --filter ship-angular exec playwright install --with-deps chromium
+      - name: Verify Angular
+        if: steps.plan.outputs.angular == 'true'
+        run: pnpm run ci:angular
+      - name: Pack and validate selected artifacts
+        if: steps.plan.outputs.count != '0'
+        run: node scripts/release/artifacts.mjs
+      - uses: actions/upload-artifact@v4
+        if: steps.plan.outputs.count != '0'
+        with:
+          name: npm-release-artifacts
+          path: .release/
+      - name: Install npm with trusted publishing support
+        if: steps.plan.outputs.count != '0'
+        run: npm install --global npm@11.6.2
+      - name: Publish verified archives with npm trusted publishing
+        if: steps.plan.outputs.count != '0'
+        run: pnpm run release

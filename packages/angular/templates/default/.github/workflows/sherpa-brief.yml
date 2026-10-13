@@ -12,7 +12,6 @@ name: Sherpa QA brief
 # Secrets required:
 #   ANTHROPIC_API_KEY    — Claude API key for the headless agent run
 #   SLACK_QA_WEBHOOK_URL — Incoming Webhook for the QA channel (only used on push)
-#   GH_PACKAGES_TOKEN    — read-access to @sixthsummit npm scope (if private deps)
 #
 # Override `STACK_LABEL` per repo if you customize the stack identity.
 #

@@ -118,7 +118,7 @@ pnpm add --save-exact @tanstack/angular-query-experimental@5.104.1
 ```
 
 For a registry upgrade, first obtain the exact published version and integrity from the
-release job and GitHub Packages. Replace the local path with that exact version.
+release job and the configured registry (npmjs for new monorepo releases). Replace the local path with that exact version.
 Do not use the moving `alpha` tag for reproducible acceptance.
 Do not infer that the candidate version is available from a registry.
 

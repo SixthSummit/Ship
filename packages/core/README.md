@@ -14,15 +14,7 @@ A library + CLI for building production-grade TypeScript HTTP services. The defi
 
 ## Install
 
-The framework publishes to **GitHub Packages**. Consumers need an `.npmrc` configured for the `@sixthsummit` scope:
-
-```ini
-# .npmrc (in your project root)
-@sixthsummit:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
-```
-
-Then:
+The framework targets public npmjs packages under `@sixthsummit`, with no read token. The first npm publication is pending launch. After publication:
 
 ```sh
 npx @sixthsummit/ship-api create my-app

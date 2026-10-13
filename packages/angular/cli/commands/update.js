@@ -38,7 +38,7 @@ export async function updateProject(options) {
     console.log(chalk.gray(`  Latest version: ${latestVersion}`));
   } catch (_error) {
     console.log(chalk.yellow('⚠️  Could not fetch the latest package version'));
-    console.log(chalk.yellow('  Make sure pnpm is authenticated with the package registry'));
+    console.log(chalk.yellow('  Check network access and the configured npm registry'));
     return;
   }
 

@@ -177,36 +177,14 @@ pnpm run ci
 
 ### Required GitHub Secrets
 
-| Secret Name                         | Description                                                            |
-| ----------------------------------- | ---------------------------------------------------------------------- |
-| `GH_PACKAGES_TOKEN`                 | **Required** - PAT with `read:packages` scope for private npm packages |
-| `APP_ENGINE_CREDENTIALS_STAGING`    | Service account JSON key for staging                                   |
-| `APP_ENGINE_CREDENTIALS_PRODUCTION` | Service account JSON key for production                                |
+| Secret Name                         | Description                             |
+| ----------------------------------- | --------------------------------------- |
+| `APP_ENGINE_CREDENTIALS_STAGING`    | Service account JSON key for staging    |
+| `APP_ENGINE_CREDENTIALS_PRODUCTION` | Service account JSON key for production |
 
-### Private Package Authentication
+### Package installation
 
-The workflows require a Personal Access Token (PAT) to access the private `@sixthsummit/ship-angular` package from GitHub Packages.
-
-**Setup Steps:**
-
-1. **Create a Personal Access Token (Classic):**
-   - Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
-   - Click "Generate new token (classic)"
-   - Give it a descriptive name (e.g., "ship-angular-packages")
-   - Select the `read:packages` scope
-   - Click "Generate token" and copy the token
-
-2. **Add the secret to your repository:**
-   - Go to your repository → Settings → Secrets and variables → Actions
-   - Click "New repository secret"
-   - Name: `GH_PACKAGES_TOKEN`
-   - Value: Paste your PAT
-   - Click "Add secret"
-
-**Why a PAT is Required:**
-
-- The default `GITHUB_TOKEN` only has access to packages in the current repository
-- Since `@sixthsummit/ship-angular` is in a different repository, a PAT with `read:packages` scope is needed
+Ship packages are installed from public npmjs. No GitHub Packages token is needed. Deployment credentials remain specific to your own application infrastructure.
 
 ### Deployment Methods
 

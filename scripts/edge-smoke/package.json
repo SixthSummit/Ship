@@ -7,6 +7,6 @@
     "@sixthsummit/ship-contract": "workspace:*",
     "@sixthsummit/ship-core": "workspace:*",
     "@sixthsummit/ship-hono": "workspace:*",
-    "hono": "^4.12.15"
+    "hono": "^4.13.7"
   }
 }
