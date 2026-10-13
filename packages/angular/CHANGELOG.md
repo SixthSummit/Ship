@@ -1,5 +1,78 @@
 # @sixthsummit/ship-angular
 
+## 4.2.0
+
+### Minor Changes
+
+- 8f71663: Add a manifest-typed `createStream()` to the `@sixthsummit/ship-angular/stream` entrypoint
+  implementing the canonical SSE streaming response mode (SAPI-110).
+
+  Given a ShipAPI manifest operation declared `response.mode: "stream"`, the client infers
+  the frame and terminal types from the contract, builds the request from the declared
+  method and path, sends `Accept: text/event-stream`, branches on `Content-Type` so a
+  failure before the first frame surfaces as the normal client error, parses `frame` /
+  `terminal` / `error` events with `id:` sequence tracking, and ignores `: hb` heartbeat
+  comments. The handle is signal-first — `frames`, `latest`, `terminal`, `status`
+  (`idle | connecting | open | closed | error | aborted`), `error` (`{ code, status, message }`),
+  `seq` — plus `abort()`. A connection that closes without a terminal or error event is
+  reported as `STREAM_INTERRUPTED`. Locally-reported errors (`STREAM_INTERRUPTED`,
+  `STREAM_TRANSPORT_FAILED`, `STREAM_PROTOCOL_VIOLATION`) always carry `status: 0`, so a
+  non-zero status on `error()` always came from the wire. Under server rendering the handle
+  stays `idle` and no request is opened.
+
+  `createOperationStream()`, `parseSseFrames()`, and the root `createStream()` are unchanged.
+
+  See the streaming operations guide and ADR 0004 for the full wire contract.
+
+- 8f71663: Add the `./realtime` entrypoint for declared realtime publication.
+
+  `provideShipRealtime({ url, credential, manifest })` and `injectRealtime()` expose
+  subscriptions typed from the ShipAPI manifest's `channels`: `latest`, `events`,
+  `presence` (only on channels declared with `presence: true`), `dropped`, and `status`
+  as signals, with no RxJS in the public API. The client owns reconnect with backoff,
+  credential refresh on every attempt, resubscribe-all after a reconnect, and ack
+  timeouts, so transports stay interchangeable behind `ShipRealtimeTransport`.
+
+  Socket.IO is the first transport and is an **optional peer dependency of this entry
+  only** — it is imported lazily, the root entry never references it, and the bundle
+  gate proves applications that do not use `./realtime` pay nothing. The provider is a
+  no-op under SSR: `subscribe()` returns a closed subscription and no socket is opened.
+
+  See ADR 0005 and the "Realtime Subscriptions" guide.
+
+- 8f71663: Add the optional `/query` entrypoint for safe typed reads, finite and infinite queries, owned browser and SSR caches, scope isolation, explicit cache effects, and operation mutations. Pin the experimental TanStack Angular adapter to 5.104.1. Add an opt-in `operation-query` generator. Existing root and operation helpers remain available without TanStack.
+
+  The package build now uses its strict TypeScript configuration. The concrete `FirebaseAuthAdapter` and `MockAuthAdapter` bearer-token capability returns `Promise<string | null>` in published declarations, which matches the existing auth capability interface and signed-out runtime behavior. Consumers that use these concrete adapters must handle `null` before using a token. Adapter runtime behavior is unchanged.
+
+### Patch Changes
+
+- 8f71663: License the framework under Apache-2.0, include LICENSE and NOTICE in published packages, and update package documentation.
+
+  Remove application-specific documentation and replace client-derived regression fixtures with synthetic framework examples.
+
+- 8f71663: Wait for the gateway's `ship:unsubscribe` ack before closing the idle realtime link.
+
+  Unsubscribing the last live subscription used to emit `ship:unsubscribe` and close the
+  socket in the same turn. The transport flushes the event and the disconnect in one write,
+  and a Socket.IO server dispatches the event on the next tick and discards it once the
+  socket has gone — so the gateway never recorded that final unsubscribe. Subscription state
+  was already correct (a gateway drops a connection's subscriptions on disconnect), but any
+  server-side accounting or metrics that count explicit unsubscribes lost the last one.
+
+  The client now defers the idle close until the ack settles, bounded by `ackTimeoutMs`: a
+  silent gateway or an already-dropped link still closes. `unsubscribe()` remains synchronous
+  and returns `void`, `close()` (and so `DestroyRef`) releases immediately without waiting for
+  a pending ack, and server rendering is unchanged.
+
+- 8f71663: Update generated applications to patched Angular 20 dependencies and compatible current test, build, formatting, and lint tools. The template keeps its Node 20 consumer engine while repository maintenance uses Node 24. Existing application providers and public APIs stay unchanged.
+
+  Build the package from a temporary ng-packagr input manifest so generated Angular export mappings have one owner. Preserve the published entrypoint layout and stable source maps.
+
+  Generated projects run `pnpm lint` through standalone ESLint with the same TypeScript and HTML patterns and framework rules. The unused Angular CLI lint builder target and its schematics dependencies are removed. This lets supported ESLint 10 and modular Angular lint plugins coexist with Angular 20 application builds. Vitest is pinned to patched 4.1.11. A scoped Angular build 20.3.39 peer metadata correction supports this scaffold’s application/SSR build and separate Analog test pipeline. The experimental Angular native unit-test builder is not configured or validated by this scaffold.
+
+- 6cac2d2: Install framework packages from public npmjs and remove the GitHub Packages token requirement from generated application CI workflows.
+- 8f71663: Use ShipAPI's canonical client type for the `/ship-api` adapter to keep large generated contracts type-checkable, and reject stream handles at the unary executor boundary.
+
 ## 4.1.0
 
 ### Minor Changes

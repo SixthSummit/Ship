@@ -1,10 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
+import { getReleasePlan } from "@changesets/get-release-plan";
 
-execFileSync("pnpm", ["exec", "changeset", "status", "--output", "release-plan.json"], {
-  stdio: "inherit",
-});
-const plan = JSON.parse(readFileSync("release-plan.json", "utf8"));
+const plan = await getReleasePlan(process.cwd());
+writeFileSync("release-plan.json", `${JSON.stringify(plan, null, 2)}\n`);
 const lines = [
   "## Pending release plan",
   "",

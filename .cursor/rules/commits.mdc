@@ -150,7 +150,7 @@ See docs/MIGRATION_V3_TO_V4.md for the codemod-assisted path.
 
 ## Release flow
 
-Release behavior is defined in the root `RELEASE_GUIDE.md`: manual, initially disabled npmjs publishing, alpha snapshots from `dev`, stable releases from `main` after version bookkeeping. CI previews the combined Changesets plan; pushes do not publish automatically.
+Release behavior is defined in the root `RELEASE_GUIDE.md`: manual, gated by `SHIP_PUBLISH_ENABLED` npmjs publishing, alpha snapshots from `dev`, stable releases from `main` after version bookkeeping. CI previews the combined Changesets plan; pushes do not publish automatically.
 
 **Branch model**: `dev` is the integration trunk (snapshot prereleases, no version bumps in git). `main` is the stable trunk. `dev` → `main` is a plain merge; `main` is merged back into `dev` after each stable release. Changesets pre mode is retired: the `no-pre-mode` CI job fails if `.changeset/pre.json` exists on any branch. See `docs/maintainers/RELEASE_GUIDE.md`.
 

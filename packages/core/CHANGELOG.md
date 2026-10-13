@@ -1,5 +1,23 @@
 # @sixthsummit/ship-api
 
+## 4.1.1
+
+### Patch Changes
+
+- 8f71663: License the framework under Apache-2.0, include LICENSE and NOTICE in published packages, and update package documentation.
+
+  Remove application-specific documentation and replace client-derived regression fixtures with synthetic framework examples.
+- 6cac2d2: Require patched Hono releases and prepare public npm distribution under the existing package names.
+- Updated dependencies [8f71663]
+- Updated dependencies [8f71663]
+- Updated dependencies [6cac2d2]
+  - @sixthsummit/ship-hono@1.2.0
+  - @sixthsummit/ship-drizzle@1.2.0
+  - @sixthsummit/ship-contract@1.3.0
+  - @sixthsummit/ship-cli@1.2.0
+  - @sixthsummit/ship-observability-otel@1.2.0
+  - @sixthsummit/ship-core@1.1.1
+
 ## 4.1.0
 
 ### Minor Changes
