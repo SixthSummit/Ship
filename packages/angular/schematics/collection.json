@@ -1,0 +1,82 @@
+{
+  "$schema": "../node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "ng-add": {
+      "description": "Install ShipAngular into an Angular project \u2014 adds dependencies, scaffolds env.ts, optionally enables SSR.",
+      "factory": "./ng-add/index#ngAdd",
+      "schema": "./ng-add/schema.json"
+    },
+    "module": {
+      "description": "Scaffold an app-owned feature under src/app/modules/<name>/ with manifest, routes, index, and MODULE.md.",
+      "factory": "./module/index#module",
+      "schema": "./module/schema.json",
+      "aliases": ["m"]
+    },
+    "page": {
+      "description": "Scaffold a standalone, OnPush, signal-first page under src/app/modules/<module>/pages/<name>/.",
+      "factory": "./page/index#page",
+      "schema": "./page/schema.json",
+      "aliases": ["p"]
+    },
+    "auth-adapter": {
+      "description": "Scaffold a custom AuthAdapter implementation pre-wired to pass the conformance suite.",
+      "factory": "./auth-adapter/index#authAdapter",
+      "schema": "./auth-adapter/schema.json"
+    },
+    "api-client": {
+      "description": "Scaffold a typed, browser/SSR-safe operation-client provider for a packed ShipAPI contract.",
+      "factory": "./api-client/index#apiClient",
+      "schema": "./api-client/schema.json"
+    },
+    "operation-resource": {
+      "description": "Scaffold a signal-tracked read resource for a stable operation ID.",
+      "factory": "./operation-resource/index#operationResource",
+      "schema": "./operation-resource/schema.json"
+    },
+    "operation-mutation": {
+      "description": "Scaffold a typed mutation state machine for a stable operation ID.",
+      "factory": "./operation-mutation/index#operationMutation",
+      "schema": "./operation-mutation/schema.json"
+    },
+    "operation-auth": {
+      "description": "Scaffold an operation-backed cookie-session auth boundary with explicit identity decoding.",
+      "factory": "./operation-auth/index#operationAuth",
+      "schema": "./operation-auth/schema.json"
+    },
+    "stream": {
+      "description": "Scaffold a typed service over a generated ShipAPI operation stream binding.",
+      "factory": "./stream/index#stream",
+      "schema": "./stream/schema.json"
+    },
+    "download": {
+      "description": "Scaffold a typed service over a generated ShipAPI operation download binding.",
+      "factory": "./download/index#download",
+      "schema": "./download/schema.json"
+    },
+    "socket": {
+      "description": "Scaffold an injectable factory over a generated ShipAPI operation socket binding.",
+      "factory": "./socket/index#socket",
+      "schema": "./socket/schema.json"
+    },
+    "upload": {
+      "description": "Scaffold a progress-aware component over a generated ShipAPI operation upload binding.",
+      "factory": "./upload/index#upload",
+      "schema": "./upload/schema.json"
+    },
+    "signed-upload": {
+      "description": "Scaffold an injectable factory over a generated signed-upload binding.",
+      "factory": "./signed-upload/index#signedUpload",
+      "schema": "./signed-upload/schema.json"
+    },
+    "operation-form": {
+      "description": "Scaffold a typed form factory over a generated client-safe operation binding.",
+      "factory": "./operation-form/index#operationForm",
+      "schema": "./operation-form/schema.json"
+    },
+    "operation-query": {
+      "description": "Generate a typed safe query with explicit application bindings.",
+      "factory": "./operation-query/index#operationQuery",
+      "schema": "./operation-query/schema.json"
+    }
+  }
+}

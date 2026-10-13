@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateDownload",
+  "title": "ShipAngular: generate operation download",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Download service name:"
+    },
+    "operationId": {
+      "type": "string",
+      "description": "Stable download operation ID.",
+      "default": "documents.download"
+    },
+    "representation": {
+      "type": "string",
+      "enum": ["blob", "arrayBuffer", "stream"],
+      "description": "Browser body representation.",
+      "default": "blob"
+    },
+    "contractPackage": {
+      "type": "string",
+      "default": "@my-org/ship-api-contract"
+    },
+    "contractType": {
+      "type": "string",
+      "default": "AppContract"
+    },
+    "bindingPackage": {
+      "type": "string",
+      "default": "@my-org/ship-api-client"
+    },
+    "bindingName": {
+      "type": "string",
+      "description": "Generated OperationDownloadBinding export."
+    },
+    "apiImport": {
+      "type": "string",
+      "default": "../../api"
+    },
+    "path": {
+      "type": "string",
+      "default": "src/app/services"
+    }
+  },
+  "required": ["name"]
+}

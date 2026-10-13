@@ -1,0 +1,12 @@
+{
+  "name": "email",
+  "description": "Email sending utilities with template support",
+  "version": "1.0.0",
+  "dependencies": [],
+  "npmDependencies": {
+    "resend": "^6.7.0"
+  },
+  "requiredEnvVars": ["RESEND_API_KEY", "RESEND_DEFAULT_FROM"],
+  "optionalEnvVars": [],
+  "postInstall": ["Configure Resend API key and default from address in .env"]
+}

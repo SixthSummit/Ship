@@ -1,0 +1,282 @@
+---
+alwaysApply: true
+description: "Project-internal patterns and conventions for the ShipAPI v4 monorepo"
+tags: ["patterns", "architecture", "monorepo", "framework-internal"]
+globs: ["packages/core/src/**/*.ts", "modules/**/*.ts", "libraries/**/*.ts", "packages/claude-plugin/**/*", "packages/mcp-server/**/*.ts"]
+---
+
+# Project-Internal Patterns
+
+This rule applies to engineers working **on** ShipAPI itself — the framework monorepo. For consumer-app patterns, see `packages/core/templates/default/.cursor/rules/`.
+
+## Monorepo layout
+
+ShipAPI is an npm-workspaces monorepo:
+
+```
+ship-api/
+├── packages/
+│   ├── core/                       # @sixthsummit/ship-api — the framework
+│   │   ├── src/                    # framework source
+│   │   ├── cli/                    # ship-api CLI (create / dev / g / migrate-orm / add)
+│   │   ├── templates/default/      # v4 reference template (consumed by `ship-api create`)
+│   │   ├── lib/                    # build output (.gitignored)
+│   │   └── vitest.config.ts        # 80/70 coverage gate
+│   ├── claude-plugin/              # @sixthsummit/ship-api-claude-plugin
+│   │   ├── agents/                 # ship-architect / ship-codegen / ship-reviewer
+│   │   ├── skills/                 # auto-synced summaries of .cursor/rules/
+│   │   ├── commands/               # /ship:* slash commands
+│   │   └── hooks/                  # PreToolUse / PostToolUse / Stop
+│   └── mcp-server/                 # @sixthsummit/ship-api-mcp-server
+├── modules/                        # built-in feature modules
+│   ├── accounts/                   # canonical CRUD reference
+│   ├── oauth/                      # multi-step flow + provider adapters
+│   └── outbox/                     # transactional outbox + drainer
+├── libraries/                      # pluggable shared libraries
+│   ├── ai/                         # LLMProvider + agent loop + RAG
+│   ├── chunking/                   # text chunking
+│   ├── email/                      # email helpers
+│   └── weaviate/                   # vector store
+├── apps/
+│   └── docs/                       # Astro + Starlight docs site
+├── docs/                           # canonical markdown (V4_LAUNCH, V4_STATUS, MIGRATION_V3_TO_V4, v4/*)
+├── scripts/                        # sync-skills / check-skills-sync / build-core / copy-docs / edge-smoke
+└── .cursor/rules/                  # canonical project conventions (this directory)
+```
+
+## Where things live (framework — `packages/core/src/`)
+
+### `app/` — primitives
+
+- `app/auth/` — `AuthProvider` interface + `FirebaseAuthProvider` adapter
+- `app/auth/jwt/` — `JwtSigner` (ES256), `AuthFlow`, `RefreshTokenStore`
+- `app/db/` — `client` (drizzle pool), `baseFields` (audit-column mixin), `transaction`, `QueryOptions` (neutral operator DSL)
+- `app/schema/` — **removed**; identity/RBAC tables (accounts / roles / permissions / refresh_tokens) now live in `modules/accounts`, core ships no concrete tables
+- `app/services/DrizzleEntityService.ts` — generic CRUD/list/search base
+- `app/services/jobs/` — `defineJob`, `JobRegistry`, `JobsManager`
+- `app/services/cron/` — `defineCron`
+- `app/registry/routes.ts` — runtime route registry (read by MCP tools, agents, `/dev/routes`)
+- `app/lifecycle/Bootstrapper.ts` — priority + dependsOn ordering
+- `app/health/HealthCheck.ts` — `HealthCheckRegistry`
+- `app/services/cache/`, `app/services/storage/` — Cache + Disk/S3/GCS adapters
+
+### `http/` — HTTP layer
+
+- `http/app/createApp.ts` — `Hono<AppEnv>` factory with route-method interception that captures `RouteEntry` from middleware tags into the registry
+- `http/app/errors.ts` — `registerErrorHandlers(app)` for the AppError taxonomy
+- `http/middleware/` — `requireAuth`, `requirePermission`, `apiKey`, `rateLimit`, `idempotency`, `csrf`, `httpLogger`
+- `http/utils/validate.ts` — `validate("json"|"query"|"param", schema)` zValidator wrapper
+- `http/streaming/` — `streamSSE`, `streamLLM` (SSE bridge for LLM provider streams)
+- `http/ws/` — `@hono/node-ws` adapter + subprotocol-header authentication
+
+### `observability/`
+
+- `logger.ts` — pino, ND-JSON in prod, pino-pretty in dev, redaction list
+- `otel.ts` — `@opentelemetry/sdk-node` + auto-instrumentations (http / undici / pg / ioredis / pino)
+- `metrics.ts` — Prometheus exporter on a separate port
+- `tracing.ts` — `withSpan` helper
+
+### `client.ts` — typed-client subpath
+
+Re-exports `hc` from `hono/client` and exposes `ShipApiClient` type. Mapped to `@sixthsummit/ship-api/client` via `package.json#exports`.
+
+## Module pattern (canonical 7-file shape)
+
+Built-in modules under `modules/<name>/` (framework monorepo) and consumer modules at `<project>/modules/<name>/` (scaffolded apps) follow the same shape:
+
+```
+<name>/
+├── schema.ts                       # Drizzle pgTable + relations + types
+├── permissions.ts                  # module:resource:action slug constants
+├── validation/schemas.ts           # Zod schemas (.strict() on objects)
+├── services/<NameSingular>Service.ts   # extends DrizzleEntityService<typeof table>
+├── routes.ts                       # buildXxxApp(deps) → mounts at root; defineXxxRoutes(app, deps) escape hatch
+├── index.ts                        # barrel
+└── module.json                     # metadata
+```
+
+Each module exposes a `buildXxxApp(deps)` that returns its **own bounded sub-app** built on `createModuleApp("xxx")` (a CORS-less `createApp` sibling that tags every route with its module name). The consumer mounts each sub-app onto the root with `root.route("/", buildXxxApp(deps))`. Modules keep their **absolute** paths (`/accounts`, `/accounts/:id`), so mounting at `/` leaves the client shape (`api.accounts.$get`) and the route-registry paths unchanged — no codegen. Mounting each module as its own sub-app (rather than chaining every module's routes onto one app) keeps each module's TypeScript route-type instantiation bounded, so the typed client scales to many modules without `tsc` overflowing its instantiation budget.
+
+```ts
+export function buildAccountsApp(deps: { service: AccountService; provider: AuthProvider }) {
+  return defineAccountsRoutes(createModuleApp("accounts"), deps);
+}
+
+export function defineAccountsRoutes<S extends Schema>(
+  app: Hono<AppEnv, S>,
+  deps: { service: AccountService; provider: AuthProvider },
+) {
+  return app
+    .get("/accounts", requireAuth({ provider }), requirePermission("accounts:read"), handler)
+    .post("/accounts", requireAuth({ provider }), requirePermission("accounts:create"),
+                       validate("json", createAccountSchema), handler);
+}
+```
+
+`defineXxxRoutes(app, deps)` is **kept** (back-compat / advanced composition — deliberately registering a module's routes onto an existing already-typed app) but it is a documented **foot-gun**: threading one shared `app` through several modules' `defineXxxRoutes` calls accumulates one giant Hono route-type and detonates `tsc` (TS2589 / "instantiation excessively deep") once you have enough modules, collapsing the `hc()` client to `never`. Prefer `buildXxxApp` + `root.route("/", ...)`. When you do use the raw form, it must stay **generic over Hono's schema param `S`** — a non-generic `app: Hono<AppEnv>` (or `<T extends Hono<AppEnv>>`) widens an already-chained app, erasing previously wired modules' routes from the client type. It **returns the chained app** so RPC types survive; mutating `(app) => void` registers routes at runtime but loses the type chain.
+
+Read `modules/accounts/` (CRUD), `modules/oauth/` (multi-step flow + provider adapters + state signing), and `modules/outbox/` (transactional outbox + drainer) as canonical references before adding a non-trivial module.
+
+## Plumbing across modules
+
+### Composing schemas
+
+Consumers compose module schema fragments via the `createApp<TSchema>({ schema })` generic:
+
+```ts
+import { createApp } from "@sixthsummit/ship-api";
+import { accountsSchema } from "./modules/accounts";
+import { posts } from "./modules/posts/schema";
+
+const schema = { ...accountsSchema, posts };
+const app = createApp({ schema });
+// app.db is DrizzleDb<typeof schema> — fully typed, no augmentation needed
+```
+
+This **replaces** the abandoned SchemaRegistry + module-augmentation pattern.
+
+### Composing routes (mount-at-root sub-apps)
+
+Cross-cutting concerns live on the **root only** — `registerErrorHandlers`, `httpLogger`, and CORS. Modules must not set their own `onError` or `use("*")` on a sub-app: a sub-app `onError` shadows the uniform AppError shape, and `httpLogger`'s RequestContext must wrap every sub-app from the root. Each module mounts as its own sub-app:
+
+```ts
+import { createApp, registerErrorHandlers, httpLogger } from "@sixthsummit/ship-api";
+
+const root = createApp({ cors });
+registerErrorHandlers(root);          // root owns cross-cutting concerns
+root.use("*", httpLogger());
+
+const app = root
+  .route("/", buildAccountsApp({ service: accountService, provider }))
+  .route("/", buildPostsApp({ service: postService, provider }));
+
+export type ShipApiClient = typeof app;   // api.accounts.$get — flat shape, unchanged
+```
+
+The chain of `root.route("/", buildXxxApp(...))` mounts is the source of truth for the typed client. Order doesn't matter for behavior (Hono routes match on method+path); each `.route("/", subApp)` return type accumulates the mounted sub-app's routes, so the final capture carries every module. Mounting bounded sub-apps (instead of threading one app through every `defineXxxRoutes`) is what keeps `tsc`'s route-type instantiation bounded so the client scales.
+
+For an `hc()` client narrowed to success-status responses, the `@sixthsummit/ship-api/client` subpath also exports `ShipApiSuccessClient<App>` (drops the 4xx/5xx response shapes) for apps that handle errors centrally via `registerErrorHandlers`.
+
+## Bootstrapping
+
+`Bootstrapper` interface gains `priority: number` (lower runs first) + optional `dependsOn: string[]` (validated at boot). Built-in priorities:
+
+| Priority | Bootstrapper | Notes |
+|---|---|---|
+| 0 | InitObservability | OTel SDK shutdown registration |
+| 10 | InitFirebaseApp | Firebase Admin SDK init |
+| 20 | InitDatabase | Drizzle pool + `db:migrate` |
+| 30 | InitRedis | Redis connection + readiness |
+| 40 | InitMetricsServer | Prometheus port |
+| 50 | InitModules | Route registration |
+| 60 | InitJobs | Needs Redis + Modules |
+| 65 | InitCron | Needs Jobs |
+| 85 | InitDevRoutes | `/dev/routes` HTML view; gated by `WORKER_MODE=local` |
+| 90 | InitCustomRoutes | Downstream override hook |
+| 100 | InitCustomData | Last; seeds + custom init |
+
+Misordered configs throw at startup, not at first request.
+
+Health routes are not a bootstrapper: `createApp()` mounts unauthenticated `/livez` + `/readyz` by default (`health: false` opts out) and `createDb()` registers a `db.primary` readiness check (`healthCheck: false` opts out). Never add `/healthz` — Cloud Run's front end intercepts it.
+
+## Skills-sync invariant
+
+The plugin's skills (`packages/claude-plugin/skills/*/SKILL.md`) are human-authored summaries of `.cursor/rules/*.mdc`. The drift state lives at `scripts/skills-sync-state.json` (committed).
+
+- After editing any rule, run `npm run sync:skills` to recompute hashes.
+- Review the corresponding SKILL.md files — if your edit changed the *meaning* (not just wording), update the summary too.
+- Commit the rule change + state-file update + any SKILL.md updates together. CI's `npm run check:skills` step will fail otherwise.
+
+The five SKILL.md files map to rule themes (not 1:1 to files):
+- `ship-api-conventions/SKILL.md` ← api.mdc + project-patterns.mdc
+- `ship-module-pattern/SKILL.md` ← project-patterns.mdc + api.mdc (module shape)
+- `ship-drizzle-migrations/SKILL.md` ← api.mdc (migration section)
+- `ship-bullmq-jobs/SKILL.md` ← project-patterns.mdc (jobs / cron)
+- `ship-otel-debugging/SKILL.md` ← (no rule directly; references observability/otel.ts and logger.ts)
+
+## Public API contract
+
+`packages/core/src/index.ts` is the **stable v4 public API barrel**. Deep-path imports outside the barrel are marked `@internal` in JSDoc and **not** semver-stable.
+
+Stable exports (per `docs/V4_LAUNCH.md` §H):
+- `createApp`, `defineSchema`, `defineEnv`, `defineModule`, `defineTool`, `defineHealthCheck`, `defineCron`, `defineJob`
+- All AppError subclasses
+- `requireAuth`, `requirePermission`, `rateLimit`, `idempotency`, `parseUpload`, `parseWebhook`, `streamSSE`, `streamLLM`
+- `DrizzleEntityService`, `Cache`, `JobQueue`, `RedisProvider`, `StorageService` (+ `S3StorageAdapter`, `DiskStorageAdapter`, `GCSStorageAdapter`)
+- `withTransaction`, `buildQueryOptions`, types for `QueryOptions`
+- `Logger`, `withSpan`, `AppEnv`
+
+The `@sixthsummit/ship-api/client` subpath exports `hc` + `ShipApiClient` type — runtime cost paid only by consumers that import it.
+
+## Runtime route registry
+
+`app/registry/routes.ts` captures per-route metadata from middleware tags:
+
+```ts
+interface RouteEntry {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS' | 'HEAD' | 'WS';
+  path: string;
+  module?: string;
+  auth: { required: boolean; provider?: string };
+  permissions: string[];
+  rateLimit?: { windowMs: number; max: number };
+  idempotent?: boolean;
+  schemas: { json?: ZodSchema; query?: ZodSchema; param?: ZodSchema; header?: ZodSchema };
+  description?: string;
+  tags?: string[];
+  deprecated?: boolean;
+}
+```
+
+Population is automatic — `validate(target, schema)`, `requireAuth({...})`, `requirePermission(...)`, `rateLimit({...})`, `idempotency({...})` all tag their returned middleware. `createApp` intercepts route methods, walks middleware tags, and pushes a `RouteEntry`.
+
+Consumed by:
+- MCP tools: `list_routes`, `describe_route`, `find_route_collisions`, `execute_route`
+- `/dev/routes` HTML debug endpoint
+- `ship-reviewer` plugin agent — flags missing schema / auth on mutating routes
+- `ship-api g doctor` CLI
+
+## Things framework agents commonly get wrong
+
+- **Don't `console.log` in framework or module code.** Use `logger`. `console.*` writes lose request-id + trace context.
+- **Don't read `process.env` directly** outside `defineEnv` / `otel.ts` / `metrics.ts`. Module + handler code routes through the validated `env` object.
+- **Don't hand-write SQL migrations.** Use `drizzle-kit generate`. The plugin's `PreToolUse` hook (`block-migration-edit.sh`) blocks edits to `src/db/migrations/*.sql`.
+- **Don't import from `lib/`** — those are build artifacts.
+- **Don't use `c.req.json()` / `c.req.query()` / `c.req.param()`** directly. Use `validate(...)` + `c.req.valid(...)`. ESLint's `no-restricted-syntax` rule fires on raw use.
+- **Don't skip `requireAuth({ provider })` / `requirePermission(slug)`** on protected routes — authorization runs at the route, not the service.
+- **Don't shape error responses inside handlers** — throw from the AppError taxonomy. `registerErrorHandlers(app)` shapes the JSON uniformly.
+- **Don't enqueue BullMQ jobs inside a transaction** — risks queue-before-commit. Use `OutboxEventEmitter.emit({...}, { tx })`; the drainer enqueues post-commit.
+- **Don't thread one shared `app` through several `defineXxxRoutes` calls.** That accumulates one giant route-type and detonates `tsc` (TS2589). Build each module as its own sub-app with `buildXxxApp(deps)` (on `createModuleApp("xxx")`) and mount it via `root.route("/", buildXxxApp(deps))`. If you do reach for the raw `defineXxxRoutes(app, ...)` escape hatch, keep it schema-generic and **return** the chained `app` (never `(app) => void`) so RPC types survive on `hc()` consumers.
+- **Don't import test fixtures via source paths (`../../app/...`) when modules import via `@sixthsummit/ship-api/...`** — class identities differ between source and built lib, breaking `instanceof AppError` checks.
+- **Don't add `experimentalDecorators: true` anywhere.** v4 uses middleware, not decorators. Decorator metadata was a v3 carry-over and is gone.
+
+## Configuration
+
+- Node ≥22 (engines field).
+- TypeScript 5.9, ESLint 10, Vitest 3.x, Prettier 3.x.
+- The framework's tsconfig targets ES2022 + NodeNext; consumer template inherits.
+- ESLint enforces `no-restricted-syntax` (raw `c.req.json/query/param`), `no-restricted-globals: ['process']` (forces `defineEnv`), `unused-imports/no-unused-imports`.
+
+## CLI
+
+`packages/core/cli/`:
+- `commands/create.js` — `ship-api create my-app` (uses `templates/default/`)
+- `commands/dev.js` — `ship-api dev` (Docker Compose deps + `tsx watch` + `/livez` polling)
+- `commands/generate.js` — `ship-api g {module|resource|service|schema|middleware|job|doctor}`
+- `commands/migrate-orm.js` — TypeORM → Drizzle codemod (one-time aid for v3 holdouts)
+- `commands/add.js` — `ship-api add <module>` / `add -l <library>`
+- `commands/update.js` — `ship-api update`
+
+## Verification
+
+Before declaring framework work done:
+
+1. `npm run type-check` — passes.
+2. `npm run lint` — passes.
+3. `npm test -w @sixthsummit/ship-api` — passes.
+4. `npx vitest run modules/<name>/` — module-specific tests pass.
+5. `npm run check:skills` — `.cursor/rules/` ↔ skills hash state in sync.
+6. `npm run build -w @sixthsummit/ship-api` — the framework builds cleanly.
+7. `npx audit-ci --config .audit-ci.json` — no high/critical findings.
+8. `npm run docs:build` — apps/docs builds cleanly.
+9. If you touched `http/`: the edge-smoke CI step (`scripts/edge-smoke/`) verifies the bundle still compiles for Cloudflare Workers.

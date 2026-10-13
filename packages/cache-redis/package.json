@@ -1,0 +1,49 @@
+{
+  "name": "@sixthsummit/ship-cache-redis",
+  "version": "0.1.0",
+  "description": "Redis cache backend adapter for declared Ship read caching",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/cache-redis/src",
+    "test:coverage": "vitest run --root ../.. packages/cache-redis/src --coverage"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-testing": "workspace:^",
+    "ioredis": "^5.10.1",
+    "testcontainers": "^12.1.0"
+  },
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/cache-redis"
+  }
+}

@@ -1,0 +1,157 @@
+---
+alwaysApply: true
+description: "Security guidelines for ShipAPI v4 (pluggable AuthProvider, JWT cookies, RBAC)"
+tags: ["security", "authentication", "authorization", "auth-provider"]
+globs: ["packages/core/src/**/*.ts", "modules/**/*.ts", "libraries/**/*.ts"]
+---
+
+# Security Guidelines
+
+## Authentication — pluggable `AuthProvider`
+
+ShipAPI v4 uses a pluggable `AuthProvider` interface at `packages/core/src/app/auth/AuthProvider.ts`. The default adapter is `FirebaseAuthProvider` (`packages/core/src/app/auth/adapters/FirebaseAuthProvider.ts`); v4.x will add Better-Auth / Clerk / WorkOS / Auth.js adapters without breaking the public API.
+
+### Contract
+
+```ts
+interface AuthProvider {
+  name: string;
+  verifyToken(token: string, ctx: Context<AppEnv>): Promise<AuthResult>;
+  resolveAccount(claims: AuthClaims, ctx: Context<AppEnv>): Promise<Account | null>;
+  onMissingToken?: 'reject' | 'next';     // default 'reject'
+  onUnknownAccount?: 'reject' | 'create' | 'next';
+}
+```
+
+`requireAuth({ provider })` consumes any `AuthProvider`. Per-route override is supported. The framework keeps the auth surface adapter-shaped — never bake Firebase-specific types into shared code.
+
+### Token verification
+
+- Bearer tokens (Authorization header or session cookie) are verified by the configured `AuthProvider`.
+- The framework's `JwtAuthFlow` (`packages/core/src/app/auth/jwt/`) issues stateless ES256 JWT cookies (`httpOnly`, `secure`, `sameSite=lax`) plus a `refresh_tokens` Drizzle table for revocation.
+- **Never disable signature verification.** For tests, write a `MockAuthProvider` adapter — don't bypass the chain.
+
+### Cookie + key rotation
+
+- Cookies are `httpOnly`, `secure`, `sameSite=lax`, ES256-signed.
+- `JWT_SIGNING_KEY` rotation: add new key to `JWT_VERIFICATION_KEYS` (JWKS array), cut signing over, wait > max access-token lifetime, remove old key. Refresh tokens persist in the DB and revoke explicitly.
+
+## Authorization — `requirePermission`
+
+### Middleware
+
+- `requireAuth({ provider })` — rejects 401 if no valid token. Set `optional: true` only for routes that have a public + authenticated mode (silent-fall-through is opt-in).
+- `requirePermission(...slugs)` — rejects 403 if the resolved account lacks at least one of the slugs. OR within a single call; chain multiple calls to AND.
+- **Authorization runs at the route, not in service code.** Always chain `requireAuth → requirePermission` on protected routes. `ship-reviewer` flags missing chains.
+
+### Permission slugs
+
+- Format: `module:resource:action` (e.g., `posts:create`, `accounts:list`, `billing:invoice:read`).
+- Define as exported constants in `modules/<name>/permissions.ts`. Reference the constant from both `requirePermission(slug)` and seed inserts.
+- Permissions are durable. Adding new ones is fine; renaming or removing one needs a migration plan.
+
+### Permission structure
+
+```
+Permission (slug: "posts:read")
+    ↓
+Role (name: "admin", permissions: ["posts:read", "posts:create"])
+    ↓
+Account (role: "admin")
+```
+
+The identity schema lives in the accounts module (`modules/accounts/schema.ts`): `accounts` / `roles` / `permissions` / `refresh_tokens`. Compose its `accountsSchema` fragment into `createApp<TSchema>({ schema })`; extend or replace per app.
+
+## Secrets
+
+- **No hardcoded fallbacks** in `src/environment.ts` / `defineEnv()`. The function fail-fasts at boot with structured "missing/invalid: X (string)" errors. Boot failure beats running on an attacker-known default.
+- Never commit `.env` files. Templates ship `.env.example` only.
+- Framework code reads env at boundaries (`otel.ts`, `metrics.ts`, `defineEnv.ts` itself). Module + handler code routes through the validated `env` object. ESLint's `no-restricted-globals: ['process']` enforces this.
+
+## Input validation
+
+- Register Zod schemas via `validate("json"|"query"|"param"|"header", schema)`. Read parsed input with `c.req.valid(...)`.
+- `.strict()` on object schemas — defends against parameter-injection accidents and forward-compat bugs.
+- Validate at the boundary; don't re-validate inside services (the type system carries the invariant once the schema parses).
+
+### Webhooks
+
+- Webhook routes need raw-body signature verification. Use `parseWebhook(c, { provider, secret })` — handles Stripe, GitHub, Slack, Twilio out of the box; `WebhookVerifier` interface for custom providers.
+- On the operation kernel, declare webhooks with `defineWebhook` (ADR-0018): bounded raw bytes, a bound verifier with declared guarantees, provider actor only after verification, executor idempotency, and `receive: { mode: "enqueue" }` for anything slower than a trivial handler. Pass `webhooks: { publicBaseUrl }` to `createHonoAdapter`; never derive a canonical URL from `Host`. Never log raw webhook bodies. Prefer HMAC-with-freshness verifiers from `@sixthsummit/ship-webhooks`; the shared-secret verifier is a documented last resort.
+- **Don't apply `validate("json", ...)` before signature verification.** Zod consuming the body breaks the raw-body contract some signatures depend on. Verify signature first, then parse.
+
+### File uploads
+
+- Use `parseUpload(c, schema)` — Web Standards FormData with magic-byte MIME validation via `file-type`.
+- Uploads buffer in memory up to `bodyLimit` (default 25 MB) before the handler runs. For large files, drop to `c.req.raw.body` and pipe directly to a `StorageService` adapter.
+- Always validate MIME via magic bytes, not the Content-Type header (clients control that).
+
+## CSRF
+
+The stance is declared, not silent (documented here so it doesn't drift):
+
+- **Default**: `httpOnly`, `secure`, `sameSite=lax` cookies + automatic Origin / Sec-Fetch-Site checking on mutating requests. Protects against top-level navigation CSRF.
+- **Hardened mode**: `csrf({ doubleSubmit: true })` adds an `X-CSRF-Token` double-submit cookie. Opt in for third-party-iframed apps or multi-subdomain consumers.
+
+## CORS
+
+- Wire CORS via `createApp({ cors: { origin, credentials } })` — the framework attaches `hono/cors` as global middleware before route registration. Same-origin deployments can omit the option entirely.
+- **`origin: '*'` + `credentials: true` is rejected at construction time.** The wildcard + credentials combo is spec-invalid; browsers refuse it but non-browser clients sometimes don't, and the combination silently bypasses the framework's CSRF defenses if the response is ever consumed. Pass an explicit `string[]` allowlist instead (typically `env.CORS_ORIGINS.split(',')`).
+- The consumer template ships an env-driven pattern: `CORS_ORIGINS=https://app.example.com,https://admin.example.com` in `.env`, threaded through `defineEnv` into `createApp({ cors: { origin: env.CORS_ORIGINS, credentials: true } })`.
+
+## Cache (Redis)
+
+- **Disabled-by-default HMAC integrity on `RedisCache`.** Enable via `new RedisCache({ client, signingKey: env.CACHE_SIGNING_KEY })` when the Redis tier is shared with untrusted clustermates (multi-tenant Redis, leaked password, co-located service with the Redis password). Frame: `[0x01][HMAC-SHA256(key || msgpackrBytes)][msgpackrBytes]`. `get()` returns `null` (and deletes the offending key in the background) on MAC mismatch, missing frame, or unsigned-entry-under-signed-mode. The MAC binds the value to its namespaced key, so an attacker who reads one signed payload cannot replay it under a different key.
+- **Threat model that triggers it:** shared Redis where another tenant or service could write to your keyspace. Dedicated Redis tiers (a process you run, a managed Redis instance with no other tenant) don't need signing — `keyPrefix` namespacing already protects against intra-service mistakes.
+- `CACHE_SIGNING_KEY` is rotated independently of JWT keys and requires a process restart to take effect (the framework reads it once at construction). Use ≥32 random bytes.
+
+## Rate limit
+
+- `rateLimit({ windowMs, max, keyGenerator, scope })` — Redis-backed sliding window via Lua. Apply to login / signup / password-reset / any endpoint where unauthenticated retry is cheap.
+- **Default fail-mode is fail-closed** when Redis is unavailable. Override with `onRedisUnavailable: 'allow'` only with a deliberate threat-model decision.
+- Emits RFC-draft `RateLimit-Limit` / `RateLimit-Remaining` / `RateLimit-Policy` headers. `legacyHeaders: true` for `X-RateLimit-*` compat.
+- **`X-Forwarded-For` trust is opt-in via `trustProxy: string[]` (CIDR list).** Without it, the default key generator ignores XFF and uses the immediate peer IP. Public apps behind a CDN/LB MUST declare the upstream proxy ranges (e.g. `trustProxy: ["173.245.48.0/20", "103.21.244.0/22", ...]` for Cloudflare). The rightmost-untrusted-IP walker is the industry-standard defense — without this declaration, an anonymous attacker can rotate `X-Forwarded-For: <random>` per request and bypass per-IP login / signup / password-reset rate limits to credential-stuff at scale.
+
+## SQL injection
+
+- Drizzle parameterizes by default — `eq(table.col, userInput)` is safe.
+- Don't drop to raw SQL with user input interpolated. If you need raw SQL, parameterize via `sql.placeholder` or build the string from a constant whitelist.
+
+## Logging
+
+- Sensitive fields are redacted by pino's redaction list: `authorization`, `cookie`, `*.password`, `*.token`, `firebaseCredentials`. The list lives in `packages/core/src/observability/logger.ts`.
+- **Never `console.log` user PII or secrets.** `console.*` bypasses redaction; use `logger`.
+- Don't log full request bodies on routes that accept secrets (login, password reset, payment intent).
+- **Secrets must not travel in query strings.** The pino redactor matches body / header *keys*; URL query strings arrive to it as a single string and slip past. `httpLogger` defensively splits `path` (route-only) from a per-key-redacted `query` field (sensitive keys: `token`, `signature`, `sig`, `key`, `secret`, `code`, `state`, `password`, `apikey`, `access_token`, `refresh_token`, `id_token`, etc. — full list in `httpLogger.ts`). Consumers SHOULD NOT rely on this — recovery / reset / signed-URL / share / OAuth-callback flows are common offenders; design endpoints that accept secrets via headers or body where possible.
+
+## WebSocket auth
+
+The framework uses subprotocol-header authentication (locked default). Client opens:
+
+```ts
+new WebSocket(url, ['ship-api.v1', `bearer.${token}`]);
+```
+
+Server reads `Sec-WebSocket-Protocol`, runs the same `AuthProvider` chain as `requireAuth`, rejects the upgrade with 401 if invalid, attaches `ws.data.user` if valid. **Never** auth via URL `?token=...` (leaks into access logs) or first-message handshake (creates "connected but unauthenticated" footgun).
+
+Operator note: the `Sec-WebSocket-Protocol` header is logged by some load balancers / proxies at the upgrade level. Mitigations: short-lived ID tokens (Firebase: ~1h) bound the leakage window; configure proxies to redact `Sec-WebSocket-Protocol`; opaque tokens are preferred over JWT-shaped values where consumers have a choice.
+
+## Audit-CI
+
+- `audit-ci` runs in CI (`.audit-ci.json`) and hard-fails on `high` / `critical`. Don't `--allow-list` a high finding without a tracking issue + remediation date.
+- Run `npm run audit` locally before opening a PR that bumps deps.
+- Pre-existing high findings (e.g., the `firebase-admin → @google-cloud/storage → protobufjs` chain) are documented in `docs/V4_STATUS.md` and tracked.
+
+## When in doubt
+
+- Default to fail-closed.
+- Default to validating at boundaries.
+- Default to using the framework's middleware factories rather than rolling your own.
+- If a security-relevant change feels surprising, check `docs/V4_LAUNCH.md` or open a security disclosure per `SECURITY.md`.
+
+## Don'ts (cross-cutting)
+
+- **Don't bypass `requireAuth({ provider })` / `requirePermission(slug)` middleware** on protected routes — authorization runs at the route, not on the service. The `ship-reviewer` agent flags missing chains.
+- **Don't bake Firebase-specific types into shared code.** v4.0 ships Firebase as the default adapter; v4.x adds others. Importing from `firebase-admin` outside the adapter creates an upgrade trap.
+- **Don't shape error responses inside handlers** — throw from the AppError taxonomy (`UnauthorizedError`, `ForbiddenError`, `BadRequestError`, etc.). `registerErrorHandlers(app)` shapes the JSON uniformly.
+- **Don't re-implement auth in a route.** If you need a custom auth flow, write an `AuthProvider` adapter; the framework's interface is the extension point.

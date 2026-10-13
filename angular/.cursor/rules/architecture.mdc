@@ -1,0 +1,40 @@
+---
+description: ShipAngular architecture — frontend-only operation client, SSR-safe Angular primitives, app-owned features.
+alwaysApply: true
+---
+
+# ShipAngular architecture
+
+ShipAngular is frontend-only. ShipAPI remains a separate backend framework and release.
+
+## ShipAPI boundary
+
+- Consume a generated, packed, browser-safe contract and structural operation client.
+- Use stable operation IDs and typed params/query/headers/body inputs.
+- Declared API failures are result values; transport, protocol, abort, and programmer
+  failures are exceptions.
+- Preserve status, response headers, request ID, error details, and unknown additive data.
+- Keep credentials/request policy in one origin-aware pipeline and isolate SSR requests.
+- Use `/upload`, `/download`, `/stream`, and `/socket` for explicit capabilities.
+- Use `/realtime` for declared realtime publication; channels come from the ShipAPI manifest, never from an ad-hoc topic string.
+- Streaming operations declared `response.mode: "stream"` use `createStream()` from
+  `/stream`, which implements the canonical SSE wire contract (ADR 0004). Do not hand-write
+  a stream binding for an operation the manifest already declares.
+- Never import a composed Hono app, ShipAPI runtime, Drizzle schema, server auth provider,
+  Node runtime, or server observability package into browser code.
+
+Hono v4 is temporary compatibility under `/hono-v4`; route-tree knowledge stays in the
+application-owned mapping. Generic third-party REST remains separate.
+
+## Public/package surface
+
+The root surface and every secondary entrypoint are public contracts. Add behavior tests,
+type tests, docs, a changeset, packed-package proof, and bundle evidence for changes.
+
+## Feature ownership
+
+Generate application features under `src/app/modules`. Do not create a repository-root
+source-copy catalog. Feature output must participate in that application's compiler,
+lint, tests, dependency analysis, and version control.
+
+Never hand-edit `../packages/angular/src/version.ts` or `../packages/angular/lib/**`.

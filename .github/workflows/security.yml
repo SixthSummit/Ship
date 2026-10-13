@@ -1,0 +1,90 @@
+name: Security
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  runtime-dependency-scan:
+    name: Published Runtime Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit framework runtime dependencies
+        run: pnpm run audit:runtime
+
+  docs-dependency-scan:
+    name: Documentation Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit documentation application
+        continue-on-error: true
+        run: pnpm run audit:docs
+
+  tooling-dependency-scan:
+    name: Build and Test Tooling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit complete workspace for maintenance
+        continue-on-error: true
+        run: pnpm run audit:all
+
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs:
+      [runtime-dependency-scan, docs-dependency-scan, tooling-dependency-scan]
+    if: always()
+    steps:
+      - name: Report trust-zone results
+        run: |
+          echo "Runtime dependencies: ${{ needs.runtime-dependency-scan.result }}"
+          echo "Documentation dependencies: ${{ needs.docs-dependency-scan.result }}"
+          echo "Build/test tooling: ${{ needs.tooling-dependency-scan.result }}"
+
+          if [ "${{ needs.runtime-dependency-scan.result }}" != "success" ]; then
+            echo "::error::Published runtime dependency gate failed"
+            exit 1
+          fi
+
+          echo "Published runtime dependency gate passed"

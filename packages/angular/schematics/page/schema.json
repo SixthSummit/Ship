@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGeneratePage",
+  "title": "ShipAngular: generate page",
+  "type": "object",
+  "properties": {
+    "module": {
+      "type": "string",
+      "description": "Existing module name to add the page under (creates modules/<module>/pages/<name>/).",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Module name:"
+    },
+    "name": {
+      "type": "string",
+      "description": "Page name in kebab-case (e.g. 'user-profile').",
+      "$default": { "$source": "argv", "index": 1 },
+      "x-prompt": "Page name (kebab-case):"
+    },
+    "path": {
+      "type": "string",
+      "description": "Route path under which to register the page. Defaults to the page name."
+    },
+    "guarded": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the route is wrapped with canActivate: [authGuard]."
+    }
+  },
+  "required": ["module", "name"]
+}

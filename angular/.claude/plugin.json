@@ -1,0 +1,36 @@
+{
+  "$schema": "https://claude.ai/plugin-schema.json",
+  "name": "sixthsummit/ship-angular",
+  "displayName": "ShipAngular",
+  "version": "4.0.0-alpha.1",
+  "description": "Frontend-only Angular 20 framework with structural ShipAPI operation clients, SSR-safe signals, and app-owned generators.",
+  "homepage": "https://github.com/sixthsummit/ship-angular",
+  "repository": "https://github.com/sixthsummit/ship-angular",
+  "license": "Apache-2.0",
+  "components": {
+    "agents": "./agents",
+    "skills": "./skills",
+    "commands": "./commands",
+    "hooks": "./hooks",
+    "mcp": "./mcp.json"
+  },
+  "compatibility": {
+    "claudeCode": ">=1.0.0",
+    "node": ">=20"
+  },
+  "tags": ["angular", "framework", "ssr", "agent-first"],
+  "permissions": {
+    "allow": [
+      "Bash(pnpm *)",
+      "Bash(node ../packages/angular/cli/ship-angular.js *)",
+      "Bash(pnpm exec ship-angular *)",
+      "Bash(pnpm exec ng *)"
+    ],
+    "deny": [
+      "Bash(pnpm publish *)",
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git reset --hard *)"
+    ]
+  }
+}

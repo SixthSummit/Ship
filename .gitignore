@@ -1,0 +1,37 @@
+node_modules/
+dist/
+coverage/
+packages/*/lib/
+packages/*/.tsbuildinfo
+.env
+.cursor/server.log
+packages/core/templates/default/package-lock.json
+*.code-workspace
+
+# Edge smoke test artifacts
+scripts/edge-smoke/tmp/
+scripts/edge-smoke/.wrangler/
+
+# Capacity baseline harness output and the consumer copy it materializes
+.capacity/
+fixtures/capacity/consumer/
+
+# Local credentials and agent session state
+.env.*
+!.env.example
+!.env.*.example
+.agents/
+.codex/
+*.pem
+*.key
+service-account*.json
+serviceAccount*.json
+
+# Unified workspace outputs
+**/.turbo/
+**/.astro/
+**/coverage-query-generator/
+packages/angular/schematics/**/*.js
+packages/angular/schematics/**/*.d.ts
+!packages/angular/schematics/package.json
+.ship/

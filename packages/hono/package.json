@@ -1,0 +1,52 @@
+{
+  "name": "@sixthsummit/ship-hono",
+  "version": "1.1.0",
+  "description": "Hono transport and credential adapter for the Ship application kernel",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/hono/src",
+    "test:coverage": "vitest run --root ../.. packages/hono/src --coverage"
+  },
+  "dependencies": {
+    "hono": "^4.12.15"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-testing": "workspace:^",
+    "@sixthsummit/ship-webhooks": "workspace:^",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/hono"
+  }
+}

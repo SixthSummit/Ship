@@ -1,0 +1,211 @@
+{
+  "status": "verified-feature-source-committed-ci-pending",
+  "sourceCommit": "0e938107b0a94dea8549bb78860263568d094f99",
+  "baseCommit": "1846e2ab7f722559e408441912d654553e34b03c",
+  "workingTreeDirty": true,
+  "sameCommitCiUrl": null,
+  "sng58PackedMeasurementReceipt": {
+    "artifactSha256": "273ae8b5d413647b5b765d4c52ed95a40620d8e8559c64f8f391618c0b475d60",
+    "environment": "physical npm consumer; Angular OnPush applications in Vitest jsdom",
+    "versions": {
+      "@angular/common": "20.3.30",
+      "@angular/compiler": "20.3.30",
+      "@angular/core": "20.3.30",
+      "@angular/platform-browser": "20.3.30",
+      "@angular/platform-server": "20.3.30",
+      "@tanstack/angular-query-experimental": "5.104.1",
+      "rxjs": "7.8.2",
+      "tslib": "2.8.1",
+      "typescript": "5.8.3",
+      "vitest": "4.1.11",
+      "@vitest/coverage-v8": "4.1.11",
+      "vite": "7.3.6",
+      "playwright": "1.63.0",
+      "jsdom": "26.1.0",
+      "@types/node": "24.13.3",
+      "@sixthsummit/ship-angular": "4.1.0"
+    },
+    "fixture": {
+      "delayMs": 5,
+      "rejectedEditDelayMs": 150,
+      "recordIds": [1, 2]
+    },
+    "baseline": {
+      "initial": {
+        "list": 2,
+        "detail": 2,
+        "edit": 0
+      },
+      "returnNavigationReads": 1,
+      "beforeSave": {
+        "list": 2,
+        "detail": 4,
+        "edit": 0
+      },
+      "afterSave": {
+        "list": 3,
+        "detail": 5,
+        "edit": 1
+      }
+    },
+    "query": {
+      "initial": {
+        "list": 2,
+        "detail": 1,
+        "edit": 0
+      },
+      "returnNavigationReads": 0,
+      "beforeSave": {
+        "list": 2,
+        "detail": 2,
+        "edit": 0
+      },
+      "afterSave": {
+        "list": 4,
+        "detail": 3,
+        "edit": 1
+      },
+      "successRefresh": {
+        "detail": 1,
+        "list": 2,
+        "unrelatedDetail": 0
+      },
+      "rejectedEditRolledBack": true,
+      "nextPageRequests": 1,
+      "pageIds": [1, 2],
+      "pageParams": [null, 2]
+    },
+    "identityIsolation": {
+      "tenantReplacement": "passed",
+      "logout": "passed",
+      "nonCooperativeLateRead": "suppressed",
+      "beforeFrameworkTick": true
+    },
+    "sourceSha256": {
+      "fixture.ts": "9a2cae38f3e7be83cd790796c45b6e34091d6b693dcdaffc35ef28d3e109a2e2",
+      "workflow.ts": "37ebacd2939e604e26ac1e945288d3c768512ae9bd18204bbb7254db2d1b00c6",
+      "realtime.ts": "b903a75cab0f81ffca635a0ea49ea181ce4e8a0b9859fd19b20b126424c400d9",
+      "providers.ts": "5dd6744cf0f603b0846a18026cdf527c59f368a6c62ac47aecb1acf026504061",
+      "measurement.packed-test.ts": "b12c9ed9065d4a0825aab180eb3d40886f51f3bb61d0ed0c12d1ee59334ed513",
+      "run-measurement.mjs": "5964d3f01a2159e9be72465b1d4ef08acc5b7506886d15ad08881542d01b26c1"
+    },
+    "tests": 4,
+    "coverage": {
+      "statements": 93.61,
+      "branches": 92.3,
+      "functions": 96.87,
+      "lines": 94.38,
+      "eachFileThreshold": 80
+    },
+    "unrelatedObserverSeededDefectSensitivity": "Replacing the exact edited-detail target with an operation-wide detail target fails the active unrelated observer request-ID assertion. Isolated consumer probe only; original source restored.",
+    "latencyClaim": null,
+    "sourceCommit": "0e938107b0a94dea8549bb78860263568d094f99",
+    "finalRequiredCi": "pending-security"
+  },
+  "artifact": {
+    "package": "@sixthsummit/ship-angular",
+    "version": "4.1.0",
+    "sha256": "273ae8b5d413647b5b765d4c52ed95a40620d8e8559c64f8f391618c0b475d60",
+    "integrity": "sha512-W6iQPr3yT5jetb4IjbygixpHw3INebOZwwNke2gfZ7+l6ckuRrQIDOmCF4j/us8FzdIumOC0PZyBbThOAYoPsg==",
+    "source": "local core build archive, not a registry release"
+  },
+  "versions": {
+    "angular": "20.3.30",
+    "tanstackAngularExperimental": "5.104.1",
+    "typescript": "5.8.3",
+    "vitest": "4.1.11",
+    "vite": "7.3.6",
+    "playwright": "1.63.0",
+    "nodeLocal": "26.8.1",
+    "pnpm": "10.8.1"
+  },
+  "independentPhysicalConsumer": {
+    "publicTypes": "passed",
+    "sourceAliases": false,
+    "sourceLinks": false,
+    "nodeScenarios": [
+      "results",
+      "etag",
+      "deduplication",
+      "invalidation",
+      "pagination",
+      "scope",
+      "rollback",
+      "mutationScope",
+      "retry",
+      "ssr"
+    ],
+    "ssrStability": [
+      "success",
+      "failure",
+      "exception",
+      "retry",
+      "abort",
+      "trackPendingTasks:false"
+    ],
+    "chromiumScenarios": [
+      "results",
+      "etag",
+      "deduplication",
+      "invalidation",
+      "pagination",
+      "scope",
+      "rollback",
+      "mutationScope",
+      "retry"
+    ],
+    "httpChecks": ["deduplication", "fresh-cache", "etag-304", "caller-abort"],
+    "httpRequestCount": 3,
+    "requiredSkips": [],
+    "candidateTests": 3,
+    "candidateCoverage": {
+      "statements": 98.92,
+      "branches": 95.58,
+      "functions": 93.47,
+      "lines": 100,
+      "eachFileThreshold": 80
+    }
+  },
+  "independentFixture": {
+    "tests": 19,
+    "coverage": {
+      "statements": 97.62,
+      "branches": 93.45,
+      "functions": 98.01,
+      "lines": 98.3
+    },
+    "types": "passed",
+    "eslint": "passed",
+    "biome": "passed",
+    "readmeFormat": "passed"
+  },
+  "otherIndependentEvidence": {
+    "centralTests": 1056,
+    "centralFiles": 77,
+    "centralRequiredSkips": 0,
+    "generatorTests": 50,
+    "generatorCoverageAllMetrics": 100,
+    "exampleTests": 7,
+    "exampleCoverage": {
+      "statements": 99.09,
+      "branches": 93.75,
+      "functions": 97.29,
+      "lines": 100
+    },
+    "generatedPhysicalConsumer": "passed",
+    "rootAndOperationsWithoutTanstack": "passed",
+    "allEntrypointBuild": "passed",
+    "publicDeclarationReview": "two concrete adapter token return types corrected to nullable; no other existing semantic change"
+  },
+  "releaseBlockers": [
+    "SNG-60: required security audit fails",
+    "Same-commit GitHub CI URL and required passing jobs pending"
+  ],
+  "diagnosticReceipts": {
+    "independentConsumer": "ship-query-archive-5PWcTr",
+    "candidateLog": "/tmp/ship-query-independent-candidate-wire.log",
+    "centralCoverage": "/tmp/ship-query-independent-central-coverage",
+    "generatorCoverage": "/tmp/ship-query-independent-generator-coverage"
+  },
+  "receiptOrigin": "Local validation and archive receipts were captured before commit from the reviewed working tree. The feature source is now recorded by sourceCommit; no clean-commit CI receipt is claimed."
+}

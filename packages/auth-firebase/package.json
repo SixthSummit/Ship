@@ -1,0 +1,51 @@
+{
+  "name": "@sixthsummit/ship-auth-firebase",
+  "version": "1.0.1",
+  "description": "Firebase credential and actor adapters for Ship Hono applications",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/auth-firebase/src",
+    "test:coverage": "vitest run --root ../.. packages/auth-firebase/src --coverage"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.10.0"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^",
+    "@sixthsummit/ship-hono": "workspace:^"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-hono": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/auth-firebase"
+  }
+}

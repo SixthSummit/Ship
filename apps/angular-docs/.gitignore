@@ -1,0 +1,24 @@
+# Astro build outputs
+dist/
+.astro/
+
+# Auto-synced content (sourced from /docs at build time)
+src/content/docs/getting-started/
+src/content/docs/architecture/
+src/content/docs/development/
+src/content/docs/api/
+src/content/docs/guides/
+src/content/docs/evidence/
+src/content/docs/ci-setup.md
+src/content/docs/interim-backend.md
+src/content/docs/roadmap.md
+src/content/docs/stable-promotion-readiness.md
+src/content/docs/stable-release-handoff.md
+
+# Local
+.env
+.env.production
+node_modules/
+
+# Generated custom not-found page from canonical docs source
+src/content/docs/404.md

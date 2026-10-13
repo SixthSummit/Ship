@@ -1,0 +1,86 @@
+---
+alwaysApply: true
+description: "TypeScript coding standards for ShipAPI v4 apps"
+tags: ["typescript", "type-safety"]
+globs: ["src/**/*.ts", "tests/**/*.ts"]
+---
+
+# TypeScript Coding Standards
+
+## Strictness
+
+- The template runs with `strict: true`. Don't disable individual flags (`strictNullChecks`, `noImplicitAny`, etc.) per-file or per-tsconfig.
+- `tsc --noEmit` runs in `npm run type-check` and CI. Type errors block the pipeline.
+
+## `any`, `unknown`, `never`
+
+- **No `any`.** Use `unknown` and narrow with `instanceof`, type guards, or Zod parsing.
+- Use `unknown` for genuinely-unknown payloads (webhook bodies before signature verification, third-party callbacks). Narrow via Zod before use.
+- Reach for `never` to mark exhaustiveness checks: `const _exhaustive: never = x;` in a `switch` default fails compile if a new case is added.
+
+## Imports
+
+- Import the framework via package-export paths: `@sixthsummit/ship-api`, `@sixthsummit/ship-api/client`, `@sixthsummit/ship-api/observability/logger`, etc.
+- **Never import from `node_modules/@sixthsummit/ship-api/lib/`.** Those are build artifacts; the path is not part of the public API.
+- Within your app, use relative imports for module-internal references and absolute paths (configured in `tsconfig.json` via `paths`) for cross-module references.
+
+## Type-driven schema flow
+
+ShipAPI v4 propagates types end-to-end via:
+
+```
+Drizzle table (schema.ts)
+   ↓ drizzle-zod
+Zod schema (validation/schemas.ts)
+   ↓ validate("json", schema)
+Hono route handler (c.req.valid("json"))
+   ↓ typeof app
+ShipApiClient type (exported from src/index.ts)
+   ↓ hc<ShipApiClient>(BASE_URL)
+Typed RPC client on the consumer
+```
+
+This means: **schema changes propagate through TypeScript types alone, no codegen.** Don't add manual type duplications between layers — let inference flow.
+
+## Null safety
+
+- Prefer `T | undefined` for "not yet known" / "may not be present"; use `T | null` only when the database column is nullable (or another external system distinguishes null from absent).
+- Don't use the non-null assertion `!` to suppress null errors. If TS thinks a value can be null, narrow it with a check or fix the type.
+- Optional chaining (`?.`) and nullish coalescing (`??`) over `&&` / `||` for default-value patterns when you mean "null or undefined", not "any falsy".
+
+## Branded types
+
+For IDs and other opaque scalars where mixing types would be a bug:
+
+```ts
+type AccountId = string & { readonly _brand: "AccountId" };
+type PostId = string & { readonly _brand: "PostId" };
+```
+
+Then `getPost(accountId)` fails to compile. Branded types are zero-cost at runtime.
+
+## Generics
+
+- Default to inference. Explicit generics belong on factory APIs (`createApp<TSchema>`), not on call sites where TS can infer.
+- Constrain generics with `extends` where it documents intent: `function fn<T extends { id: string }>(x: T)`.
+- Avoid `any` as a generic constraint. `unknown` is almost always better.
+
+## Error narrowing
+
+Use `instanceof` against the AppError taxonomy when you need to react to specific errors:
+
+```ts
+try { await service.create(input); }
+catch (err) {
+  if (err instanceof ConflictError) return c.json({ message: "exists" }, 409);
+  throw err;
+}
+```
+
+Otherwise let `registerErrorHandlers(app)` handle it — don't catch errors just to re-throw.
+
+## Conventions
+
+- File names: `PascalCase` for classes / services (`PostService.ts`), `camelCase` for utilities (`buildQuery.ts`), `kebab-case` for route directories.
+- Exported types from a module: name the type after what it represents (`Post`, `CreatePostInput`), not how it's derived (`PostType`, `CreatePostBody`).
+- Prefer `type` over `interface` unless you specifically need declaration merging.

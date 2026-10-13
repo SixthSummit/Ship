@@ -1,0 +1,83 @@
+# Local-stack dependency services for `ship-api dev`.
+#
+# `ship-api dev` runs `docker compose up -d` against the services below
+# (Postgres + Redis + Jaeger), then runs the app via `tsx watch` on the
+# host so source edits hot-reload without rebuilding a container.
+#
+# Bring everything up manually with:
+#   docker compose up -d
+#
+# Reset volumes (drops Postgres data) with:
+#   docker compose down -v
+#
+# Run the app inside Docker too (CI / smoke / parity checks): see Dockerfile;
+# `ship-api dev` does not start an api service from this compose file —
+# `tsx watch` on the host is the dev-loop default.
+
+services:
+  postgres:
+    container_name: ship-api-postgres
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ship-api
+      POSTGRES_USER: ship-api
+      POSTGRES_PASSWORD: ship-api
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_ship-api:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ship-api -d ship-api"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    container_name: ship-api-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    # `appendonly yes` keeps in-flight queue/job state across restarts; safe
+    # for dev. Production Redis tuning belongs in your prod compose / k8s.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_ship-api:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Jaeger all-in-one — the dev observability viewer for the framework's
+  # OpenTelemetry SDK. Exposes:
+  #   4317  — OTLP/gRPC (the default the SDK auto-detects)
+  #   4318  — OTLP/HTTP (alternate; useful for browser SDKs sharing the env)
+  #   16686 — Jaeger UI (open in a browser to inspect traces)
+  #
+  # Why Jaeger here instead of an OTel Collector: in dev, the high-value
+  # surface is the trace UI — "I just ran my code, show me the spans." The
+  # framework also commits to OTel-only for job history (BullMQ jobs flow
+  # through OTel spans rather than a `job_runs` audit table), so a viewer
+  # is load-bearing for debugging. Jaeger has a native OTLP receiver, so
+  # the app's exporter config doesn't need a separate collector hop.
+  #
+  # Production path is different: point `OTEL_EXPORTER_OTLP_ENDPOINT` at
+  # your real APM (Honeycomb / Tempo / Datadog / Cloud Trace / etc.), or
+  # run a dedicated OTel Collector with `otel/opentelemetry-collector-contrib`
+  # if you need batching / sampling / multi-backend fan-out.
+  jaeger:
+    container_name: ship-api-jaeger
+    image: jaegertracing/all-in-one:latest
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "4317:4317"   # OTLP/gRPC
+      - "4318:4318"   # OTLP/HTTP
+      - "16686:16686" # Jaeger UI
+
+volumes:
+  postgres_data_ship-api:
+  redis_data_ship-api:

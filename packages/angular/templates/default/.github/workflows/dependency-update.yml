@@ -1,0 +1,154 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Check for updates weekly on Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24.x'
+
+jobs:
+  # Check for outdated dependencies
+  check-outdated:
+    name: Check Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ship-pnpm" --no-audit --no-fund --ignore-scripts pnpm@10.34.6
+          echo "$RUNNER_TEMP/ship-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: |
+          printf '%s\n' '@sixthsummit:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
+          trap 'rm -f "$NPM_CONFIG_USERCONFIG"' EXIT
+          pnpm install --frozen-lockfile
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/ship-package-step.npmrc
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Check for outdated packages
+        run: |
+          echo "## Outdated Dependencies Report" > outdated-report.md
+          echo "Generated on: $(date)" >> outdated-report.md
+          echo "" >> outdated-report.md
+
+          echo "### Dependencies" >> outdated-report.md
+          pnpm outdated --depth=0 --json | jq -r 'to_entries[] | select(.value.current != .value.latest) | "- **\(.key)**: \(.value.current) → \(.value.latest)"' >> outdated-report.md || echo "No outdated dependencies" >> outdated-report.md
+
+      - name: Upload outdated report
+        uses: actions/upload-artifact@v7
+        with:
+          name: outdated-dependencies-report
+          path: outdated-report.md
+          retention-days: 7
+
+  # Check Angular version
+  check-angular-updates:
+    name: Check Angular Updates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ship-pnpm" --no-audit --no-fund --ignore-scripts pnpm@10.34.6
+          echo "$RUNNER_TEMP/ship-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: |
+          printf '%s\n' '@sixthsummit:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
+          trap 'rm -f "$NPM_CONFIG_USERCONFIG"' EXIT
+          pnpm install --frozen-lockfile
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/ship-package-step.npmrc
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Check Angular version
+        run: |
+          echo "## Angular Version Check"
+          echo "Current Angular packages:"
+          pnpm list @angular/core @angular/cli --depth=0 2>/dev/null || true
+          echo ""
+          echo "Latest Angular versions available:"
+          pnpm view @angular/core version || true
+          pnpm view @angular/cli version || true
+
+  # Create issue for major updates
+  create-update-issue:
+    name: Create Update Issue
+    runs-on: ubuntu-latest
+    needs: check-outdated
+    if: always()
+    steps:
+      - name: Download outdated report
+        uses: actions/download-artifact@v8
+        with:
+          name: outdated-dependencies-report
+
+      - name: Create issue for major updates
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('outdated-report.md', 'utf8');
+
+            // Check if there are any outdated dependencies
+            if (report.includes('→')) {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: 'dependencies,automated'
+              });
+              
+              const existingIssue = issues.find(issue => 
+                issue.title.includes('Dependency Updates') && 
+                issue.user.login === 'github-actions[bot]'
+              );
+              
+              if (existingIssue) {
+                // Update existing issue
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  body: report
+                });
+                console.log('Updated existing dependency update issue');
+              } else {
+                // Create new issue
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: '🔄 Dependency Updates Available',
+                  body: report + '\n\n---\n\nThis issue was automatically generated. Please review and update dependencies as needed.\n\nFor Angular updates, consider using `ng update` for a smoother upgrade process.',
+                  labels: ['dependencies', 'automated', 'maintenance']
+                });
+                console.log('Created new dependency update issue');
+              }
+            } else {
+              console.log('No outdated dependencies found');
+            }

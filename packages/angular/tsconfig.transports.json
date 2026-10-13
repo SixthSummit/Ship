@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": [
+    "download/src/**/*.ts",
+    "upload/src/**/*.ts",
+    "stream/src/**/*.ts",
+    "socket/src/**/*.ts",
+    "forms/src/**/*.ts"
+  ],
+  "exclude": [
+    "download/src/**/*.test.ts",
+    "upload/src/**/*.test.ts",
+    "stream/src/**/*.test.ts",
+    "socket/src/**/*.test.ts",
+    "forms/src/**/*.test.ts",
+    "node_modules",
+    "lib"
+  ]
+}

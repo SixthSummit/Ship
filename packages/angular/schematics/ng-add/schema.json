@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularNgAdd",
+  "title": "ShipAngular ng-add",
+  "type": "object",
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Target project name from angular.json. Defaults to the workspace's default project.",
+      "$default": { "$source": "projectName" }
+    },
+    "withSsr": {
+      "type": "boolean",
+      "default": true,
+      "description": "Wire SSR (provideClientHydration + server entrypoints). Default: true (matches the framework's default deploy story on Cloud Run)."
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "default": false,
+      "description": "Skip the package installation task at the end of the schematic."
+    }
+  },
+  "required": []
+}

@@ -1,0 +1,15 @@
+{
+  "name": "accounts",
+  "description": "Identity + RBAC on the v4 substrate — owns the `accounts`/`roles`/`permissions`/`refresh_tokens` schema (relocated out of core), DrizzleEntityService, Hono routes, pluggable AuthProvider. Compose its `accountsSchema` fragment into `createApp({ schema })` and customize as needed.",
+  "version": "2.0.0-alpha.1",
+  "dependencies": [],
+  "npmDependencies": {},
+  "requiredEnvVars": [],
+  "optionalEnvVars": [],
+  "postInstall": [
+    "Add the schema to your composed schema: `createApp({ schema: { ...accountsSchema } })`",
+    "Wire the routes in src/index.ts, capturing the chained return so hc() types survive: `const app = defineAccountsRoutes(createApp({ schema }), { service, provider })`",
+    "Provide a service constructed against your composed schema: `new AccountService(app.db)`",
+    "Provide an AuthProvider (Firebase by default; Better-Auth/Clerk/WorkOS in v4.x)"
+  ]
+}

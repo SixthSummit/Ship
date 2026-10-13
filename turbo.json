@@ -1,0 +1,40 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": [
+    "tsconfig*.json",
+    "scripts/**",
+    "angular/scripts/**",
+    "angular/tsconfig.json",
+    "angular/conformance/**",
+    "docs/**",
+    "angular/docs/**",
+    "modules/**",
+    "libraries/**",
+    "packages/*/package.json"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [
+        "lib/**",
+        "dist/**",
+        ".astro/**",
+        "schematics/**/*.js",
+        "schematics/**/*.d.ts",
+        "src/version.ts"
+      ]
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "test:coverage": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "type-check": {
+      "dependsOn": ["^build"],
+      "cache": false
+    }
+  }
+}

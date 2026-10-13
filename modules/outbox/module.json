@@ -1,0 +1,15 @@
+{
+  "name": "outbox",
+  "description": "Transactional outbox on the v4 substrate. The v3 `operations` module bundled outbox events + a job queue; v4 splits them — the job runtime moves entirely into BullMQ (`defineJob` / `JobsManager`) and this module owns the Postgres-backed outbox (event row commits in the same tx as the domain write).",
+  "version": "2.0.0-alpha.1",
+  "dependencies": ["accounts"],
+  "npmDependencies": {},
+  "requiredEnvVars": [],
+  "optionalEnvVars": [],
+  "postInstall": [
+    "Add the schema to your composed schema: `createApp({ schema: { ...accountsSchema, outboxEvents } })`",
+    "Wire the routes: `defineOutboxRoutes(app, { service, drainer, provider })`",
+    "Generate the migration: `npm run db:generate`",
+    "If you're migrating from v3 operations: the `Job` entity + JobController are NOT ported. Move job processing to `defineJob` from @sixthsummit/ship-api (BullMQ-backed)."
+  ]
+}

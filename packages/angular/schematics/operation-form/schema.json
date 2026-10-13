@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateOperationForm",
+  "title": "ShipAngular: generate operation form",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Operation form name:"
+    },
+    "bindingPackage": {
+      "type": "string",
+      "default": "@my-org/ship-api-client"
+    },
+    "bindingName": {
+      "type": "string",
+      "description": "Generated OperationFormBinding export."
+    },
+    "path": {
+      "type": "string",
+      "default": "src/app/forms"
+    }
+  },
+  "required": ["name"]
+}

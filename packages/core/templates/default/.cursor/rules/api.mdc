@@ -1,0 +1,80 @@
+---
+alwaysApply: true
+description: "API development guidelines for ShipAPI v4 (Hono + Drizzle)"
+tags: ["api", "hono", "drizzle", "zod"]
+globs: ["modules/**/*.ts", "src/index.ts"]
+---
+
+# API Development Guidelines
+
+## Module structure
+
+Each feature module under `modules/<name>/` follows the canonical 7-file shape:
+
+```
+modules/<name>/
+├── schema.ts                       # Drizzle pgTable + relations + types
+├── permissions.ts                  # module:resource:action slug constants
+├── validation/schemas.ts           # Zod schemas (.strict() on objects)
+├── services/<NameSingular>Service.ts   # extends DrizzleEntityService<typeof table>
+├── routes.ts                       # buildXxxApp(deps) → mounts at root; defineXxxRoutes escape hatch
+├── index.ts                        # barrel
+└── module.json                     # metadata
+```
+
+Scaffold with `ship-api g module <name>` (full shape) or `ship-api g resource <name> --fields "..."` (CRUD shortcut).
+
+## Routes
+
+- Each route chains: `requireAuth({ provider })` → `requirePermission(slug)` → `validate("json"|"query"|"param", schema)` → handler.
+- **Each module exposes `buildXxxApp(deps)`** returning its **own** sub-app (built on `createModuleApp("xxx")`); the consumer mounts it with `root.route("/", buildXxxApp(deps))`. Modules keep absolute paths (`/posts`, `/posts/:id`), so the client shape (`api.posts.$get`) and route registry are unchanged. Mounting bounded sub-apps — rather than threading one shared `app` through every module's `defineXxxRoutes` — keeps `tsc`'s route-type instantiation bounded so the typed client scales to many modules.
+- **`defineXxxRoutes(app, deps)` is kept as an advanced / back-compat escape hatch**, but threading one shared `app` through several modules detonates `tsc` (TS2589 / "instantiation excessively deep"), collapsing the `hc()` client to `never`. Prefer `buildXxxApp`. When you do use it, return the chained app (a `(app) => void` shape loses the type chain) and stay generic over Hono's schema param `S`.
+- **Cross-cutting middleware (`registerErrorHandlers`, `httpLogger`, CORS) lives on the root only** — a module sub-app must not set its own `onError` or `use("*")`.
+- Use proper HTTP methods (GET, POST, PUT, PATCH, DELETE). Plural nouns for collections (`/posts`, `/posts/:id`).
+- Status codes: 200 (success), 201 (created), 204 (no body), 400 (validation), 401 (auth), 403 (permission), 404 (not found), 409 (conflict), 422 (semantic validation), 429 (rate limit), 500 (unhandled).
+
+## Validation
+
+- Register Zod schemas via `validate("json"|"query"|"param", schema)`. Read parsed input with `c.req.valid("json"|...)`.
+- **Never use `c.req.json()` / `c.req.query()` / `c.req.param()` directly** — the route registry, typed client, and (eventual) OpenAPI all read off the registered schema. The framework's `no-restricted-syntax` ESLint rule fires on raw use.
+- Use `.strict()` on object schemas to reject unknown fields.
+- Co-locate request + response Zod schemas in `validation/schemas.ts`. Export inferred types via `z.infer`.
+- Derive create / update schemas from Drizzle tables using `drizzle-zod` where possible.
+
+## Services
+
+- Extend `DrizzleEntityService<typeof table>` for inherited CRUD (`get`, `getAll`, `list`, `count`, `create`, `update`, `delete` + `*WithContext` variants).
+- Override `getDefaultSearchFields()` / `getDefaultRelations()` per module.
+- Add domain methods on the service; keep route handlers thin (delegate to the service).
+- Use `withTransaction(db, tx => ...)` for multi-step operations.
+- For queue-after-commit correctness, **never enqueue BullMQ jobs inside a transaction** — use the outbox pattern via `OutboxEventEmitter.emit({...}, { tx })`.
+
+## Errors
+
+- Throw from the AppError taxonomy: `NotFoundError`, `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `RateLimitError`, etc.
+- Never shape error responses inside handlers. `registerErrorHandlers(app)` (called once at boot) handles the JSON shape uniformly.
+- Don't expose internal stack traces or DB error details. The error handler strips them in production.
+
+## Migrations
+
+- **Never hand-write SQL migrations.** Generate them from schema source: `npm run db:generate -- --name <description>`.
+- The framework's plugin `PreToolUse` hook (`block-migration-edit.sh`) blocks edits to `src/db/migrations/*.sql` to enforce this.
+- Apply with `npm run db:migrate`. Inspect with `npm run db:studio`.
+- Schema lives in `modules/<name>/schema.ts` (per module) and is composed in `src/db/schema.ts`. Use `...baseFields` for audit columns.
+
+## Logging
+
+- Import: `import { logger } from "@sixthsummit/ship-api/observability/logger"`.
+- **Never `console.log` / `console.error` / `console.warn`.** They lose request-id and trace context that pino + OpenTelemetry inject automatically.
+- Log structured: `logger.info({ accountId, action }, "user did thing")`, not `logger.info("user " + accountId + " did thing")`.
+
+## Environment
+
+- All `process.env` access goes through `src/environment.ts` via `defineEnv(zodSchema)`. The function fail-fasts at boot with structured errors for missing/invalid vars.
+- **Never `process.env.X` outside `src/environment.ts`.** The framework's `no-restricted-globals` ESLint rule catches violations.
+
+## Idempotency, rate limit, CSRF
+
+- Mutating routes that may be retried (payment, email send, account creation): apply `idempotency({ ttlSec, scope })` middleware. Clients send `Idempotency-Key` header.
+- Rate-limit sensitive routes: `rateLimit({ windowMs, max, keyGenerator, scope })`. Default behavior on Redis unavailable is fail-closed.
+- CSRF default is Origin / Sec-Fetch-Site checking on mutating requests. For double-submit-cookie protection, opt in with `csrf({ doubleSubmit: true })`.

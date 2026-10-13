@@ -1,0 +1,272 @@
+---
+alwaysApply: true
+description: "Template-authoring rules for packages/core/templates/default/"
+tags: ["template", "scaffolding", "create"]
+globs: ["packages/core/templates/default/**/*.ts", "packages/core/templates/default/**/*.tsx", "packages/core/templates/default/**/*.json", "packages/core/templates/default/**/*.md"]
+---
+
+# Template Development Guidelines
+
+`packages/core/templates/default/` is the v4 reference template — what `ship-api create my-app` produces. Every consumer's first impression is this directory. Treat it as the load-bearing demo for the framework.
+
+## What `ship-api create` does
+
+1. Copies the template tree to the target dir.
+2. Runs Mustache-style placeholder replacement: `{{PROJECT_NAME}}` → user's project name, etc.
+3. Renames `.gitignore.template` → `.gitignore` (the literal `.gitignore` is filtered by npm pack, so we ship the placeholder name).
+4. Writes a `package.json` that pins the framework via the published version (or a `file:` link in dev).
+
+## Import path standards
+
+### ✅ Always use package-export paths
+
+```ts
+import { createApp, validate, requireAuth } from "@sixthsummit/ship-api";
+import { hc } from "@sixthsummit/ship-api/client";
+import type { ShipApiClient } from "@sixthsummit/ship-api/client";
+import { logger } from "@sixthsummit/ship-api/observability/logger";
+```
+
+### ❌ Never use these
+
+```ts
+// Build-artifact path — not part of the public API
+import { createApp } from "@sixthsummit/ship-api/lib/...";
+
+// Old `.js` extension pattern — v4 framework exports don't need it
+import { DrizzleEntityService } from "@sixthsummit/ship-api/app/services/DrizzleEntityService.js";
+
+// Deep-path imports outside the documented public exports — these are @internal
+import { something } from "@sixthsummit/ship-api/app/auth/jwt/JwtSigner";
+```
+
+The v4 barrel is the **stable v4 public API surface**. Anything not in it is `@internal` per JSDoc and not semver-stable; templates must not depend on it.
+
+## Template file shape
+
+```
+packages/core/templates/default/
+├── README.md                       # consumer-facing project README ({{PROJECT_NAME}} placeholder)
+├── AGENTS.md                       # consumer-facing agent onboarding (v4 patterns)
+├── CLAUDE.md                       # @-imports AGENTS.md + curated .cursor/rules/
+├── .cursor/
+│   └── rules/                      # curated v4 rules subset (api / typescript / testing / security / commits)
+├── .gitignore.template             # renamed to .gitignore at create time
+├── .env.example                    # placeholders only — never commit real secrets
+├── .nvmrc, .prettierrc, eslint.config.mjs, tsconfig.json
+├── docker-compose.yml              # Postgres + Redis + Jaeger for `ship-api dev`
+├── drizzle.config.ts               # drizzle-kit configuration
+├── ship-api.config.ts              # plugin activation marker (don't delete)
+├── package.json                    # pins @sixthsummit/ship-api at published version
+├── tests/
+│   └── integration/                # consumer integration test scaffolds
+└── src/
+    ├── index.ts                    # OTel side-effect import on line 1, createApp({ schema }), serve()
+    ├── environment.ts              # defineEnv(zodSchema)
+    ├── config/
+    │   └── modules.ts              # composition point — root.route("/", buildXxxApp(deps)) mounts
+    ├── db/
+    │   ├── schema.ts               # composed schema (defaults + module tables)
+    │   └── migrations/             # drizzle-kit-generated SQL (gitignored at scaffold time? no — committed)
+    └── modules/                    # consumer modules go here (created via `ship-api g`)
+```
+
+## Consumer module pattern
+
+Generated modules under `modules/<name>/` follow the canonical 7-file shape:
+
+```
+modules/<name>/
+├── schema.ts                       # Drizzle pgTable + relations
+├── permissions.ts                  # module:resource:action slug constants
+├── validation/schemas.ts           # Zod schemas
+├── services/<NameSingular>Service.ts   # extends DrizzleEntityService<typeof table>
+├── routes.ts                       # buildXxxApp(deps) → mounts at root; defineXxxRoutes escape hatch
+├── index.ts                        # barrel
+└── module.json                     # metadata
+```
+
+`ship-api g module <name>` and `ship-api g resource <name> --fields "..."` produce this shape.
+
+## Routes pattern
+
+Each module exposes a `buildXxxApp(deps)` returning its **own** sub-app on `createModuleApp("xxx")`; the consumer mounts it with `root.route("/", buildXxxApp(deps))`. `defineXxxRoutes(app, deps)` is kept as a back-compat / advanced escape hatch but is a foot-gun — threading one shared app through several modules' definers accumulates one giant route-type and detonates `tsc` (TS2589). Stay schema-generic and return the chained app when you do use it.
+
+```ts
+import type { Hono, Schema } from "hono";
+import {
+  createModuleApp,
+  requireAuth,
+  requirePermission,
+  validate,
+} from "@sixthsummit/ship-api";
+import type { AppEnv } from "@sixthsummit/ship-api";
+import { createPostSchema, updatePostSchema } from "./validation/schemas";
+import { permissions } from "./permissions";
+
+// Canonical — the module's own sub-app, ready to mount at root.
+export function buildPostsApp(deps: { service: PostService; provider: AuthProvider }) {
+  return definePostsRoutes(createModuleApp("posts"), deps);
+}
+
+// Advanced / back-compat escape hatch — stays generic over Hono's schema
+// param `S` and returns the chained app so RPC types survive.
+export function definePostsRoutes<S extends Schema>(
+  app: Hono<AppEnv, S>,
+  deps: { service: PostService; provider: AuthProvider },
+) {
+  return app
+    .get(
+      "/posts",
+      requireAuth({ provider: deps.provider }),
+      requirePermission(permissions.read),
+      async (c) => c.json(await deps.service.list({})),
+    )
+    .post(
+      "/posts",
+      requireAuth({ provider: deps.provider }),
+      requirePermission(permissions.create),
+      validate("json", createPostSchema),
+      async (c) => {
+        const input = c.req.valid("json");
+        const post = await deps.service.create(input);
+        return c.json(post, 201);
+      },
+    );
+}
+```
+
+Modules keep their **absolute** paths and mount at `/`, so the client shape (`api.posts.$get`) and the route registry are unchanged. RPC types survive end-to-end via `hc<ShipApiClient>()`.
+
+## Permissions pattern
+
+Permissions are exported slug constants, not entity instances:
+
+```ts
+// modules/posts/permissions.ts
+export const permissions = {
+  read: "posts:read",
+  create: "posts:create",
+  update: "posts:update",
+  delete: "posts:delete",
+} as const;
+
+export type PostPermission = typeof permissions[keyof typeof permissions];
+```
+
+Reference from `requirePermission(permissions.read)` and seed inserts. Consumers may also import `Permission` rows from the accounts module (`modules/accounts`) for the database side.
+
+## Service pattern
+
+```ts
+import { DrizzleEntityService } from "@sixthsummit/ship-api";
+import { posts } from "../schema";
+
+export class PostService extends DrizzleEntityService<typeof posts> {
+  protected getTable() { return posts; }
+  protected getDefaultSearchFields() { return ["title", "body"] as const; }
+  protected getDefaultRelations() { return ["author"] as const; }
+
+  async publish(id: string, ctx: RequestContext) {
+    return this.update(id, { publishedAt: new Date() }, ctx);
+  }
+}
+```
+
+## Schema pattern
+
+```ts
+import { pgTable, text, boolean, timestamp, uuid } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { baseFields } from "@sixthsummit/ship-api";
+import { accounts } from "../accounts/schema.js";
+
+export const posts = pgTable("posts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  published: boolean("published").default(false).notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }),
+  authorId: uuid("author_id").references(() => accounts.id).notNull(),
+  ...baseFields,                    // createdAt, updatedAt, deletedAt, createdBy, updatedBy
+});
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(accounts, { fields: [posts.authorId], references: [accounts.id] }),
+}));
+
+export type Post = typeof posts.$inferSelect;
+export type NewPost = typeof posts.$inferInsert;
+```
+
+## Environment pattern
+
+```ts
+// src/environment.ts
+import { defineEnv } from "@sixthsummit/ship-api";
+import { z } from "zod";
+
+export const env = defineEnv(
+  z.object({
+    DATABASE_URL: z.string().url(),
+    REDIS_URL: z.string().url(),
+    JWT_SIGNING_KEY: z.string().min(64),
+    FIREBASE_PROJECT_ID: z.string(),
+    PORT: z.coerce.number().int().positive().default(3000),
+  }),
+);
+```
+
+`defineEnv` fail-fasts at boot. **No hardcoded fallbacks for secrets** — boot failure beats running on an attacker-known default.
+
+## Bootstrap pattern (consumer-side `src/index.ts`)
+
+Cross-cutting concerns — `registerErrorHandlers`, `httpLogger`, CORS — live on the **root only**. Modules must not set their own `onError` or `use("*")` on a sub-app (a sub-app `onError` shadows the uniform AppError shape; `httpLogger`'s RequestContext must wrap every sub-app from the root). Each module mounts as its own sub-app:
+
+```ts
+import "@sixthsummit/ship-api/observability/otel";  // line 1 — side-effect import bootstraps OTel
+import { serve } from "@hono/node-server";
+import { createApp, registerErrorHandlers, httpLogger } from "@sixthsummit/ship-api";
+import { env } from "./environment";
+import { buildPostsApp } from "./modules/posts/routes";
+
+const root = createApp();
+registerErrorHandlers(root);          // root owns cross-cutting concerns
+root.use("*", httpLogger());
+
+const app = root
+  .route("/", buildPostsApp({ service, provider }));
+
+export type ShipApiClient = typeof app;   // api.posts.$get — flat shape, unchanged
+export { app };
+
+serve({ fetch: app.fetch, port: env.PORT });
+```
+
+## Don'ts (template-specific)
+
+- **Don't import from `node_modules/@sixthsummit/ship-api/lib/`** — build artifacts. Use package-export paths.
+- **Don't add `.js` extensions to library imports.** v4 package exports don't need them.
+- **Don't hardcode env defaults for secrets.** `JWT_SIGNING_KEY`, `OAUTH_STATE_SECRET`, etc. — `defineEnv` fail-fasts is the design.
+- **Don't commit `.env`** — only `.env.example` with placeholder values.
+- **Don't ship a `lib/` or `dist/` directory** in the template. The template is source-only; consumers run `npm run build` themselves.
+- **Don't ship the framework's `.cursor/rules/project-patterns.mdc` or `template-development.mdc`** to consumers. Those are framework-internal — consumer rules live in `packages/core/templates/default/.cursor/rules/` (the curated subset).
+- **Don't ship `node_modules/` or `package-lock.json`** in the template (the consumer's `npm install` produces both).
+
+## Verification
+
+After editing the template:
+
+1. **Smoke test**: `cd /tmp && rm -rf doc-smoke && node /path/to/project create doc-smoke`. Verify the project boots: `cd doc-smoke && npm install && npm run build`.
+2. **Imports**: `grep -rn "@sixthsummit/ship-api/lib\|/index\.js\b" packages/core/templates/default/` returns nothing.
+3. **`npm run check:skills`** — clean.
+4. **`npm run docs:build`** — the docs site projects `packages/core/templates/default/README.md` to `getting-started/v4-template`; build verifies the projection still works.
+5. **`ship-api g resource posts --fields "title:string,body:text"`** in the smoked dir produces a hittable route after restart.
+
+## Quality bar
+
+- **Consistency**: every module the template ships follows the same canonical 7-file shape.
+- **Completeness**: every required file is present; no `// TODO` placeholders for load-bearing pieces.
+- **Working out of the box**: `ship-api create` → `npm install` → `ship-api dev` boots cleanly. If anything in this chain breaks, that's a bug worth shipping a patch for.
+- **Pinned dependencies**: the template's `package.json` pins `@sixthsummit/ship-api` at the published version; CI updates this on each release-please PR.
+- **No dead code**: don't ship example modules that are commented out or marked TODO.

@@ -1,0 +1,14 @@
+{
+  "extends": "../../../packages/angular/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../..",
+    "noEmit": true,
+    "paths": {
+      "@sixthsummit/ship-angular/operations": ["../packages/angular/operations/src/public-api.ts"],
+      "@sixthsummit/ship-angular/query": ["../packages/angular/query/src/public-api.ts"]
+    },
+    "baseUrl": "../.."
+  },
+  "include": ["./*.ts"],
+  "exclude": ["./*.test.ts", "./vitest.config.ts", "./*.packed-test.ts"]
+}

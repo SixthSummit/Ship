@@ -1,0 +1,65 @@
+{
+  "fixtureProtocolVersion": 1,
+  "wireFixtureVersion": 1,
+  "graphHash": "sha256:a5b77d1a45318905cb520c5d6eb454db570a58de8f435828e38b3b36bba4c197",
+  "producer": {
+    "repository": "SixthSummit/ship-api",
+    "head": "bb62f870b4536264ee70b1de0520a52a034670c4",
+    "sourceHash": "335b286a3392bdd3dcbefbee47c6681cb33147f5d31e49a849ebbb0423fab7c8"
+  },
+  "supportedCapabilities": [
+    "http-json",
+    "bodyless-204",
+    "validation",
+    "request-id",
+    "cancellation",
+    "primitive-forms",
+    "modeled-session-refresh"
+  ],
+  "deferredCapabilities": [
+    "backend-sse",
+    "backend-websocket",
+    "generated-upload-binding",
+    "codec-binding",
+    "production-session-provider"
+  ],
+  "contractPackage": {
+    "name": "@sixthsummit/ship-api-conformance-contract",
+    "version": "0.0.0-fixture.1",
+    "tarball": "contract.tgz",
+    "sha256": "c5b37596fca1348b9d275663a6f822616574d03096f5ff62bc9337e17bd082b0"
+  },
+  "clientPackage": {
+    "name": "@sixthsummit/ship-api-conformance-client",
+    "version": "0.0.0-fixture.1",
+    "tarball": "client.tgz",
+    "sha256": "fbe8656a46d6a6ff1d5e66cf0f067c8cdac0db74671ded08421fb7ababd030e1"
+  },
+  "serverPackage": {
+    "name": "@sixthsummit/ship-api-conformance-server",
+    "version": "0.0.0-fixture.1",
+    "tarball": "server.tgz",
+    "sha256": "58999340bbdf341595bcb313693ad28eaac40b8cab3a2763506905b1f766dd79"
+  },
+  "dependencies": [
+    {
+      "name": "json-schema-to-ts",
+      "version": "3.1.1",
+      "tarball": "json-schema-to-ts.tgz",
+      "sha256": "a007ebd79089ddd968de342db8439d55749bd622ee93063a8ca7e7f139d4477a"
+    },
+    {
+      "name": "ts-algebra",
+      "version": "2.0.0",
+      "tarball": "ts-algebra.tgz",
+      "sha256": "ebe4e489076ce65f8072c7cc6bed41b74ddafd0563bd453675b4567b4102361e"
+    },
+    {
+      "name": "@babel/runtime",
+      "version": "7.29.7",
+      "tarball": "babel-runtime.tgz",
+      "sha256": "d288c6b4cc91cf47ae8b99bef6c131406164692e0e2bdfcc95cc751befe17744"
+    }
+  ],
+  "artifactSetHash": "sha256:8e9ab2df9927287bcc739ab6272e8fbc8e53a588713627c626b74e7d66ee1dad"
+}

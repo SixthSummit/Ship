@@ -1,0 +1,61 @@
+import { createHttpOperationClient } from "@sixthsummit/ship-contract";
+import type { ApplicationContractOf } from "@sixthsummit/ship-contract/application";
+import { type CustomizedInfrastructure, createCustomizedApplication } from "./application.js";
+
+declare const infrastructure: CustomizedInfrastructure;
+const application = createCustomizedApplication(infrastructure);
+const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
+  { schemaVersion: 1, appId: "golden-customized", fingerprint: "sha256:test", operations: [] },
+  { baseUrl: "https://golden.example.test" },
+);
+
+async function verifyClientContract(): Promise<void> {
+  const summary = await client.call("portfolio.summary", {
+    params: { tenantId: "acme" },
+    query: { states: ["open"], minimumEffort: 3, limit: 5 },
+  });
+  if (summary.ok) summary.data.projects[0]?.totalEffort satisfies number | undefined;
+
+  const notification = await client.call("reports.notify", {
+    params: { tenantId: "acme" },
+    body: { recipient: "ops@example.test", subject: "Status" },
+  });
+  if (notification.ok) notification.data.adapter satisfies string;
+
+  const request = await client.call("reports.request", {
+    params: { tenantId: "acme" },
+    body: { requestKey: "weekly-1", recipient: "ops@example.test", subject: "Status" },
+  });
+  if (request.ok) request.data.queued satisfies boolean;
+  if (!request.ok) {
+    // The executor-enforced idempotency failure is part of the typed client result.
+    request.error.code satisfies "IDEMPOTENT_IN_FLIGHT" | (string & {});
+  }
+  const progress = client.call("reports.progress", {
+    params: { tenantId: "acme" },
+    body: { steps: 3 },
+  });
+  for await (const frame of progress.frames) frame.percent satisfies number;
+  (await progress.terminal)?.steps satisfies number | undefined;
+  progress.abort();
+  // @ts-expect-error streaming operations return a handle, not a promise
+  await progress.then(() => undefined);
+
+  // @ts-expect-error operation identifiers stay exact in a customized consumer
+  await client.call("portfolio.export", {});
+  // @ts-expect-error inbound webhooks are provider-facing and absent from the client contract
+  await client.call("payments.stripe-webhook", {});
+  // @ts-expect-error notification input requires a body, not a query payload
+  await client.call("reports.notify", { params: { tenantId: "acme" }, query: {} });
+}
+
+// Channel payloads are part of the typed contract, derived from the plain Zod declarations.
+type Channels = ApplicationContractOf<typeof application>["channels"];
+declare const channels: Channels;
+channels["reports.delivered"].payload.recipient satisfies string;
+channels["portfolio.activity"].presence satisfies true;
+channels["portfolio.activity"].payload.itemCount satisfies number;
+// @ts-expect-error channel ids stay exact
+channels["reports.unknown"];
+
+void verifyClientContract;

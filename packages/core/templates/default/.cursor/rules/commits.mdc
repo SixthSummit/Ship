@@ -1,0 +1,88 @@
+---
+alwaysApply: true
+description: "Conventional Commits for consumer apps"
+tags: ["commits", "git", "conventional-commits"]
+globs: ["**/*"]
+---
+
+# Commit Conventions
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) for clarity in review and history. If you wire in a release automation later (Changesets, release-please, semantic-release), it will read these prefixes — but the convention is useful on its own even without one.
+
+## Format
+
+```
+<type>(<scope>): <short description>
+
+<optional body — explain WHY, not WHAT>
+
+<optional footer — BREAKING CHANGE: ..., refs: ...>
+```
+
+## Types
+
+| Type | Use for |
+|---|---|
+| `feat` | new user-facing feature |
+| `fix` | bug fix |
+| `feat!` / `BREAKING CHANGE:` footer | breaking change |
+| `docs` | documentation only |
+| `style` | whitespace, formatting (no behavior change) |
+| `refactor` | code change without behavior change |
+| `perf` | performance fix |
+| `test` | test additions / changes |
+| `build` | build system, deps |
+| `ci` | CI / workflow / pipeline changes |
+| `chore` | tooling, internal cleanup |
+| `revert` | reverting a prior commit |
+
+If you adopt a release automation that reads commit types (e.g. release-please), `feat:` → minor, `fix:`/`perf:` → patch, `feat!:` → major. Otherwise these are descriptive only.
+
+## Scope
+
+Optional. Use the area of the change. Common scopes for ShipAPI apps:
+
+- `(api)` / `(routes)` / `(modules)` — module surface changes
+- `(db)` — schema, migrations, queries
+- `(auth)` — authentication or permissions
+- `(jobs)` — BullMQ jobs / cron
+- `(test)` — when type is `chore` / `refactor` and only tests change
+
+Skip the scope when it's not informative — a one-word commit needs no scope.
+
+## Examples
+
+```
+feat(api): add POST /posts/:id/publish
+
+Endpoint already gates on posts:publish permission and emits a
+post.published outbox event for the notifications worker.
+
+---
+
+fix(auth): refresh token rotation no longer races on logout
+
+The refresh table delete and new-token insert ran in separate
+transactions; concurrent logout + refresh could double-spend a
+token. Wrap both in withTransaction.
+
+---
+
+ci: skip e2e suite on docs-only PRs
+
+paths-ignore was matching .md files but not the docs/ tree.
+
+---
+
+feat!(api): drop /v1/* routes; clients must move to /v2/*
+
+BREAKING CHANGE: Endpoints under /v1/ have been removed. See
+docs/MIGRATION_V1_TO_V2.md for the field-by-field map.
+```
+
+## Don't
+
+- Don't use `git commit --amend` after pushing — it rewrites history and breaks anyone who pulled.
+- Don't `--no-verify`. If a hook fails, fix the underlying issue. Bypassing hooks is how secrets get committed.
+- Don't write multi-paragraph commit bodies for trivial changes. The body should add information the diff doesn't.
+- Don't reference internal ticket IDs in the title — the body is fine, but titles get rendered in CHANGELOG.

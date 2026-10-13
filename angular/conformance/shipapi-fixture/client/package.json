@@ -1,0 +1,23 @@
+{
+  "name": "@sixthsummit/ship-api-conformance-client",
+  "version": "0.0.0-fixture.1",
+  "private": false,
+  "description": "Synthetic structural ShipAPI client used by ShipAngular conformance tests",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.d.ts",
+    "index.js"
+  ],
+  "peerDependencies": {
+    "@sixthsummit/ship-api-conformance-contract": "0.0.0-fixture.1",
+    "@sixthsummit/ship-contract": "^1.1.0 || ^1.2.0-alpha-20260924191925"
+  }
+}

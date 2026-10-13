@@ -1,0 +1,19 @@
+{
+  "name": "ai",
+  "description": "LLM helper library — provider adapters (Anthropic, OpenAI), prompt registry, structured outputs, tool-calling, RAG, and an experimental agent loop. Pluggable LLMProvider interface; concrete adapters are opt-in (install only the SDK you use).",
+  "version": "0.2.0",
+  "dependencies": [],
+  "npmDependencies": {},
+  "optionalNpmDependencies": {
+    "@anthropic-ai/sdk": "^0.91.0",
+    "openai": "^6.0.0"
+  },
+  "requiredEnvVars": [],
+  "optionalEnvVars": ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+  "postInstall": [
+    "Install the SDK for the providers you need: `npm i @anthropic-ai/sdk` and/or `npm i openai`",
+    "Import { type LLMProvider } from '@sixthsummit/ship-api/libraries/ai' and the adapter you want (e.g. AnthropicAdapter)",
+    "Construct the adapter with your API key: `const llm = new AnthropicAdapter({ apiKey: env.ANTHROPIC_API_KEY })`",
+    "All adapters share the same `LLMProvider` interface — swap providers without changing call sites"
+  ]
+}

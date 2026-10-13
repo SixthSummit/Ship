@@ -1,0 +1,2 @@
+# v4-conformance fixtures — auth failure modes.
+{"id":"auth-missing-token","metadata":{"area":"auth","surface":"401 on missing token (requireAuth)","source":"v4-conformance","note":"requireAuth throws AuthenticationError when no credential is present"},"request":{"method":"GET","path":"/auth/protected"},"checks":[{"path":"status","equals":401},{"path":"body.success","equals":false},{"path":"body.error.code","equals":"AUTHENTICATION_ERROR"}]}

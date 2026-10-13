@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./lib",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./.tsbuildinfo",
+    "composite": false
+  },
+  "include": ["src/**/*"],
+  "exclude": ["lib/**/*", "node_modules/**/*", "src/**/*.test.ts"]
+}

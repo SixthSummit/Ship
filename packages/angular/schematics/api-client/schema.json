@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateApiClient",
+  "title": "ShipAngular: generate operation client provider",
+  "type": "object",
+  "properties": {
+    "contractPackage": {
+      "type": "string",
+      "description": "Packed browser-safe package that exports the generated application contract.",
+      "default": "@my-org/ship-api-contract"
+    },
+    "contractType": {
+      "type": "string",
+      "description": "Generated application contract type exported by contractPackage.",
+      "default": "AppContract"
+    },
+    "baseUrlImport": {
+      "type": "string",
+      "description": "Import statement that makes baseUrlExpression available in the generated file.",
+      "default": "import { environment } from './environments/environment';"
+    },
+    "baseUrlExpression": {
+      "type": "string",
+      "description": "Expression that evaluates to the absolute browser/server-safe ShipAPI base URL.",
+      "default": "environment.apiBaseUrl"
+    },
+    "cookieNames": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Exact cookie names approved for forwarding during SSR.",
+      "default": []
+    },
+    "headerNames": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Non-sensitive incoming headers approved for forwarding during SSR.",
+      "default": ["x-request-id", "accept-language"]
+    },
+    "path": {
+      "type": "string",
+      "description": "Where to scaffold api.ts.",
+      "default": "src"
+    }
+  },
+  "required": []
+}

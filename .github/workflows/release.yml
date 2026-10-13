@@ -1,0 +1,52 @@
+name: Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: ship-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: vars.SHIP_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: "24"
+      - name: Check release branch
+        run: |
+          case "$GITHUB_REF_NAME" in dev|main) ;; *) exit 1 ;; esac
+          test ! -f .changeset/pre.json
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter ship-angular exec playwright install --with-deps chromium
+      - run: pnpm run ci
+      - name: Require stable version bookkeeping
+        if: github.ref_name == 'main'
+        run: |
+          test -z "$(find .changeset -name '*.md' ! -name README.md -print -quit)"
+      - name: Version alpha snapshot
+        if: github.ref_name == 'dev'
+        run: pnpm exec changeset version --snapshot alpha
+      - run: pnpm --filter ship-angular sync-version
+      - run: pnpm build
+      - name: Configure registry authentication
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}\n' > "$RUNNER_TEMP/ship.npmrc"
+          echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/ship.npmrc" >> "$GITHUB_ENV"
+      - name: Publish alpha
+        if: github.ref_name == 'dev'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec changeset publish --tag alpha --no-git-tag
+      - name: Publish stable
+        if: github.ref_name == 'main'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec changeset publish --no-git-tag

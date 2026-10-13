@@ -1,0 +1,123 @@
+---
+alwaysApply: true
+description: "Vitest testing patterns for ShipAPI v4 apps"
+tags: ["testing", "vitest"]
+globs: ["src/**/*.test.ts", "tests/**/*.ts"]
+---
+
+# Testing Guidelines
+
+## Framework
+
+[Vitest](https://vitest.dev). The template ships with `vitest` configured; run with `npm test`.
+
+- `npm test` — full run.
+- `npm test -- --watch` — watch mode for active development.
+- `npm test -- --changed` — only re-run tests whose source-of-truth changed since `main`.
+- `npm test -- modules/<name>` — module-scoped run.
+
+## Test file co-location
+
+Co-locate unit tests with the code under test:
+
+```
+modules/posts/
+├── services/PostService.ts
+├── services/PostService.test.ts        # service unit tests
+├── routes.ts
+└── routes.test.ts                      # route integration tests
+```
+
+Integration tests that span modules live under `tests/integration/`.
+
+## Service unit tests (fake DB)
+
+For service-level tests, mock the DB at the lowest level — you're testing service logic, not Drizzle:
+
+```ts
+import { describe, it, expect, vi } from "vitest";
+import { PostService } from "./PostService";
+
+describe("PostService", () => {
+  it("filters out soft-deleted rows by default", async () => {
+    const fakeDb = { query: { posts: { findMany: vi.fn().mockResolvedValue([]) } } };
+    const service = new PostService(fakeDb as any);
+    await service.list({});
+    expect(fakeDb.query.posts.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.anything() })
+    );
+  });
+});
+```
+
+For multi-method flows, use `testcontainers` against a real Postgres (see integration tests below).
+
+## Route integration tests (full chain)
+
+Test the full middleware chain (auth → permission → validate → handler → service) via `app.request(...)` against the chained Hono app. The framework's reference modules ship a harness — mirror that shape:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { app } from "../../index"; // your composed app
+
+describe("POST /posts", () => {
+  it("rejects unauthenticated requests", async () => {
+    const res = await app.request("/posts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "x", body: "y" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("creates a post for an authenticated user with permission", async () => {
+    const res = await app.request("/posts", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: signedAuthCookie() },
+      body: JSON.stringify({ title: "x", body: "y" }),
+    });
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json).toMatchObject({ id: expect.any(String), title: "x" });
+  });
+});
+```
+
+`signedAuthCookie()` is a test helper you write once that mints a valid session cookie via the framework's `JwtSigner`. Keep helpers in `tests/helpers/`.
+
+## Real-DB integration tests
+
+For tests that exercise queries / migrations / transactions against a real Postgres, use `@testcontainers/postgresql`:
+
+```ts
+import { PostgreSqlContainer } from "@testcontainers/postgresql";
+
+let container: StartedPostgreSqlContainer;
+beforeAll(async () => { container = await new PostgreSqlContainer().start(); });
+afterAll(async () => { await container.stop(); });
+```
+
+Run integration tests under a separate Vitest config (`vitest.integration.config.ts`) so they don't slow the regular suite.
+
+## Mocking
+
+- **Mock at boundaries, not internals.** Mock the framework's `AuthProvider`, `Cache`, `JobQueue` — not your own service methods. If you find yourself mocking your own service heavily, the test is at the wrong level.
+- Use `vi.fn()` over `jest.fn()` (the migration is mechanical; vitest exposes `vi`).
+- Use `vi.spyOn(obj, "method").mockReturnValue(...)` for method spies — don't reassign methods directly.
+
+## What to assert
+
+- **Status codes + response shape**, not exact response bodies. Use `toMatchObject` over `toEqual` so non-deterministic fields (timestamps, IDs) don't make tests brittle.
+- **Side effects**: did the service call the cache? Did it emit an outbox event? Did it log? Spy on those.
+- **Error paths**: assert the exact AppError subclass thrown (`ConflictError`, `NotFoundError`), not just "an error was thrown".
+
+## What NOT to do
+
+- **Don't mock pg/Drizzle directly** in unit tests. Either go fake-DB (a hand-rolled stub object) or testcontainers. Mocking Drizzle leads to tests that pass but don't reflect SQL behavior.
+- **Don't share mutable state across tests.** Each test gets a fresh fixture. If setup is expensive, use `beforeAll` + a reset in `beforeEach`.
+- **Don't test framework internals** — those are tested in `@sixthsummit/ship-api`'s own test suite. You test your code.
+- **Don't add tests just for coverage.** A test that asserts trivia (`expect(x).toBeDefined()`) is worse than no test — it lies about what's verified.
+
+## Coverage
+
+The template ships with no enforced coverage gate; opt in by editing `vitest.config.ts` if you want a floor. The framework itself targets 80% line / 70% branch on `packages/core/src/**` per `docs/V4_STATUS.md` — your app can do whatever fits the team.

@@ -1,0 +1,62 @@
+{
+  "name": "@sixthsummit/ship-realtime-socketio",
+  "version": "0.1.0",
+  "description": "Socket.IO and Redis realtime gateway adapter for declared Ship channels",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/realtime-socketio/src --exclude '**/*.integration.test.ts'",
+    "test:coverage": "vitest run --root ../.. packages/realtime-socketio/src --exclude '**/*.integration.test.ts' --coverage"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@sixthsummit/ship-observability-otel": "workspace:^",
+    "ioredis": "^5.11.1",
+    "socket.io": "^4.8.3"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^",
+    "@sixthsummit/ship-hono": "workspace:^"
+  },
+  "devDependencies": {
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-drizzle": "workspace:^",
+    "@sixthsummit/ship-hono": "workspace:*",
+    "@sixthsummit/ship-testing": "workspace:^",
+    "drizzle-orm": "^0.45.2",
+    "socket.io-client": "^4.8.3",
+    "testcontainers": "^12.1.0",
+    "tsx": "^4.20.3",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/realtime-socketio"
+  }
+}

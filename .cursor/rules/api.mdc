@@ -1,0 +1,191 @@
+---
+alwaysApply: true
+description: "API development guidelines for ShipAPI v4 (Hono + Drizzle + Zod)"
+tags: ["api", "hono", "drizzle", "zod", "validation"]
+globs: ["packages/core/src/http/**/*.ts", "modules/**/*.ts", "packages/core/templates/default/src/**/*.ts"]
+---
+
+# API Development Guidelines
+
+ShipAPI v4 is a TypeScript backend on **Hono `^4` + Drizzle + pluggable AuthProvider + BullMQ + OpenTelemetry**. The HTTP layer lives at `packages/core/src/http/`; built-in modules live at `modules/`; the v4 reference template at `packages/core/templates/default/`.
+
+Canonical references for non-trivial modules:
+- `modules/accounts/` — CRUD + auth integration
+- `modules/oauth/` — multi-step flow + provider adapters + state signing
+- `modules/outbox/` — transactional outbox + drainer orchestration
+
+Read the relevant reference before adding a non-trivial module.
+
+## Module structure (canonical 7-file shape)
+
+Each module under `modules/<name>/` follows:
+
+```
+modules/<name>/
+├── schema.ts                       # Drizzle pgTable + relations + types
+├── permissions.ts                  # module:resource:action slug constants
+├── validation/schemas.ts           # Zod schemas (.strict() on objects)
+├── services/<NameSingular>Service.ts   # extends DrizzleEntityService<typeof table>
+├── routes.ts                       # buildXxxApp(deps) → mounts at root; defineXxxRoutes escape hatch
+├── index.ts                        # barrel
+└── module.json                     # metadata
+```
+
+Scaffold with `ship-api g module <name>` (full shape) or `ship-api g resource <name> --fields "..."` (CRUD shortcut).
+
+## Routes
+
+### The chain
+
+Every protected route chains:
+
+```
+requireAuth({ provider })
+  → requirePermission(slug)
+  → validate("json"|"query"|"param", schema)
+  → handler
+```
+
+Public routes drop `requireAuth` / `requirePermission`. Mutating routes always carry a `validate("json", schema)`.
+
+### Build a sub-app, mount at root
+
+Each module exposes a `buildXxxApp(deps)` that returns its **own** bounded sub-app built on `createModuleApp("xxx")` (a CORS-less `createApp` sibling that tags each route with its module name). Mounting bounded sub-apps — instead of threading one shared `app` through every `defineXxxRoutes` call — keeps each module's TypeScript route-type instantiation bounded, so the typed client scales to many modules without `tsc` overflowing (TS2589 / "instantiation excessively deep", which collapses the `hc()` client to `never`).
+
+```ts
+// ✅ Canonical — the module's own sub-app, ready to mount at root.
+export function buildPostsApp(deps: { service: PostService; provider: AuthProvider }) {
+  return definePostsRoutes(createModuleApp("posts"), deps);
+}
+
+// defineXxxRoutes is KEPT as an advanced / back-compat escape hatch — it
+// registers routes onto an app you pass in. It stays generic over Hono's
+// schema param `S` so RPC types accumulate: Hono<AppEnv, S & <these routes>>.
+export function definePostsRoutes<S extends Schema>(
+  app: Hono<AppEnv, S>,
+  deps: { service: PostService; provider: AuthProvider },
+) {
+  return app
+    .get("/posts", requireAuth({ provider }), requirePermission("posts:read"), handler)
+    .post("/posts", requireAuth({ provider }), requirePermission("posts:create"),
+                    validate("json", createPostSchema), handler);
+}
+
+// ⚠️ FOOT-GUN — threading ONE shared `app` through several modules'
+// defineXxxRoutes calls accumulates one giant route-type and detonates
+// tsc (TS2589). Use buildXxxApp + root.route("/", ...) instead.
+const app = definePostsRoutes(defineAccountsRoutes(createApp(), accDeps), postDeps); // don't
+
+// ❌ Wrong — runtime registration works, but consumer hc<>() loses route types
+export function definePostsRoutes(app: Hono<AppEnv>, deps): void {
+  app.get("/posts", ...);
+}
+
+// ❌ Also wrong — returns the chained app but takes a non-generic
+// `Hono<AppEnv>` (or `<T extends Hono<AppEnv>>`): `.get()`/`.post()` resolve
+// on the parameter's declared type, so an already-chained app passed through
+// erases every previously wired module's routes from the client type.
+export function definePostsRoutes(app: Hono<AppEnv>, deps) {
+  return app.get("/posts", ...);
+}
+```
+
+Composition pattern in the consumer's `src/index.ts` — cross-cutting concerns (`registerErrorHandlers`, `httpLogger`, CORS) live on the **root only**; modules must not set their own `onError` / `use("*")` on a sub-app:
+
+```ts
+import { createApp, registerErrorHandlers, httpLogger } from "@sixthsummit/ship-api";
+
+const root = createApp({ cors });
+registerErrorHandlers(root);          // root owns cross-cutting concerns
+root.use("*", httpLogger());
+
+const app = root
+  .route("/", buildAccountsApp({ service: accountService, provider }))
+  .route("/", buildPostsApp({ service: postService, provider }));
+
+export type ShipApiClient = typeof app;   // api.accounts.$get — flat shape, unchanged
+export { app };
+```
+
+Modules keep their **absolute** paths and mount at `/`, so the client shape and the route registry are identical to a single flat app — no codegen. For apps that handle errors centrally, `@sixthsummit/ship-api/client` also exports `ShipApiSuccessClient<App>`, which narrows the client to success-status (200 | 201) responses.
+
+### HTTP shape
+
+- Methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (`OPTIONS` / `HEAD` rarely needed).
+- Plural collection nouns: `/posts`, `/posts/:id`, `/posts/:id/publish`.
+- Status codes: 200 (success), 201 (created), 204 (no body), 400 (validation), 401 (auth), 403 (permission), 404 (not found), 409 (conflict), 422 (semantic validation), 429 (rate limit), 500 (unhandled).
+
+## Validation
+
+- Register with `validate("json"|"query"|"param"|"header", schema)` at `packages/core/src/http/utils/validate.ts`. It wraps `@hono/zod-validator` and tags the middleware with `__shipApiSchemaMeta` so the route registry captures it.
+- **Read parsed input via `c.req.valid(...)`. Never `c.req.json()` / `c.req.query()` / `c.req.param()` directly.** ESLint's `no-restricted-syntax` rule fires on raw use. The route registry, typed client, and (eventual) OpenAPI all read the registered schema.
+- Use `.strict()` on object schemas to reject unknown fields.
+- Co-locate request + response Zod schemas in `validation/schemas.ts`. Export inferred types via `z.infer`.
+- Derive create / update schemas from Drizzle tables using `drizzle-zod` where possible.
+
+## Services
+
+- Extend `DrizzleEntityService<typeof table>` (`packages/core/src/app/services/DrizzleEntityService.ts`) for inherited CRUD: `get`, `getAll`, `list`, `count`, `create`, `update`, `delete` + `*WithContext` variants.
+- Override `getDefaultSearchFields()` / `getDefaultRelations()` per module.
+- Add domain methods on the service; keep route handlers thin.
+- Lifecycle hooks: `beforeCreate` / `afterCreate` / `beforeUpdate` / `afterUpdate` / `beforeDelete` / `afterDelete` / `beforeQuery`. Override per-service or compose globally with `composeHooks(...)` for cross-cutting modules (audit trail, CDC).
+- Use `withTransaction(db, async tx => ...)` (`packages/core/src/app/db/transaction.ts`) for multi-step operations. Adds an OTel span, translates Drizzle's `TransactionRollbackError` to ShipAPI's `RollbackError`, optional `retryOnDeadlock`.
+- **Never enqueue BullMQ jobs inside a transaction** — risks queue-before-commit (worker reads the row before it's visible). Use the outbox via `OutboxEventEmitter.emit({...}, { tx })`; the drainer enqueues post-commit.
+
+## Errors
+
+- Throw from the AppError taxonomy: `NotFoundError`, `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `RateLimitError`, etc. (defined in `packages/core/src/http/app/errors.ts`).
+- Never shape error responses inside handlers. `registerErrorHandlers(app)` (called once at boot) handles the JSON shape uniformly: `{ success: false, error: { code, message, details? } }`.
+- Don't expose internal stack traces or DB error details. The error handler strips them in production.
+
+## Migrations
+
+- **Never hand-write SQL migrations.** Generate with `drizzle-kit generate` from schema source.
+- Schema lives in `modules/<name>/schema.ts` (per module) and is composed in the consumer's `src/db/schema.ts`. Use `...baseFields` for audit columns (`createdAt`, `updatedAt`, `deletedAt`, `createdBy`, `updatedBy`).
+- The plugin's `PreToolUse` hook (`block-migration-edit.sh`) blocks edits to `src/db/migrations/*.sql` to enforce this.
+- Run `npm run db:generate -- --name <description>` then `npm run db:migrate`. Inspect with `npm run db:studio`.
+- For v3 holdouts, `db:baseline` (one-shot introspect + record without re-running) and `db:reconcile` (diff introspected vs codemod-emitted) bridge the gap.
+
+## Logging
+
+- Import: `import { logger } from "@sixthsummit/ship-api/observability/logger"`.
+- **Never `console.log` / `console.error` / `console.warn`.** Loses request-id and trace context that pino + OpenTelemetry inject automatically.
+- Log structured: `logger.info({ accountId, action }, "user did thing")`, not `logger.info("user " + accountId)`.
+- Sensitive fields (`authorization`, `cookie`, `*.password`, `*.token`, `firebaseCredentials`) are redacted automatically.
+
+## Environment
+
+- All `process.env` access goes through `defineEnv(zodSchema)` in `src/environment.ts`. The function fail-fasts at boot with structured errors.
+- **Don't `process.env.X` outside `src/environment.ts` / `defineEnv()`.** Framework code reads env at boundaries (`otel.ts`, `metrics.ts`, `defineEnv.ts` itself) only; module + handler code routes through the validated `env` object. ESLint's `no-restricted-globals` rule catches violations.
+
+## Idempotency, rate limit, CSRF
+
+- Mutating routes that may be retried (payment, email send, account creation): apply `idempotency({ ttlSec, scope })` middleware. Clients send `Idempotency-Key` header; concurrent same-key requests block on the first via Redis SETNX.
+- Rate-limit sensitive routes: `rateLimit({ windowMs, max, keyGenerator, scope })`. Default fail-mode on Redis unavailable is fail-closed (`onRedisUnavailable: 'deny'`).
+- CSRF default is Origin / Sec-Fetch-Site checking on mutating requests. Opt in to `csrf({ doubleSubmit: true })` for third-party-iframed apps or multi-subdomain consumers.
+
+## SSE + WebSocket
+
+- Operation kernel streams: declare `transport: http.post(path, { response: { mode: "stream", framing: "sse", frame, heartbeatMs, maxDurationMs, maxFrames } })` with `transaction: "none"` and `output: { 200: terminalSchema }`. The handler emits through `stream.emit(frame)` (validated against `frame`), honours `stream.signal`, and returns the terminal value; it never touches the response. Errors before the first frame use the JSON envelope, later ones become one final `error` event. Wire and manifest contract: `docs/v4/streaming.md`.
+- Compatibility SSE: `streamSSE(c, async stream => stream.writeSSE(...))` from `packages/core/src/http/streaming/`.
+- Compatibility LLM streaming: `streamLLM(c, providerStream)` pipes Anthropic / OpenAI provider streams through SSE with abort handling and OTel spans. Kernel handlers use `streamLLM(stream, providerStream)` from `libraries/ai` instead.
+- WebSocket: subprotocol-header authentication is the locked default. Server reads `Sec-WebSocket-Protocol`, parses `bearer.<token>`, runs the `AuthProvider` chain pre-upgrade, rejects with 401 if invalid. See `packages/core/src/http/ws/`.
+- Kernel line realtime (ADR-0017): declare `defineChannel` in a module, publish only from `transaction: "none"` operations through `channel.publication`, keep rooms/namespaces/acks out of `packages/kernel` and `packages/contract`, and serve subscribers with `@sixthsummit/ship-realtime-socketio`. Wire protocol: `docs/v4/realtime.md`.
+
+## Performance
+
+- Pagination via `QueryOptions` (`limit`, `offset`, `orderBy`). The neutral operator DSL (`eq, ne, gt, gte, lt, lte, in, like, ilike, isNull`) lives in `packages/core/src/app/services/interfaces/QueryOptions.ts`.
+- Cache hot reads: `cached(key, ttlSec, fn, { tags? })` from `packages/core/src/app/services/cache/`. Tag-based invalidation via Redis sets.
+- For N+1 prevention, use Drizzle's `relations` API and Drizzle's `with` clause; never run a query in a loop.
+
+## Don'ts
+
+- **Don't read `process.env` directly** outside `src/environment.ts` / `defineEnv()`.
+- **Don't hand-write SQL migrations.** Use `drizzle-kit generate`.
+- **Don't `console.log`.** Use `logger`.
+- **Don't import from `lib/`** (build artifacts) — import from source paths within the framework, package-export paths from consumers.
+- **Don't use `c.req.json()` / `c.req.query()` / `c.req.param()`** directly. Use `validate(...)` + `c.req.valid(...)`.
+- **Don't skip `requireAuth` + `requirePermission`** on protected routes.
+- **Don't shape error responses inside handlers** — throw from the AppError taxonomy.
+- **Don't enqueue jobs inside a transaction** — use the outbox.
+- **Don't import test fixtures via source paths (`../../app/...`) when modules import via `@sixthsummit/ship-api/...`** — class identities differ between source and built lib, breaking `instanceof AppError` checks. Stick to package-export paths everywhere.

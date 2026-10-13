@@ -1,0 +1,100 @@
+@use 'tailwindcss';
+
+@theme {
+  --color-primary-50: #eef6ff;
+  --color-primary-100: #d9eaff;
+  --color-primary-200: #b6d3ff;
+  --color-primary-300: #8bb6ff;
+  --color-primary-400: #5a90ff;
+  --color-primary-500: #3a6bff;
+  --color-primary-600: #2a52e6;
+  --color-primary-700: #243ec0;
+  --color-primary-800: #1f3398;
+  --color-primary-900: #1c2c7b;
+
+  --color-line-light: rgba(255, 255, 255, 0.35);
+  --color-line-dark: rgba(255, 255, 255, 0.12);
+
+  --radius-glass: 1rem;
+  --radius-2xl: 1.25rem;
+
+  --shadow-glass: 0 8px 30px rgba(0, 0, 0, 0.25);
+  --shadow-glass-sm: 0 6px 18px rgba(0, 0, 0, 0.18);
+  --shadow-neon-blue: 0 0 24px rgba(59, 130, 246, 0.45);
+
+  --background-image-glass-sheen: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+}
+
+/* Glass utilities */
+@utility glass {
+  background-color: rgba(255, 255, 255, 0.12);
+  background-image: var(--background-image-glass-sheen);
+  border: 1px solid var(--color-line-light);
+  box-shadow: var(--shadow-glass-sm);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: var(--radius-glass);
+}
+
+@utility glass-strong {
+  background-color: rgba(255, 255, 255, 0.18);
+  background-image: var(--background-image-glass-sheen);
+  border: 1px solid var(--color-line-light);
+  box-shadow: var(--shadow-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: var(--radius-2xl);
+}
+
+@utility glass-neon {
+  box-shadow: var(--shadow-neon-blue);
+}
+
+@utility panel-glass {
+  background-color: rgba(255, 255, 255, 0.7);
+  background-image: var(--background-image-glass-sheen);
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 24px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+@utility chip-primary {
+  background: linear-gradient(180deg, #3b82f6 0%, #2a52e6 100%);
+  color: #fff;
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.35);
+}
+
+/* Global styles */
+html,
+body {
+  min-height: 100%;
+}
+
+/* Light, airy canvas with subtle blue tints */
+body {
+  background:
+    radial-gradient(900px 600px at 20% 10%, rgba(59, 130, 246, 0.1), transparent 60%),
+    radial-gradient(900px 600px at 80% 15%, rgba(99, 102, 241, 0.1), transparent 60%),
+    linear-gradient(180deg, #f3f6fb 0%, #e9f0fb 100%);
+  color: #0b1220;
+}
+
+/* Soft grid overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(15, 23, 42, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.35;
+}

@@ -1,0 +1,23 @@
+{
+  "name": "oauth",
+  "description": "OAuth 2.0 authentication on the v4 substrate — pluggable provider adapters, Drizzle-backed token storage, Hono routes. State lives in the URL `state` param; tokens persist in DB; no express-session.",
+  "version": "2.0.0-alpha.1",
+  "dependencies": ["accounts"],
+  "npmDependencies": {},
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "OAUTH_GOOGLE_CLIENT_ID",
+    "OAUTH_GOOGLE_CLIENT_SECRET",
+    "OAUTH_GMAIL_REDIRECT_URI",
+    "OAUTH_GOOGLE_CONTACTS_REDIRECT_URI",
+    "OAUTH_MICROSOFT_CLIENT_ID",
+    "OAUTH_MICROSOFT_CLIENT_SECRET",
+    "OAUTH_OUTLOOK_REDIRECT_URI"
+  ],
+  "postInstall": [
+    "Add the schema to your composed schema: `createApp({ schema: { ...accountsSchema, oauthConnections, oauthConnectionsRelations } })`",
+    "Wire the routes: `defineOAuthRoutes(app, { service, provider, adapters })`",
+    "Configure OAuth credentials in .env for the providers you support",
+    "Generate the migration: `npm run db:generate`"
+  ]
+}

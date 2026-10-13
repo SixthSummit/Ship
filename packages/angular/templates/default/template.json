@@ -1,0 +1,58 @@
+{
+  "name": "default",
+  "description": "Default ShipAngular project template with Firebase authentication",
+  "version": "1.0.0",
+  "placeholders": {
+    "PROJECT_NAME": {
+      "description": "The project name (kebab-case)",
+      "default": "my-app",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "PROJECT_DESCRIPTION": {
+      "description": "A short description of the project",
+      "default": "A ShipAngular application"
+    },
+    "APP_NAME": {
+      "description": "The display name of the application",
+      "default": "My App"
+    },
+    "APP_DESCRIPTION": {
+      "description": "A short description for SEO and social sharing",
+      "default": "Built with ShipAngular"
+    },
+    "API_BASE_URL": {
+      "description": "The base URL for your API",
+      "default": "http://localhost:3000/v1"
+    },
+    "FIREBASE_API_KEY": {
+      "description": "Firebase API Key",
+      "default": "",
+      "sensitive": true
+    },
+    "FIREBASE_AUTH_DOMAIN": {
+      "description": "Firebase Auth Domain",
+      "default": ""
+    },
+    "FIREBASE_PROJECT_ID": {
+      "description": "Firebase Project ID",
+      "default": ""
+    },
+    "FIREBASE_STORAGE_BUCKET": {
+      "description": "Firebase Storage Bucket",
+      "default": ""
+    },
+    "FIREBASE_MESSAGING_SENDER_ID": {
+      "description": "Firebase Messaging Sender ID",
+      "default": ""
+    },
+    "FIREBASE_APP_ID": {
+      "description": "Firebase App ID",
+      "default": ""
+    },
+    "FIREBASE_MEASUREMENT_ID": {
+      "description": "Firebase Measurement ID (optional)",
+      "default": ""
+    }
+  },
+  "postCreate": ["pnpm install", "git init"]
+}

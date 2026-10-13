@@ -1,0 +1,37 @@
+# <type>[optional scope]: <description>
+# Imperative mood, no period, keep subject under 50 characters
+#
+# [optional body]
+#
+# [optional footer(s)]
+#
+# Types:
+#   feat:     A new feature (triggers minor version bump)
+#   fix:      A bug fix (triggers patch version bump)
+#   perf:     A performance improvement (triggers patch version bump)
+#   refactor: Code refactoring (triggers patch version bump)
+#   docs:     Documentation changes (no version bump)
+#   style:    Code style changes (no version bump)
+#   test:     Test changes (no version bump)
+#   build:    Build system changes (no version bump)
+#   ci:       CI/CD changes (no version bump)
+#   chore:    Maintenance tasks (no version bump)
+#
+# Common scopes:
+#   core, api, contract, operations, resource, transport, auth, ssr, forms
+#   modules, cli, testing, docs, config, build, ci, deps
+#
+# Use fix only for user-facing defects. Use ci/test/docs/chore otherwise.
+# Consumer-visible package changes also require a Changeset.
+#
+# Breaking changes:
+#   Add "BREAKING CHANGE:" in footer or use "!" after type
+#   Example: feat!: redesign API (triggers major version bump)
+#
+# Examples:
+#   feat(auth): add OAuth2 integration
+#   fix(api): resolve user validation error
+#   docs: update installation guide
+#   feat!: redesign user API
+#
+#   BREAKING CHANGE: User API endpoints have changed

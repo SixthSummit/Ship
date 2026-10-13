@@ -1,0 +1,14 @@
+name = "ship-api-edge-smoke"
+main = "worker.ts"
+compatibility_date = "2025-04-30"
+compatibility_flags = ["nodejs_compat"]
+
+# This is the edge-runtime smoke test fixture. The CI job runs
+# `wrangler deploy --dry-run --outdir tmp/wrangler-out` against this
+# config to prove the operation kernel and Hono adapter compile for Cloudflare
+# Workers, catching Node-only dependency leakage into the edge-safe surface.
+#
+# The Worker imports the framework's explicit kernel and hono subpaths.
+# Anything that pulls
+# pino / pg / BullMQ / OTel into the bundle fails the build, surfacing
+# the regression at PR-time instead of at edge-deployment time.

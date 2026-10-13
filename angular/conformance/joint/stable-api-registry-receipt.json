@@ -1,0 +1,116 @@
+{
+  "releaseCommit": "64ff1833e4fe58ce30b2865892bfe775d6658c1d",
+  "releaseWorkflow": "https://github.com/SixthSummit/ship-api/actions/runs/34711190523",
+  "packages": [
+    {
+      "name": "@sixthsummit/ship-core",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-Qt1dzIqCPLkc39ktXjkP1XL3KtPzCRT7PLT0QsZW3rHzMCuKLiFj6DDhXLNYr3nmLLvPYjGJ+FP5FbYPc24FBQ==",
+        "shasum": "8b1cefa5ab781bed33c8449a2c7067c3c2f576f1",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-core/1.0.0/8b1cefa5ab781bed33c8449a2c7067c3c2f576f1"
+      },
+      "sha256": "4633e61cf35af6b3b8f97f1452014c1571b65f8b9c817ffdaa55c2d9a33c45bf"
+    },
+    {
+      "name": "@sixthsummit/ship-hono",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-JRTUJhxe7o/6Dytn9zHViWtZ6+D+EyZJiZEQ2Ng2zu6TQQHfKenVTp2eOwF8M7xYoQW9PTdEX0cBsktndLR1EA==",
+        "shasum": "3c932134a335df62c2309b0577ffa631d23fcd30",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-hono/1.0.0/3c932134a335df62c2309b0577ffa631d23fcd30"
+      },
+      "sha256": "2e2bef9b42747d659cb06c444aa0b97dd36a77dbd691549ebaceca4c395b54ad"
+    },
+    {
+      "name": "@sixthsummit/ship-drizzle",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-Z09taYPOAUYEKngWlDf9HNJDzKg+paKoaa7o+sSp4UTVdmtyvBjaqX1TBfZ15N61pDsoL9DvcbYK7a4Tt/rx2Q==",
+        "shasum": "178e47a0d67d3e64bcf3a6feef357cc05fbd38fd",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-drizzle/1.0.0/178e47a0d67d3e64bcf3a6feef357cc05fbd38fd"
+      },
+      "sha256": "479f4e3c110eb8b960110de2efa31721dc6264052d28fc8112ea24e8dd64512f"
+    },
+    {
+      "name": "@sixthsummit/ship-contract",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-H49sw1a2yFO61gafVejoI1LoAwulTbeLHp40hC+SAtqTYalkpBSSySbam756MZoLfwbbkMldteq5CkkIdimp/A==",
+        "shasum": "4dd8890bef5d3631456820f826f44e519e376baa",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-contract/1.0.0/4dd8890bef5d3631456820f826f44e519e376baa"
+      },
+      "sha256": "87c0d07a8d6643d4b6c9f29c7fc7c701833d2153c383244b8d370460fe679159"
+    },
+    {
+      "name": "@sixthsummit/ship-auth-firebase",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-JucpyYEfkpjcN+j0f1jJIgiB4/pnDpDBAWvxO4KV4MXeeTnW6Hg7JG+uaGQofKLmDV5VCGdgi5a+oGDFMYkD4w==",
+        "shasum": "72a11b915dc34a9028aa37cd25a5ad2677fe20d0",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-auth-firebase/1.0.0/72a11b915dc34a9028aa37cd25a5ad2677fe20d0"
+      },
+      "sha256": "12ef9ee33e9c46198978ec0c47c51ccda43ae2534b5ce5f5b34455bf2798d52e"
+    },
+    {
+      "name": "@sixthsummit/ship-observability-otel",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-E1Ljq5FT/rSRYfohsdph06lm2CAW4rzSJnOyuJIc49Xe+PgNydxfjdd30QCl2S99Ex+yAkW0Nq/ibtu4+Tbbxw==",
+        "shasum": "1a3130a8c67c31b94755c454d4744add8542de0e",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-observability-otel/1.0.0/1a3130a8c67c31b94755c454d4744add8542de0e"
+      },
+      "sha256": "b70e786550f11f0dcf87a7fa93684d02168b4a40049cd267cdfd2419648074e3"
+    },
+    {
+      "name": "@sixthsummit/ship-testing",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-lisqrvBTLGQPtISx6K5qORQOwgaO9lXLTUuaMoVuNi5fx4+zPLPYX+FlBeeJYK7DrzLR7hkMlUqA07eO6LzxiQ==",
+        "shasum": "ca5b0147a2712e9cc62a92be7d91c1e9c27ba906",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-testing/1.0.0/ca5b0147a2712e9cc62a92be7d91c1e9c27ba906"
+      },
+      "sha256": "efe75456e1e92c1a847844945286bc1e22ce0014dd9d324e6186c84bc0db18d0"
+    },
+    {
+      "name": "@sixthsummit/ship-cli",
+      "version": "1.0.0",
+      "dist": {
+        "integrity": "sha512-vxrxkVT2ueoX3aqywgeSr2mjWynwvK9bh1zzGJF9zOIgFTdjH6umGDKRIrW5LdgeQ8JGhfMotGMrExU+Gzbj9g==",
+        "shasum": "b3ae7001cfa3b8fb227309f0851917c31963b89f",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-cli/1.0.0/b3ae7001cfa3b8fb227309f0851917c31963b89f"
+      },
+      "sha256": "73854f1e63ffc65f43ec8fd6f68be02dd207cd4f97b2f84a0cb9a9fe895baea2"
+    },
+    {
+      "name": "@sixthsummit/ship-api",
+      "version": "4.0.0",
+      "dist": {
+        "integrity": "sha512-5rplKMHSLcfFmPNjHzhDUR78RodJTp1aWy/waIlZHjxVMz9JettYYT/B4fYuXll7sCgom7lKkF4/nHCWfTwAzg==",
+        "shasum": "6f14d027f6f8b544717b7629dad4ead0c5df2f4e",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-api/4.0.0/6f14d027f6f8b544717b7629dad4ead0c5df2f4e"
+      },
+      "sha256": "b623fc78262f81ce4ab481be59ed804c95721d4ba0fd960940af8205a09cf5f3"
+    },
+    {
+      "name": "@sixthsummit/ship-api-claude-plugin",
+      "version": "0.1.0",
+      "dist": {
+        "integrity": "sha512-FKlCgBRoivKRVEqEfSIb9Xjgb9uf6gbhsM9/jUUfRX+CPi/sQzmPz865fYWmqe1zMCaV/vwrELtYqCmECI2/kQ==",
+        "shasum": "2bbbb87a39e9552e07e33acddc84893328e3991d",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-api-claude-plugin/0.1.0/2bbbb87a39e9552e07e33acddc84893328e3991d"
+      },
+      "sha256": "f6731616ea72ba5c67d0d71d9f8d44e65543784d894943ef03adefe4abade0e2"
+    },
+    {
+      "name": "@sixthsummit/ship-api-mcp-server",
+      "version": "0.1.0",
+      "dist": {
+        "integrity": "sha512-1cHTNQ/cGDt284UejoeP4tz7gAEa605chWUT0SY5o/gZNfj3bfWFw73zS4IKPwju19q5izsRANUbfw5PSxMGXA==",
+        "shasum": "6fc55370168f4cc6de9474e4a9ec3543433b39f8",
+        "tarball": "https://npm.pkg.github.com/download/@sixthsummit/ship-api-mcp-server/0.1.0/6fc55370168f4cc6de9474e4a9ec3543433b39f8"
+      },
+      "sha256": "36e385e2b24bf69406b2e5ea10765f6b0f7b29f3eb198d50875feff28e3934aa"
+    }
+  ]
+}

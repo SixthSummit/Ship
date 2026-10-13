@@ -1,0 +1,133 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    # Check for updates weekly on Monday at 9 AM UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # Check for outdated dependencies
+  check-outdated:
+    name: Check Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check for outdated packages
+        run: |
+          echo "## Outdated Dependencies Report" > outdated-report.md
+          echo "Generated on: $(date)" >> outdated-report.md
+          echo "" >> outdated-report.md
+
+          pnpm outdated --recursive >> outdated-report.md || true
+
+      - name: Upload outdated report
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-dependencies-report
+          path: outdated-report.md
+          retention-days: 7
+
+  # Weekly `pnpm audit --fix` — applies security overrides for known vulns
+  # and opens a PR. Pairs with the high/critical hard-fail gate in
+  # `.audit-ci.json` (security.yml) — the gate keeps merges clean; this
+  # job keeps the lockfile current.
+  audit-fix-pr:
+    name: Weekly pnpm audit fix
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply pnpm audit overrides
+        continue-on-error: true
+        run: pnpm audit --fix
+
+      - name: Report remaining runtime findings
+        continue-on-error: true
+        run: pnpm run audit:runtime
+
+      - name: Create PR if lockfile changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/weekly-audit-fix
+          delete-branch: true
+          commit-message: "chore(deps): apply weekly audit fixes"
+          title: "chore(deps): apply weekly audit fixes"
+          body: |
+            Automated PR from the weekly `pnpm audit --fix` job.
+
+            Applies non-breaking dependency patches for known
+            vulnerabilities. Residual findings may remain; the PR's
+            published-runtime dependency gate is authoritative and reports
+            them without preventing this remediation PR from being created.
+
+            Review the lockfile diff before merging.
+
+  # Auto-update patch versions (optional)
+  auto-update-patches:
+    name: Auto-update Patch Versions
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Update patch versions
+        run: |
+          echo "Updating patch versions..."
+          pnpm update --recursive
+
+          # Check if the authoritative lockfile changed
+          if git diff --quiet pnpm-lock.yaml; then
+            echo "No patch updates available"
+          else
+            echo "Patch updates applied"
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add pnpm-lock.yaml
+            git commit -m "chore: update patch versions [skip ci]"
+            git push
+          fi

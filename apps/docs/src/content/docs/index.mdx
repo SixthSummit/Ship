@@ -1,0 +1,146 @@
+---
+title: ShipAPI
+description: A TypeScript operation kernel with compiled contracts, explicit capabilities, and independently selectable adapters.
+template: splash
+hero:
+  tagline: Define an operation once. Compile its runtime, HTTP, client, OpenAPI, diagnostics, and migration evidence from the same graph.
+  actions:
+    - text: Quick Start
+      link: /getting-started/quick-start/
+      icon: rocket
+      variant: primary
+    - text: Architecture status
+      link: /v4-status/
+      icon: right-arrow
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/sixthsummit/ship-api
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+ShipAPI is a transport-independent TypeScript application kernel. Operations
+declare stable identity, schemas, statuses, errors, access, transactions,
+dependencies, effects, and transport together. The compiler turns that code into
+one immutable graph.
+
+```ts
+const health = defineOperation({
+  id: "system.health",
+  transport: http.get("/health"),
+  input: {},
+  output: { 200: z.object({ ok: z.literal(true) }) },
+  successStatus: 200,
+  errors: [],
+  access: publicAccess(),
+  transaction: "none",
+  dependencies: {},
+  handler: async () => ({ ok: true as const }),
+});
+```
+
+<CardGrid stagger>
+  <Card title="One executable source" icon="puzzle">
+    Direct execution, Hono routes, the browser-safe client manifest, OpenAPI,
+    inspection, impact analysis, and route migration accounting project from the
+    same compiled declarations.
+  </Card>
+  <Card title="Explicit correctness" icon="seti:typescript">
+    The compiler rejects missing providers, invalid module boundaries, route
+    collisions, unsafe transaction/effect combinations, and malformed public
+    contracts before startup.
+  </Card>
+  <Card title="Evidence over prompts" icon="rocket">
+    Biome, strict TypeScript, Vitest, coverage, live PostgreSQL, edge, physical
+    package, golden-consumer, docs, and runtime-audit gates enforce the shape.
+    Agent plugins are optional ergonomics.
+  </Card>
+</CardGrid>
+
+## Start here
+
+<CardGrid>
+  <LinkCard
+    title="Quick Start"
+    href="/getting-started/quick-start/"
+    description="Create and verify the smallest operation-native application."
+  />
+  <LinkCard
+    title="Operation template"
+    href="/getting-started/operation-template/"
+    description="The exact generated repository and its local verification contract."
+  />
+  <LinkCard
+    title="Project structure"
+    href="/getting-started/project-structure/"
+    description="A small module/operation layout with explicit ownership."
+  />
+  <LinkCard
+    title="Agent onboarding"
+    href="/getting-started/agents/"
+    description="Repository commands, package boundaries, and evidence rules."
+  />
+</CardGrid>
+
+## Core contract
+
+<CardGrid>
+  <LinkCard
+    title="Operations, HTTP & validation"
+    href="/concepts/routes-and-validation/"
+    description="Schemas, access, transactions, effects, bounded bodies, and Hono projection."
+  />
+  <LinkCard
+    title="Typed operation client"
+    href="/cross-framework/typed-client/"
+    description="Stable operation IDs, discriminated results, codecs, and response metadata."
+  />
+  <LinkCard
+    title="Public API surface"
+    href="/public-api-surface/"
+    description="Focused package ownership and the supported compatibility tier."
+  />
+  <LinkCard
+    title="Versioning"
+    href="/versioning/"
+    description="Independent package SemVer, exact release manifests, and deprecation rules."
+  />
+</CardGrid>
+
+## Migration and clients
+
+<CardGrid>
+  <LinkCard
+    title="v2/v3 migration"
+    href="/migration-v3-to-v4/"
+    description="Exact route accounting, physical-schema safety, operation slices, and no-traffic rollout."
+  />
+  <LinkCard
+    title="ShipAngular"
+    href="/cross-framework/shipangular/"
+    description="The structural client seam, expected failures, SSR isolation, and compatibility adapter."
+  />
+  <LinkCard
+    title="React Native + Expo"
+    href="/cross-framework/react-native-expo/"
+    description="Operation calls with Query, auth refresh, uploads, downloads, and cancellation."
+  />
+  <LinkCard
+    title="CLI reference"
+    href="/tooling/cli/"
+    description="Create, check, inspect, affected, contract, and exact route migration commands."
+  />
+</CardGrid>
+
+## Release status
+
+Stable kernel and compatibility packages are released from `main`; `dev`
+publishes alpha snapshots. See the versioned package changelogs and release
+instructions. Synthetic packed consumers and joint conformance fixtures verify
+framework boundaries; application deployment is a separate decision.
+
+The monolithic `@sixthsummit/ship-api` package, route-first Hono APIs,
+`hc<typeof app>()`, base services, generators, and existing production features
+remain documented as compatibility surfaces during the v4 migration window.

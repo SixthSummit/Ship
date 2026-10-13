@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateAuthAdapter",
+  "title": "ShipAngular: generate auth-adapter",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Adapter name in PascalCase (e.g. 'Auth0AuthAdapter'). Becomes the file name (kebab) and class name.",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Adapter name (PascalCase, e.g. 'Auth0AuthAdapter'):"
+    },
+    "path": {
+      "type": "string",
+      "description": "Where to scaffold the adapter. Default: src/auth/.",
+      "default": "src/auth"
+    }
+  },
+  "required": ["name"]
+}

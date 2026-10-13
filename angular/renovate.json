@@ -1,0 +1,77 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":separateMajorReleases",
+    ":automergeMinor",
+    ":automergePatch",
+    ":automergeBranch"
+  ],
+  "schedule": ["before 4am on Monday"],
+  "timezone": "America/New_York",
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 8,
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on Monday"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "automerge": true
+  },
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Group all Angular packages — major upgrades are coordinated",
+      "matchPackagePatterns": ["^@angular/", "^@angular-eslint/", "^@angular-devkit/"],
+      "groupName": "angular monorepo",
+      "schedule": ["before 4am on Monday"]
+    },
+    {
+      "description": "Group Firebase packages",
+      "matchPackagePatterns": ["^firebase", "^@firebase/", "^@angular/fire"],
+      "groupName": "firebase monorepo"
+    },
+    {
+      "description": "Group ESLint + plugins",
+      "matchPackagePatterns": [
+        "^eslint",
+        "^@eslint/",
+        "^@typescript-eslint/",
+        "^typescript-eslint",
+        "^eslint-config-",
+        "^eslint-plugin-"
+      ],
+      "groupName": "eslint stack"
+    },
+    {
+      "description": "Group Vitest + adjacent",
+      "matchPackagePatterns": ["^vitest", "^@vitest/", "^@analogjs/"],
+      "groupName": "vitest stack"
+    },
+    {
+      "description": "Group Tailwind + PostCSS",
+      "matchPackagePatterns": ["^tailwindcss", "^@tailwindcss/", "^postcss", "^autoprefixer"],
+      "groupName": "tailwind stack"
+    },
+    {
+      "description": "Group TypeScript with its tooling",
+      "matchPackageNames": ["typescript"],
+      "groupName": "typescript"
+    },
+    {
+      "description": "Pin GitHub Actions by SHA — supply-chain hygiene",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    },
+    {
+      "description": "Hold off on major Node bumps; coordinate manually",
+      "matchPackageNames": ["node"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ],
+  "ignorePaths": ["**/node_modules/**", "**/lib/**", "**/dist/**", "**/templates/default/**"]
+}

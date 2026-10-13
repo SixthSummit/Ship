@@ -1,0 +1,15 @@
+{
+  "fixtureProtocolVersion": 1,
+  "graphHash": "sha256:c858de1510d38cbbead7923f59ae053bd31ec5bbb90fd8ee16da5d95de541389",
+  "wireFixtureVersion": 1,
+  "contractPackage": {
+    "name": "@sixthsummit/ship-api-conformance-contract",
+    "version": "0.0.0-fixture.1",
+    "source": "contract"
+  },
+  "clientPackage": {
+    "name": "@sixthsummit/ship-api-conformance-client",
+    "version": "0.0.0-fixture.1",
+    "source": "client"
+  }
+}

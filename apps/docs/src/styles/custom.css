@@ -1,0 +1,14 @@
+/* ShipAPI accent palette — sky/cyan family, mirrors ShipAngular for
+ * cross-product visual consistency. Override here when ShipAPI gains a
+ * distinct visual identity. */
+:root {
+  --sl-color-accent-low: #082f49;
+  --sl-color-accent: #0ea5e9;
+  --sl-color-accent-high: #bae6fd;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #e0f2fe;
+  --sl-color-accent: #0284c7;
+  --sl-color-accent-high: #075985;
+}

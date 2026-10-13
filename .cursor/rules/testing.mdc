@@ -1,0 +1,198 @@
+---
+alwaysApply: true
+description: "Vitest testing patterns for ShipAPI v4"
+tags: ["testing", "vitest", "integration-tests"]
+globs: ["packages/core/src/**/*.test.ts", "modules/**/*.test.ts", "libraries/**/*.test.ts", "tests/**/*.ts"]
+---
+
+# Testing Guidelines
+
+## Framework
+
+[Vitest](https://vitest.dev). Both the framework and built-in modules run vitest; the consumer template ships vitest configured.
+
+- `npm test` — full run.
+- `npm test -w @sixthsummit/ship-api` — framework-scoped.
+- `npm test -- --watch` — watch mode for active development.
+- `npm test -- --changed` — only re-run tests whose source-of-truth changed since `main`.
+- `npm test -- packages/core/src/http/` — path-scoped run.
+- Coverage gate (`packages/core/vitest.config.ts`): 80% line / 70% branch / 80% function / 80% statement on `packages/core/src/**`. Excludes barrel files, type-only modules, integration glue covered by the testcontainers suite.
+
+## Test file co-location
+
+Co-locate unit tests with the code under test:
+
+```
+packages/core/src/app/services/
+├── DrizzleEntityService.ts
+├── DrizzleEntityService.test.ts        # service-level unit tests
+modules/accounts/
+├── services/AccountService.ts
+├── services/AccountService.test.ts     # module service tests
+├── routes.ts
+└── routes.test.ts                      # full-chain integration tests
+```
+
+End-to-end tests that span modules / boot / shutdown live under `packages/core/src/test/integration/`.
+
+## Service unit tests (fake DB)
+
+For service-level tests, mock the DB at the lowest level — you're testing service logic, not Drizzle:
+
+```ts
+import { describe, it, expect, vi } from "vitest";
+import { PostService } from "./PostService";
+
+describe("PostService", () => {
+  it("filters out soft-deleted rows by default", async () => {
+    const fakeDb = { query: { posts: { findMany: vi.fn().mockResolvedValue([]) } } };
+    const service = new PostService(fakeDb as any);
+    await service.list({});
+    expect(fakeDb.query.posts.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.anything() }),
+    );
+  });
+});
+```
+
+For multi-method flows that exercise actual SQL, use `testcontainers` against real Postgres (see "Real-DB integration" below).
+
+## Route integration tests (full chain)
+
+Test the full middleware chain (httpLogger → requireAuth → requirePermission → validate → handler → service) via `app.request(...)`. Mount the module's sub-app on a root that owns the cross-cutting concerns — `root.route("/", buildXxxApp(deps))` after `registerErrorHandlers(root)` + `root.use("*", httpLogger())` — so the test exercises the same composition consumers use. The framework's reference modules ship a harness — mirror that shape from `modules/accounts/routes.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { app } from "../../testHarness";  // composes a test app
+
+describe("POST /posts", () => {
+  it("rejects unauthenticated requests", async () => {
+    const res = await app.request("/posts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "x", body: "y" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("creates a post for an authenticated user with permission", async () => {
+    const res = await app.request("/posts", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: signedAuthCookie() },
+      body: JSON.stringify({ title: "x", body: "y" }),
+    });
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json).toMatchObject({ id: expect.any(String), title: "x" });
+  });
+});
+```
+
+`signedAuthCookie()` is a test helper that mints a valid session via the framework's `JwtSigner`. Helpers live in `tests/helpers/` (consumer) or `packages/core/src/test/helpers/` (framework).
+
+## Real-DB integration tests
+
+For tests that exercise queries / migrations / transactions against real Postgres, use `@testcontainers/postgresql`:
+
+```ts
+import { PostgreSqlContainer } from "@testcontainers/postgresql";
+
+let container: StartedPostgreSqlContainer;
+beforeAll(async () => { container = await new PostgreSqlContainer().start(); });
+afterAll(async () => { await container.stop(); });
+```
+
+Integration tests use a separate config (`packages/core/vitest.integration.config.ts`) so they don't slow the regular suite. File pattern: `*.integration.test.ts`. Excluded from the default `vitest.config.ts` include glob.
+
+## Mocking
+
+- **Mock at boundaries, not internals.** Mock the framework's `AuthProvider`, `Cache`, `JobQueue`, `RedisProvider` — not your own service methods. If you find yourself mocking your own service heavily, the test is at the wrong level.
+- Use `vi.fn()` (vitest exposes `vi`).
+- Use `vi.spyOn(obj, "method").mockReturnValue(...)` for method spies — don't reassign methods directly.
+
+### `MockAuthProvider`
+
+For tests that touch `requireAuth`-protected routes, swap the provider:
+
+```ts
+import type { AuthProvider, Account } from "@sixthsummit/ship-api";
+
+class MockAuthProvider implements AuthProvider {
+  name = "mock";
+  constructor(private readonly account: Account | null) {}
+  async verifyToken() { return { ok: true as const, claims: { sub: "test" } }; }
+  async resolveAccount() { return this.account; }
+}
+
+const app = createApp({ schema, auth: new MockAuthProvider(testAccount) });
+```
+
+Don't bypass auth via `requireAuth({ optional: true })` in tests — that masks bugs in the auth chain.
+
+## What to assert
+
+- **Status codes + response shape**, not exact response bodies. Use `toMatchObject` over `toEqual` so non-deterministic fields (timestamps, IDs) don't make tests brittle.
+- **Side effects**: did the service call the cache? Did it emit an outbox event? Did it write a log? Spy on those.
+- **Error paths**: assert the exact AppError subclass thrown (`ConflictError`, `NotFoundError`, `RateLimitError`), not just "an error was thrown". The framework's error taxonomy is part of the public contract.
+- **Lifecycle hooks**: register a hook spy, do the operation, assert the hook was called inside the same transaction (the `tx` argument distinguishes hooks running pre-commit from hooks running post-commit).
+
+## What NOT to do
+
+- **Don't mock pg/Drizzle directly** in unit tests. Either go fake-DB (a hand-rolled stub object) or testcontainers. Mocking Drizzle leads to tests that pass but don't reflect SQL behavior.
+- **Don't share mutable state across tests.** Each test gets a fresh fixture. If setup is expensive, use `beforeAll` + a reset in `beforeEach`.
+- **Don't test framework internals from a module.** Those are tested in `@sixthsummit/ship-api`'s own test suite.
+- **Don't add tests just for coverage.** A test that asserts trivia (`expect(x).toBeDefined()`) is worse than no test — it lies about what's verified. The 80%/70% gate exists; meeting it via meaningful tests is the goal, not chasing the number.
+- **Don't import test fixtures via source paths (`../../app/...`) when modules import via `@sixthsummit/ship-api/...`.** Class identities differ between source and built lib, breaking `instanceof AppError` checks. Stick to package-export paths.
+
+## Smoke tests for load-bearing pieces
+
+The framework runs targeted smoke tests for each load-bearing seam (per `docs/V4_STATUS.md` §Verification):
+
+- **Edge runtime** — `wrangler deploy --dry-run` against `packages/core/src/http/**` excluding Node-only paths. CI step `scripts/edge-smoke/`.
+- **Cross-framework typed-client** — `hc<ShipApiClient>()` round-trip from a separate consumer workspace (lives in `ship-angular/packages/core/`, runs against the local `file:` link).
+- **GCS / S3 storage** — adapter tests against `fake-gcs-server` / LocalStack testcontainers.
+- **Route registry** — `validate(...)` + `requireAuth(...)` + `requirePermission(...)` populate the registry; `find_route_collisions` returns expected entries; `describe_route` produces valid JSON Schema.
+- **`execute_route`** (MCP tool) — invalid body returns a schema-validation error before executing the handler (not an opaque 500).
+
+When you add a load-bearing piece, add its smoke test alongside.
+
+## Vitest specifics
+
+```ts
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+beforeEach(() => { /* setup */ });
+afterEach(() => { vi.clearAllMocks(); });
+
+// Async assertions
+await expect(service.create(input)).resolves.toMatchObject({ id: expect.any(String) });
+await expect(service.create(invalid)).rejects.toThrow(ValidationError);
+```
+
+### Mocking external modules
+
+```ts
+vi.mock("firebase-admin", () => ({
+  auth: () => ({ verifyIdToken: vi.fn() }),
+}));
+```
+
+### Test isolation
+
+```ts
+let service: PostService;
+let mockDb: ReturnType<typeof createMockDb>;
+
+beforeEach(() => {
+  mockDb = createMockDb();
+  service = new PostService(mockDb);
+});
+
+afterEach(() => { vi.clearAllMocks(); });
+```
+
+## Coverage
+
+The framework's GA target (per `docs/V4_STATUS.md` G1) is 80% line / 70% branch on `packages/core/src/**`. The gate is enforced in `packages/core/vitest.config.ts` and runs in CI. Run `npm run test:coverage -w @sixthsummit/ship-api` for a per-file report.
+
+Built-in modules (`modules/accounts/`, `modules/oauth/`, `modules/outbox/`) inherit no separate gate today; raise as new tests land.

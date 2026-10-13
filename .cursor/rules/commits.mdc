@@ -1,0 +1,168 @@
+---
+alwaysApply: true
+description: "Conventional Commits + Changesets release flow for ShipAPI"
+tags: ["commits", "git", "release", "conventional-commits", "changesets"]
+globs: ["**/*"]
+---
+
+# Commit Message Standards
+
+ShipAPI follows [Conventional Commits](https://www.conventionalcommits.org/) for commit messages, and uses [Changesets](https://github.com/changesets/changesets) for versioning and CHANGELOG generation. Commit types describe the change shape; **changeset files** drive version bumps and CHANGELOG entries.
+
+## Format
+
+```
+<type>(<optional-scope>): <short imperative description>
+
+<optional body — explain WHY, not WHAT>
+
+<optional footer — BREAKING CHANGE: ..., refs: ...>
+```
+
+## Types
+
+| Type | Use for |
+|---|---|
+| `feat` | new feature visible to consumers |
+| `fix` | bug fix in user-facing code |
+| `feat!` / `BREAKING CHANGE:` footer | breaking public-API change |
+| `perf` | performance improvement |
+| `refactor` | code change without behavior change |
+| `docs` | documentation only |
+| `style` | whitespace, formatting |
+| `test` | test additions / changes |
+| `build` | build system, deps |
+| `ci` | CI / workflow / pipeline changes |
+| `chore` | tooling, internal cleanup |
+| `revert` | reverting a prior commit |
+
+Unlike a release-please-driven workflow, commit prefixes **do not** auto-trigger releases. Use them for clarity in review; use a **changeset file** to request a version bump.
+
+## Changesets — the version-bump trigger
+
+For any user-visible change, run `npx changeset` and commit the generated `.changeset/*.md` file alongside your code:
+
+```sh
+npx changeset
+# answer prompts:
+#   - which packages to bump? (space to select)
+#   - bump type? (patch / minor / major)
+#   - summary line (becomes the CHANGELOG entry)
+git add .changeset && git commit -m "feat(v4): add foo"
+```
+
+For internal-only changes (CI tweaks, refactors, framework-internal docs), skip the changeset. Reviewers know the change is non-shipping if no `.changeset/*.md` is present.
+
+Bump levels are stable-release levels. Merging to `dev` publishes the computed version as a snapshot prerelease (`4.0.1-alpha-<datetime>`) under the `alpha` dist-tag; the same changeset later produces `4.0.1` when `main` releases. See `docs/maintainers/RELEASE_GUIDE.md`.
+
+## Decision tree
+
+Ask yourself: "What is the primary purpose of this change?"
+
+1. **New consumer-visible feature?** → `feat:` + `npx changeset` (minor)
+2. **Bug in user-facing code?** → `fix:` + `npx changeset` (patch)
+3. **Performance fix?** → `perf:` + `npx changeset` (patch)
+4. **Code restructure with no behavior change?** → `refactor:` (usually no changeset)
+5. **CI / GitHub Actions / workflows / release pipeline?** → `ci:` (no changeset)
+6. **Tests-only?** → `test:` (no changeset)
+7. **Documentation-only?** → `docs:` (no changeset unless docs ship in the package README)
+8. **Formatting / linting / style?** → `style:` (no changeset)
+9. **Build system / bundling / `tsc` config?** → `build:` (changeset only if consumer-visible)
+10. **Deps / tooling / internal cleanup?** → `chore:` (changeset only if a security or behavior-relevant dep changed)
+
+## Scope
+
+Optional. Use the area of the change. Common ShipAPI scopes:
+
+- `(v4)` — anything specific to the v4 line during the alpha window
+- `(template)` — `packages/core/templates/default/` changes
+- `(plugin)` — `packages/claude-plugin/` changes
+- `(mcp)` — `packages/mcp-server/` changes
+- `(cli)` — `packages/core/cli/` changes
+- `(modules)` — `modules/<name>/` changes
+- `(libraries)` — `libraries/<name>/` changes
+- `(docs)` — `docs/` changes
+- `(api)` / `(http)` / `(db)` / `(auth)` / `(jobs)` / `(observability)` — when the change is scoped to a framework slice
+
+Skip the scope when it's not informative.
+
+## Skills sync gotcha
+
+When you edit a `.cursor/rules/*.mdc` file, run `npm run sync:skills` and commit the regenerated `scripts/skills-sync-state.json` together with the rule change. CI's `npm run check:skills` step fails the build if the hash drifts.
+
+The corresponding plugin SKILL.md files (`packages/claude-plugin/skills/*/SKILL.md`) are human-authored summaries — review them when the rule change is substantive enough to invalidate the summary. Trivial wording changes don't require touching the SKILL.md.
+
+## Examples — ShipAPI
+
+```
+feat(v4): add idempotency middleware backed by Redis
+
+Stripe-style Idempotency-Key header dedup via the Cache.
+Concurrent requests with the same key block on the first
+via Redis SETNX. Recommended on every mutating route.
+
+(+ .changeset/add-idempotency.md with minor bump)
+
+---
+
+fix(cli): handle relative paths in `migrate-orm --write`
+
+The codemod resolved output paths against process.cwd()
+even when --write was given an absolute target. Switch to
+path.resolve so both forms work.
+
+(+ .changeset/cli-relative-paths.md with patch bump)
+
+---
+
+ci: skip e2e suite on docs-only PRs
+
+paths-ignore was matching .md files but missing the
+docs/ tree. Adds an explicit ignore.
+
+(no changeset)
+
+---
+
+docs(v4): rewrite root README for post-cut-over alpha
+
+Replace the v3 body with a v4-first README. Three defining
+bets, quick start, capability matrix.
+
+(no changeset — root README isn't shipped to consumers)
+
+---
+
+feat!(v4): drop `EntityService` (TypeORM) — use `DrizzleEntityService`
+
+BREAKING CHANGE: The TypeORM-based EntityService is gone.
+See docs/MIGRATION_V3_TO_V4.md for the codemod-assisted path.
+
+(+ .changeset/drop-entityservice.md with major bump)
+```
+
+## Don't
+
+- Don't `git commit --amend` after pushing — it rewrites history and breaks anyone who pulled.
+- Don't `--no-verify` to bypass hooks. If a hook fails, fix the underlying issue. Bypassing hooks is how secrets get committed.
+- Don't write multi-paragraph commit bodies for trivial changes.
+- Don't reference internal ticket IDs in the title — body is fine, but titles render in CHANGELOG.
+
+## Release flow
+
+`.github/workflows/release.yml` publishes a snapshot prerelease under the `alpha` dist-tag on every merge to `dev` that has pending changesets (once CI passes; no commit, no bot PR). On `main`, `changesets/action@v1.8.0` aggregates queued `.changeset/*.md` files into a "chore: version packages" PR; merging that PR bumps versions, prepends per-package CHANGELOGs, tags, publishes stable versions to GitHub Packages, and creates a GitHub Release.
+
+**Branch model**: `dev` is the integration trunk (snapshot prereleases, no version bumps in git). `main` is the stable trunk. `dev` → `main` is a plain merge; `main` is merged back into `dev` after each stable release. Changesets pre mode is retired: the `no-pre-mode` CI job fails if `.changeset/pre.json` exists on any branch. See `docs/maintainers/RELEASE_GUIDE.md`.
+
+The framework, plugin, and MCP server version **independently**. A changeset frontmatter declares which packages bump:
+
+```markdown
+---
+"@sixthsummit/ship-api": minor
+"@sixthsummit/ship-api-mcp-server": patch
+---
+
+Add `execute_route` schema preview to the MCP server.
+```
+
+Packages without a queued changeset stay at their current version.

@@ -1,0 +1,405 @@
+{
+  "status": "required-gate-failed",
+  "command": "pnpm audit --audit-level=high",
+  "baselineCommit": "1846e2ab7f722559e408441912d654553e34b03c",
+  "featureCommit": null,
+  "workingTreeDirty": true,
+  "baselineRawSha256": "73f46108e654b50c39b01cabb3c0a3821c2ca4dba392beac700c0b30f2d30487",
+  "candidateRawSha256": "450a2bd767a2097fcc89aa3c3aae9d839419bd633bac11001a71334768995541",
+  "baselineCounts": {
+    "info": 0,
+    "low": 2,
+    "moderate": 8,
+    "high": 14,
+    "critical": 0
+  },
+  "candidateCounts": {
+    "info": 0,
+    "low": 2,
+    "moderate": 8,
+    "high": 14,
+    "critical": 0
+  },
+  "introducedAdvisoryIds": [],
+  "baselineAdvisoryIds": [
+    "GHSA-4q55-j62x-fr9h",
+    "GHSA-68fv-2mgg-jv7q",
+    "GHSA-6j4f-fj2g-mc7p",
+    "GHSA-6j4f-fj2g-mc7p",
+    "GHSA-ch52-4w7c-c8xp",
+    "GHSA-f596-whhp-79r4",
+    "GHSA-f67j-2jqw-jpq7",
+    "GHSA-ff3f-86qr-9cv3",
+    "GHSA-hp3w-g68c-fv3c",
+    "GHSA-hrr3-gc8f-f4qj",
+    "GHSA-hx4r-w6wj-j8fg",
+    "GHSA-j22f-vq7h-c4qm",
+    "GHSA-m9gg-hp2v-232j",
+    "GHSA-mcm9-63f2-9j32",
+    "GHSA-q2hr-2g5m-vwhr",
+    "GHSA-q2hr-2g5m-vwhr",
+    "GHSA-qhr7-859c-m2p7",
+    "GHSA-qhr7-859c-m2p7",
+    "GHSA-r4xh-jqrq-34v2",
+    "GHSA-rj75-hqrm-r3gf",
+    "GHSA-vfj7-8cjw-p6xm",
+    "GHSA-wf3x-273g-mvxv",
+    "GHSA-wq5f-xc86-pv6w",
+    "GHSA-x5rw-q4pp-hg5g"
+  ],
+  "candidateAdvisories": [
+    {
+      "id": "GHSA-4q55-j62x-fr9h",
+      "package": "devalue",
+      "severity": "moderate",
+      "affected": "<=5.9.2",
+      "patched": ">=5.9.3",
+      "url": "https://github.com/advisories/GHSA-4q55-j62x-fr9h",
+      "findings": [
+        {
+          "version": "5.9.2",
+          "paths": ["apps__docs>astro>devalue"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-68fv-2mgg-jv7q",
+      "package": "source-map-js",
+      "severity": "high",
+      "affected": ">=1.0.0 <1.2.2",
+      "patched": ">=1.2.2",
+      "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+      "findings": [
+        {
+          "version": "1.2.1",
+          "paths": [".>@vitest/coverage-v8>magicast>source-map-js"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-6j4f-fj2g-mc7p",
+      "package": "brace-expansion",
+      "severity": "high",
+      "affected": "<1.1.19",
+      "patched": ">=1.1.19",
+      "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+      "findings": [
+        {
+          "version": "1.1.18",
+          "paths": [".>eslint>minimatch>brace-expansion"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-6j4f-fj2g-mc7p",
+      "package": "brace-expansion",
+      "severity": "high",
+      "affected": ">=4.0.0 <5.0.10",
+      "patched": ">=5.0.10",
+      "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+      "findings": [
+        {
+          "version": "5.0.9",
+          "paths": [
+            ".>typescript-eslint>@typescript-eslint/typescript-estree>minimatch>brace-expansion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-ch52-4w7c-c8xp",
+      "package": "http-cache-semantics",
+      "severity": "high",
+      "affected": "<=4.2.0",
+      "patched": "<0.0.0",
+      "url": "https://github.com/advisories/GHSA-ch52-4w7c-c8xp",
+      "findings": [
+        {
+          "version": "4.2.0",
+          "paths": ["apps__docs>astro>http-cache-semantics"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-f596-whhp-79r4",
+      "package": "@grpc/grpc-js",
+      "severity": "low",
+      "affected": "<1.13.6",
+      "patched": ">=1.13.6",
+      "url": "https://github.com/advisories/GHSA-f596-whhp-79r4",
+      "findings": [
+        {
+          "version": "1.9.16",
+          "paths": ["packages__core>firebase>@firebase/firestore>@grpc/grpc-js"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-f67j-2jqw-jpq7",
+      "package": "@angular/platform-server",
+      "severity": "high",
+      "affected": ">=20.0.0 <20.3.31",
+      "patched": ">=20.3.31",
+      "url": "https://github.com/advisories/GHSA-f67j-2jqw-jpq7",
+      "findings": [
+        {
+          "version": "20.3.30",
+          "paths": [".>@angular/platform-server"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-ff3f-86qr-9cv3",
+      "package": "@angular/router",
+      "severity": "high",
+      "affected": ">=20.0.0 <20.3.32",
+      "patched": ">=20.3.32",
+      "url": "https://github.com/advisories/GHSA-ff3f-86qr-9cv3",
+      "findings": [
+        {
+          "version": "20.3.30",
+          "paths": ["packages__core>@angular/router"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-hp3w-g68c-fv3c",
+      "package": "sprintf-js",
+      "severity": "moderate",
+      "affected": "<=1.1.3",
+      "patched": "<0.0.0",
+      "url": "https://github.com/advisories/GHSA-hp3w-g68c-fv3c",
+      "findings": [
+        {
+          "version": "1.0.3",
+          "paths": [
+            ".>@changesets/cli>@manypkg/get-packages>read-yaml-file>js-yaml>argparse>sprintf-js"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-hrr3-gc8f-f4qj",
+      "package": "fast-uri",
+      "severity": "moderate",
+      "affected": ">=3.0.0 <3.1.8",
+      "patched": ">=3.1.8",
+      "url": "https://github.com/advisories/GHSA-hrr3-gc8f-f4qj",
+      "findings": [
+        {
+          "version": "3.1.7",
+          "paths": [
+            "apps__docs>@astrojs/check>@astrojs/language-server>volar-service-yaml>yaml-language-server>ajv>fast-uri"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-hx4r-w6wj-j8fg",
+      "package": "devalue",
+      "severity": "moderate",
+      "affected": "<=5.9.2",
+      "patched": ">=5.9.3",
+      "url": "https://github.com/advisories/GHSA-hx4r-w6wj-j8fg",
+      "findings": [
+        {
+          "version": "5.9.2",
+          "paths": ["apps__docs>astro>devalue"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-j22f-vq7h-c4qm",
+      "package": "devalue",
+      "severity": "high",
+      "affected": ">=5.1.0 <=5.9.2",
+      "patched": ">=5.9.3",
+      "url": "https://github.com/advisories/GHSA-j22f-vq7h-c4qm",
+      "findings": [
+        {
+          "version": "5.9.2",
+          "paths": ["apps__docs>astro>devalue"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-m9gg-hp2v-232j",
+      "package": "@grpc/grpc-js",
+      "severity": "high",
+      "affected": "<1.13.6",
+      "patched": ">=1.13.6",
+      "url": "https://github.com/advisories/GHSA-m9gg-hp2v-232j",
+      "findings": [
+        {
+          "version": "1.9.16",
+          "paths": ["packages__core>firebase>@firebase/firestore>@grpc/grpc-js"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-mcm9-63f2-9j32",
+      "package": "devalue",
+      "severity": "high",
+      "affected": "<=5.9.2",
+      "patched": ">=5.9.3",
+      "url": "https://github.com/advisories/GHSA-mcm9-63f2-9j32",
+      "findings": [
+        {
+          "version": "5.9.2",
+          "paths": ["apps__docs>astro>devalue"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-q2hr-2g5m-vwhr",
+      "package": "brace-expansion",
+      "severity": "moderate",
+      "affected": "<1.1.21",
+      "patched": ">=1.1.21",
+      "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+      "findings": [
+        {
+          "version": "1.1.18",
+          "paths": [".>eslint>minimatch>brace-expansion"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-q2hr-2g5m-vwhr",
+      "package": "brace-expansion",
+      "severity": "moderate",
+      "affected": ">=4.0.0 <5.0.12",
+      "patched": ">=5.0.12",
+      "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+      "findings": [
+        {
+          "version": "5.0.9",
+          "paths": [
+            ".>typescript-eslint>@typescript-eslint/typescript-estree>minimatch>brace-expansion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-qhr7-859c-m2p7",
+      "package": "brace-expansion",
+      "severity": "high",
+      "affected": "<1.1.20",
+      "patched": ">=1.1.20",
+      "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+      "findings": [
+        {
+          "version": "1.1.18",
+          "paths": [".>eslint>minimatch>brace-expansion"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-qhr7-859c-m2p7",
+      "package": "brace-expansion",
+      "severity": "high",
+      "affected": ">=4.0.0 <5.0.11",
+      "patched": ">=5.0.11",
+      "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+      "findings": [
+        {
+          "version": "5.0.9",
+          "paths": [
+            ".>typescript-eslint>@typescript-eslint/typescript-estree>minimatch>brace-expansion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-r4xh-jqrq-34v2",
+      "package": "smol-toml",
+      "severity": "moderate",
+      "affected": "<=1.8.0",
+      "patched": ">=1.9.0",
+      "url": "https://github.com/advisories/GHSA-r4xh-jqrq-34v2",
+      "findings": [
+        {
+          "version": "1.8.0",
+          "paths": [".>knip>smol-toml"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-rj75-hqrm-r3gf",
+      "package": "postcss-selector-parser",
+      "severity": "moderate",
+      "affected": "<7.1.6",
+      "patched": ">=7.1.6",
+      "url": "https://github.com/advisories/GHSA-rj75-hqrm-r3gf",
+      "findings": [
+        {
+          "version": "6.1.4",
+          "paths": [
+            "apps__docs>@astrojs/starlight>astro-expressive-code>rehype-expressive-code>expressive-code>@expressive-code/core>postcss-nested>postcss-selector-parser"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "severity": "high",
+      "affected": "<=3.0.3",
+      "patched": "<0.0.0",
+      "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+      "findings": [
+        {
+          "version": "3.0.3",
+          "paths": [".>@changesets/cli>@changesets/config>micromatch>braces"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-wf3x-273g-mvxv",
+      "package": "devalue",
+      "severity": "low",
+      "affected": ">=1.0.0 <=5.9.2",
+      "patched": ">=5.9.3",
+      "url": "https://github.com/advisories/GHSA-wf3x-273g-mvxv",
+      "findings": [
+        {
+          "version": "5.9.2",
+          "paths": ["apps__docs>astro>devalue"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-wq5f-xc86-pv6w",
+      "package": "sharp",
+      "severity": "high",
+      "affected": "<0.35.5",
+      "patched": ">=0.35.5",
+      "url": "https://github.com/advisories/GHSA-wq5f-xc86-pv6w",
+      "findings": [
+        {
+          "version": "0.35.4",
+          "paths": ["apps__docs>sharp"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-x5rw-q4pp-hg5g",
+      "package": "devalue",
+      "severity": "high",
+      "affected": ">=5.8.0 <=5.9.2",
+      "patched": ">=5.9.3",
+      "url": "https://github.com/advisories/GHSA-x5rw-q4pp-hg5g",
+      "findings": [
+        {
+          "version": "5.9.2",
+          "paths": ["apps__docs>astro>devalue"]
+        }
+      ]
+    }
+  ],
+  "notes": {
+    "http-cache-semantics": "Advisory reports no patched version through 4.2.0. Registry 4.3.0 exists outside the affected range. It is a candidate update, not a verified maintainer security fix.",
+    "braces": "Registry latest 3.0.3 has no available patched release. Removing the Changesets 2 dependency path requires separately reviewed migration.",
+    "release": "SNG-60 blocks final SNG-57 and SNG-59 acceptance. No audit exception or gate relaxation is authorized."
+  }
+}

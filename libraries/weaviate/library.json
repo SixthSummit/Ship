@@ -1,0 +1,26 @@
+{
+  "name": "weaviate",
+  "description": "Vector database framework with hybrid search, plugins, and multi-tenancy support",
+  "version": "2.0.0",
+  "dependencies": [],
+  "npmDependencies": {
+    "weaviate-client": "^3.0.0"
+  },
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "WEAVIATE_HOST",
+    "WEAVIATE_PORT",
+    "WEAVIATE_SCHEME",
+    "WEAVIATE_API_KEY",
+    "WEAVIATE_HEADERS",
+    "WEAVIATE_MULTI_TENANCY_ENABLED",
+    "WEAVIATE_AUTO_TENANT_CREATION",
+    "WEAVIATE_AUTO_TENANT_ACTIVATION",
+    "WEAVIATE_SKIP_INIT_CHECKS"
+  ],
+  "postInstall": [
+    "Configure WEAVIATE_HOST in .env (defaults to localhost)",
+    "Set WEAVIATE_API_KEY for authentication (required for cloud deployments)",
+    "Initialize schemas during app startup using weaviate.initializeSchemas()"
+  ]
+}

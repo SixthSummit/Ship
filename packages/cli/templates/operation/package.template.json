@@ -1,0 +1,21 @@
+{
+  "name": "{{PACKAGE_NAME}}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "check": "biome check .",
+    "check:graph": "ship-api check",
+    "type-check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test:watch": "vitest --exclude '**/*.integration.test.ts'",
+    "test:coverage": "vitest run --exclude '**/*.integration.test.ts' --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "contract": "ship-api contract --api-version 0.1.0",
+    "verify": "pnpm run check && pnpm run check:graph && pnpm run type-check && pnpm test && pnpm run test:coverage && pnpm run test:integration && pnpm run build && pnpm run contract"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

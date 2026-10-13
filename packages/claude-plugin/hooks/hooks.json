@@ -1,0 +1,23 @@
+{
+  "$schema": "https://claude.com/schemas/hooks.json",
+  "PreToolUse": [
+    {
+      "description": "Block hand-edits to drizzle migration SQL — they drift from the generator.",
+      "matcher": "Edit|Write",
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/block-migration-edit.sh"
+    }
+  ],
+  "PostToolUse": [
+    {
+      "description": "Run ship-reviewer over module / framework code edits to surface convention violations.",
+      "matcher": "Edit|Write",
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/maybe-review.sh"
+    }
+  ],
+  "Stop": [
+    {
+      "description": "Remind the user to run type-check + tests before committing.",
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-reminder.sh"
+    }
+  ]
+}

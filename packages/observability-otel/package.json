@@ -1,0 +1,78 @@
+{
+  "name": "@sixthsummit/ship-observability-otel",
+  "version": "1.1.0",
+  "description": "Optional OpenTelemetry tracing, SDK, and Prometheus metrics integration for Ship applications",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./metrics": {
+      "types": "./lib/metrics.d.ts",
+      "import": "./lib/metrics.js",
+      "default": "./lib/metrics.js"
+    },
+    "./sdk": {
+      "types": "./lib/otel.d.ts",
+      "import": "./lib/otel.js",
+      "default": "./lib/otel.js"
+    },
+    "./tracing": {
+      "types": "./lib/tracing.d.ts",
+      "import": "./lib/tracing.js",
+      "default": "./lib/tracing.js"
+    },
+    "./webhooks": {
+      "types": "./lib/webhooks.d.ts",
+      "import": "./lib/webhooks.js",
+      "default": "./lib/webhooks.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/observability-otel/src",
+    "test:coverage": "vitest run --root ../.. packages/observability-otel/src --coverage"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/auto-instrumentations-node": "^0.80.0",
+    "@opentelemetry/exporter-prometheus": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "@sixthsummit/ship-core": "workspace:*",
+    "pino": "^9.14.0",
+    "tsx": "^4.20.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/observability-otel"
+  }
+}

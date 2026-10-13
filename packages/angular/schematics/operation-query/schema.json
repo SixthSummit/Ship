@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateOperationQuery",
+  "title": "ShipAngular: generate an optional safe operation query",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Query factory name.",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "operationId": { "type": "string", "description": "Stable unary HTTP read operation ID." },
+    "contractPackage": { "type": "string", "description": "Browser-safe contract import." },
+    "contractType": { "type": "string", "description": "Exported contract type name." },
+    "clientTokenImport": {
+      "type": "string",
+      "description": "Application operation client token import."
+    },
+    "clientToken": {
+      "type": "string",
+      "description": "Typed operation client injection token name."
+    },
+    "scopeSourceImport": {
+      "type": "string",
+      "description": "Import for the configured ShipQueryContext token."
+    },
+    "scopeSource": {
+      "type": "string",
+      "description": "ShipQueryContext injection token name. Its provider owns the namespace and scope key."
+    },
+    "keyMapperImport": { "type": "string", "description": "Application input key mapper import." },
+    "keyMapper": {
+      "type": "string",
+      "description": "Typed input key mapper name. Include every response-affecting input."
+    },
+    "variantKeyImport": {
+      "type": "string",
+      "description": "Application response variant key import."
+    },
+    "variantKey": { "type": "string", "description": "Exported JSON response variant key name." },
+    "safety": {
+      "type": "string",
+      "enum": ["safe"],
+      "description": "Explicitly acknowledge that the operation is a safe read."
+    },
+    "path": {
+      "type": "string",
+      "default": "src/app/queries",
+      "description": "Application output directory."
+    },
+    "setupQuery": {
+      "type": "boolean",
+      "default": false,
+      "description": "Explicitly pin TanStack Angular Query 5.104.1 in application package.json. Conflicting versions are rejected. Run the package manager afterward."
+    }
+  },
+  "required": [
+    "name",
+    "operationId",
+    "contractPackage",
+    "contractType",
+    "clientTokenImport",
+    "clientToken",
+    "scopeSourceImport",
+    "scopeSource",
+    "keyMapperImport",
+    "keyMapper",
+    "variantKeyImport",
+    "variantKey",
+    "safety"
+  ]
+}

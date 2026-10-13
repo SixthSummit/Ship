@@ -1,0 +1,53 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.js",
+        "scripts/*.mjs",
+        "scripts/*.sh",
+        "conformance/browser/realtime-fixture-server.mjs"
+      ],
+      "project": ["scripts/**/*.{js,mjs,astro}"],
+      "ignore": ["conformance/**", "!conformance/browser/realtime-fixture-server.mjs"]
+    },
+    "../apps/angular-docs": {
+      "entry": ["src/content/**/*.{md,mdx}"],
+      "project": ["src/**/*.{ts,mdx,astro}"]
+    },
+    "../packages/angular": {
+      "entry": [
+        "src/public-api.ts",
+        "*/src/public-api.ts",
+        "*/src/**/*.type-test.ts",
+        "cli/**/*.js",
+        "eslint/**/*.js",
+        "schematics/**/index.ts",
+        "schematics/operation-query/pin-query-dependency.ts",
+        "schematics/utils/**/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "*/src/**/*.ts",
+        "cli/**/*.js",
+        "eslint/**/*.js",
+        "schematics/**/*.ts",
+        "!schematics/**/*.spec.ts",
+        "!schematics/**/*.test.ts",
+        "!schematics/**/fixtures/**"
+      ],
+      "ignore": ["schematics/**/files/**", "templates/**"]
+    }
+  },
+  "rules": {
+    "files": "error",
+    "dependencies": "error",
+    "unlisted": "error",
+    "binaries": "error",
+    "unresolved": "error",
+    "exports": "warn",
+    "types": "warn",
+    "duplicates": "warn"
+  },
+  "ignoreDependencies": ["@biomejs/biome", "prettier"]
+}

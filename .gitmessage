@@ -1,0 +1,39 @@
+# <type>[optional scope]: <imperative description>
+#
+# Why is this change needed?
+#
+# What evidence proves it works?
+#
+# Optional footers:
+# BREAKING CHANGE: <consumer impact and migration path>
+# Refs: <issue, ADR, or RFC>
+#
+# Subject rules:
+#   - use imperative mood: "add", not "added" or "adds"
+#   - keep it under 50 characters where practical
+#   - do not end it with a period
+#   - keep one logical change per commit
+#
+# Types:
+#   feat:     consumer-visible capability
+#   fix:      user-facing bug or vulnerability
+#   perf:     behavior-preserving performance improvement
+#   refactor: restructuring without external behavior change
+#   docs:     documentation only
+#   style:    formatting or another non-semantic change
+#   test:     tests only
+#   build:    build system or bundling
+#   ci:       CI/CD or workflow automation
+#   chore:    dependencies, tooling, or maintenance
+#   revert:   revert a prior commit
+#
+# Common scopes:
+#   core, kernel, http, auth, db, cli, compiler, testing,
+#   template, plugin, mcp, docs, modules, libraries, deps
+#
+# Breaking changes:
+#   Use feat!: / fix!: or include a BREAKING CHANGE footer.
+#
+# Release note:
+#   Conventional Commit types describe the change. Changesets—not the
+#   commit prefix—control package versions and package changelogs.

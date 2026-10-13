@@ -1,0 +1,250 @@
+# GCP App Engine Deployment Workflow
+#
+# Deployment Strategy:
+# - Push to `dev` branch → Deploys to STAGING
+# - Push to `main` branch → Deploys to PRODUCTION
+# - Manual trigger → Choose environment
+#
+# Setup Instructions:
+# 1. Create TWO GCP projects (or use one project with different services):
+#    - Staging: your-project-staging
+#    - Production: your-project-prod
+# 2. Enable App Engine in both projects
+# 3. Create service accounts with App Engine Admin role for each project
+# 4. Add GitHub secrets:
+#    - APP_ENGINE_CREDENTIALS_STAGING: JSON key for staging
+#    - APP_ENGINE_CREDENTIALS_PRODUCTION: JSON key for production
+# 5. Update GCP_PROJECT_ID_STAGING and GCP_PROJECT_ID_PRODUCTION below
+# 6. Configure GitHub Environments (Settings > Environments):
+#    - Create "staging" environment
+#    - Create "production" environment with required reviewers (optional)
+
+name: Deploy to GCP
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24.x'
+  # Update these with your GCP project IDs
+  GCP_PROJECT_ID_STAGING: 'your-project-staging'
+  GCP_PROJECT_ID_PRODUCTION: 'your-project-prod'
+
+jobs:
+  # Determine deployment environment
+  determine-environment:
+    name: Determine Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      project_id: ${{ steps.set-env.outputs.project_id }}
+      credentials_secret: ${{ steps.set-env.outputs.credentials_secret }}
+    steps:
+      - name: Set environment based on trigger
+        id: set-env
+        run: |
+          # Manual trigger - use selected environment
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          # Push to main - production
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            ENV="production"
+          # Push to dev - staging
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            ENV="staging"
+          else
+            echo "Unknown branch, defaulting to staging"
+            ENV="staging"
+          fi
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+
+          if [ "$ENV" = "production" ]; then
+            echo "project_id=${{ env.GCP_PROJECT_ID_PRODUCTION }}" >> $GITHUB_OUTPUT
+            echo "credentials_secret=APP_ENGINE_CREDENTIALS_PRODUCTION" >> $GITHUB_OUTPUT
+          else
+            echo "project_id=${{ env.GCP_PROJECT_ID_STAGING }}" >> $GITHUB_OUTPUT
+            echo "credentials_secret=APP_ENGINE_CREDENTIALS_STAGING" >> $GITHUB_OUTPUT
+          fi
+
+          echo "🎯 Deploying to: $ENV"
+
+  # Run tests before deployment
+  pre-deploy-tests:
+    name: Pre-deployment Tests
+    uses: ./.github/workflows/tests.yml
+    with:
+      node-version: '24.x'
+    secrets:
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+  # Build the application
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: [determine-environment, pre-deploy-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ship-pnpm" --no-audit --no-fund --ignore-scripts pnpm@10.34.6
+          echo "$RUNNER_TEMP/ship-pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: |
+          printf '%s\n' '@sixthsummit:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
+          trap 'rm -f "$NPM_CONFIG_USERCONFIG"' EXIT
+          pnpm install --frozen-lockfile
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/ship-package-step.npmrc
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Build production bundle
+        run: pnpm build-prod
+        env:
+          # Pass environment to build if needed
+          DEPLOY_ENV: ${{ needs.determine-environment.outputs.environment }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ needs.determine-environment.outputs.environment }}
+          path: dist/
+          retention-days: 7
+
+  # Deploy to GCP App Engine
+  deploy:
+    name: Deploy to ${{ needs.determine-environment.outputs.environment }}
+    runs-on: ubuntu-latest
+    needs: [determine-environment, build]
+    environment:
+      name: ${{ needs.determine-environment.outputs.environment }}
+      url: https://${{ needs.determine-environment.outputs.project_id }}.appspot.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: build-${{ needs.determine-environment.outputs.environment }}
+          path: dist/
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ needs.determine-environment.outputs.credentials_secret == 'APP_ENGINE_CREDENTIALS_PRODUCTION' && secrets.APP_ENGINE_CREDENTIALS_PRODUCTION || secrets.APP_ENGINE_CREDENTIALS_STAGING }}
+
+      - name: Deploy to App Engine
+        uses: google-github-actions/deploy-appengine@v3
+        with:
+          deliverables: app.yaml
+          project_id: ${{ needs.determine-environment.outputs.project_id }}
+
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ needs.determine-environment.outputs.project_id }}
+
+      - name: Clean up old versions
+        env:
+          GCP_PROJECT_ID: ${{ needs.determine-environment.outputs.project_id }}
+        run: |
+          # Preserve the previous action's policy: retain the newest three
+          # zero-traffic versions of the default service. Never select serving versions.
+          versions_output="$(gcloud app versions list --filter 'traffic_split=0' --format 'value(id)' --sort-by 'last_deployed_time' --project "$GCP_PROJECT_ID" --service default)"
+          versions=()
+          while IFS= read -r version; do
+            if [[ -n "$version" ]]; then
+              versions+=("$version")
+            fi
+          done <<< "$versions_output"
+          if (( ${#versions[@]} > 3 )); then
+            delete_count=$((${#versions[@]} - 3))
+            gcloud app versions delete "${versions[@]:0:delete_count}" --quiet --project "$GCP_PROJECT_ID" --service default
+          fi
+
+  # Post-deployment verification
+  verify-deployment:
+    name: Verify Deployment
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy]
+    steps:
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Health check
+        run: |
+          PROJECT_ID="${{ needs.determine-environment.outputs.project_id }}"
+          ENV="${{ needs.determine-environment.outputs.environment }}"
+
+          echo "Verifying $ENV deployment..."
+
+          # Skip health check if using placeholder project ID
+          if [[ "$PROJECT_ID" == *"your-project"* ]]; then
+            echo "⚠️ Skipping health check - placeholder project ID detected"
+            echo "Please update GCP_PROJECT_ID_STAGING and GCP_PROJECT_ID_PRODUCTION in deploy.yml"
+            exit 0
+          fi
+
+          response=$(curl -s -o /dev/null -w "%{http_code}" "https://${PROJECT_ID}.appspot.com")
+          if [ "$response" = "200" ]; then
+            echo "✅ $ENV deployment verified successfully"
+          else
+            echo "❌ Health check failed with status: $response"
+            exit 1
+          fi
+
+  # Deployment summary
+  deploy-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [determine-environment, pre-deploy-tests, build, deploy, verify-deployment]
+    if: always()
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary"
+          echo "Environment: ${{ needs.determine-environment.outputs.environment }}"
+          echo "Project: ${{ needs.determine-environment.outputs.project_id }}"
+          echo ""
+          echo "### Job Results"
+          echo "Pre-deployment Tests: ${{ needs.pre-deploy-tests.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          echo "Deploy: ${{ needs.deploy.result }}"
+          echo "Verification: ${{ needs.verify-deployment.result }}"
+
+          if [[ "${{ needs.deploy.result }}" == "success" && "${{ needs.verify-deployment.result }}" == "success" ]]; then
+            echo ""
+            echo "✅ Deployment to ${{ needs.determine-environment.outputs.environment }} completed successfully"
+            echo "🌐 URL: https://${{ needs.determine-environment.outputs.project_id }}.appspot.com"
+          else
+            echo ""
+            echo "❌ Deployment failed - please check the logs"
+            exit 1
+          fi

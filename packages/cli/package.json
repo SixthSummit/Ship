@@ -1,0 +1,72 @@
+{
+  "name": "@sixthsummit/ship-cli",
+  "version": "1.1.0",
+  "description": "Deterministic application graph and API contract tools for Ship projects",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "bin": {
+    "ship-api": "./lib/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./contract": {
+      "types": "./lib/contract.d.ts",
+      "import": "./lib/contract.js",
+      "default": "./lib/contract.js"
+    },
+    "./graph": {
+      "types": "./lib/graph.d.ts",
+      "import": "./lib/graph.js",
+      "default": "./lib/graph.js"
+    },
+    "./migration": {
+      "types": "./lib/migration.d.ts",
+      "import": "./lib/migration.js",
+      "default": "./lib/migration.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "templates/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json && node ../../scripts/build-cli-release-manifest.mjs",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/cli/src",
+    "test:coverage": "vitest run --root ../.. packages/cli/src --coverage --coverage.include=packages/cli/src/**"
+  },
+  "dependencies": {
+    "@sixthsummit/ship-contract": "workspace:^",
+    "commander": "^12.0.0",
+    "tsx": "^4.20.3"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-hono": "workspace:^",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/cli"
+  }
+}

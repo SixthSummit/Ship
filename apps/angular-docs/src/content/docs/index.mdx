@@ -1,0 +1,50 @@
+---
+title: ShipAngular
+description: Frontend-only Angular 20 framework with typed operations, signals, and explicit browser and SSR boundaries.
+template: splash
+hero:
+  tagline: Frontend-only Angular 20 framework. Signal-first. Zoneless. SSR + hydration. Designed to be edited by AI coding agents.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Quick Start
+      link: /getting-started/quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/sixthsummit/ship-angular
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why ShipAngular
+
+<CardGrid stagger>
+  <Card title="Idiomatic Angular 20" icon="seti:angular">
+    Standalone components, signals, `inject()`, OnPush, functional guards, typed forms, new control flow only. ESLint custom rules enforce every convention.
+  </Card>
+
+<Card title="Frontend-only on purpose" icon="puzzle">
+  Pairs with **ShipAPI** for the backend. Use ShipAngular alone against any REST API, or together
+  for a full-stack TypeScript-RPC story.
+</Card>
+
+<Card title="Agent-first" icon="rocket">
+  Ships `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/`, schematics, and an agent eval harness. Built to
+  be edited by Claude Code, Cursor, Cline, Aider.
+</Card>
+
+  <Card title="Production-grade defaults" icon="approve-check">
+    SSR + hydration, zoneless, Tailwind v4, Vitest, Playwright + axe a11y gate, CSP + Trusted Types, Cloud Run-ready Dockerfile.
+  </Card>
+</CardGrid>
+
+## Get going
+
+Stable versions are released from `main`; `dev` publishes alpha snapshots.
+Follow [Installation](/getting-started/installation/) to configure GitHub Packages
+and select an exact released version, or build the repository for a local scaffold.
+
+Open [Quick Start](/getting-started/quick-start/) for the five-minute walkthrough or [Installation](/getting-started/installation/) for `ng add` and manual paths.

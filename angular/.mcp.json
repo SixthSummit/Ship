@@ -1,0 +1,22 @@
+{
+  "$schema": "https://claude.ai/mcp-schema.json",
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "description": "GitHub API access — issues, PRs, releases. Reads GITHUB_TOKEN from the env.",
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "firebase": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@firebase/mcp-server"],
+      "description": "Firebase CLI / project management. Useful for Auth + Firestore configuration when working on the FirebaseAuthAdapter.",
+      "comment": "Optional: only loads if @firebase/mcp-server is installed. Disable by removing this block."
+    }
+  },
+  "comment": "Phase 4 baseline. A custom ship-angular-mcp server (exposing module manifests + the schematic catalog) is on the Phase 4.x roadmap — once stdio-based plugin servers stabilize, we'll publish it under @sixthsummit/mcp-ship-angular."
+}

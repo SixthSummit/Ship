@@ -1,0 +1,16 @@
+{
+  "name": "chunking",
+  "description": "Document chunking library for RAG and embeddings with fixed-length, sliding window, and semantic strategies",
+  "version": "1.0.0",
+  "dependencies": [],
+  "npmDependencies": {
+    "tiktoken": "^1.0.22"
+  },
+  "requiredEnvVars": [],
+  "optionalEnvVars": [],
+  "postInstall": [
+    "Import ChunkingService from @sixthsummit/ship-api/libraries/chunking",
+    "Choose a strategy: createWithSemantic (recommended), createWithSlidingWindow, or createWithFixedLength",
+    "Always call dispose() when done to free tokenizer resources"
+  ]
+}

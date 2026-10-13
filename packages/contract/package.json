@@ -1,0 +1,86 @@
+{
+  "name": "@sixthsummit/ship-contract",
+  "version": "1.2.0",
+  "description": "Portable Ship client manifest, HTTP client, and OpenAPI projection",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./application": {
+      "types": "./lib/application.d.ts",
+      "import": "./lib/application.js",
+      "default": "./lib/application.js"
+    },
+    "./client": {
+      "types": "./lib/client.d.ts",
+      "import": "./lib/client.js",
+      "default": "./lib/client.js"
+    },
+    "./manifest": {
+      "types": "./lib/manifest.d.ts",
+      "import": "./lib/manifest.js",
+      "default": "./lib/manifest.js"
+    },
+    "./openapi": {
+      "types": "./lib/openapi.d.ts",
+      "import": "./lib/openapi.js",
+      "default": "./lib/openapi.js"
+    },
+    "./project": {
+      "types": "./lib/project.d.ts",
+      "import": "./lib/project.js",
+      "default": "./lib/project.js"
+    },
+    "./schema": {
+      "types": "./lib/schema.d.ts",
+      "import": "./lib/schema.js",
+      "default": "./lib/schema.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/contract/src",
+    "test:coverage": "vitest run --root ../.. packages/contract/src --coverage"
+  },
+  "dependencies": {
+    "json-schema-to-ts": "^3.1.1",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@sixthsummit/ship-core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-hono": "workspace:^"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/contract"
+  }
+}

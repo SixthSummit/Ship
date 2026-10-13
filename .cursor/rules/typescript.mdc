@@ -1,0 +1,168 @@
+---
+alwaysApply: true
+description: "TypeScript coding standards for ShipAPI v4"
+tags: ["typescript", "type-safety", "coding-standards"]
+globs: ["packages/core/src/**/*.ts", "modules/**/*.ts", "libraries/**/*.ts", "packages/core/templates/default/src/**/*.ts"]
+---
+
+# TypeScript Coding Standards
+
+## Strictness
+
+- All ShipAPI tsconfigs run with `strict: true`. `strictNullChecks`, `noImplicitAny`, `noImplicitReturns`, `noUnusedLocals` are on.
+- `tsc --noEmit` runs in `npm run type-check` and CI. Type errors block the pipeline.
+- Don't disable individual flags per-file. If a section needs a relaxation, surface it as a real type problem and fix the cause.
+
+## `any`, `unknown`, `never`
+
+- **No `any`.** Use `unknown` and narrow with `instanceof`, type guards, or Zod parsing.
+- Use `unknown` for genuinely-unknown payloads (webhook bodies before signature verification, third-party callbacks, JSON RPC bridges). Narrow via Zod before use.
+- Reach for `never` to mark exhaustiveness checks: `const _exhaustive: never = x;` in a `switch` default fails compile if a new case is added.
+
+```ts
+// ✅ unknown narrows cleanly
+async function handleWebhook(c: Context<AppEnv>) {
+  const raw: unknown = await c.req.json();
+  const event = stripeEventSchema.parse(raw);  // narrows to known shape
+}
+
+// ❌ any erases types — they don't return
+const data: any = await c.req.json();
+data.amount.cents;  // no error at compile time, blows up at runtime
+```
+
+## Imports
+
+### Inside the framework (`packages/core/src/`)
+
+- Relative imports for files in the same workspace.
+- Don't `import "@sixthsummit/ship-api/..."` from the framework's own source — that creates self-cycles and breaks during the build.
+
+### Inside modules (`modules/<name>/`)
+
+- Import the framework via package-export paths: `@sixthsummit/ship-api`, `@sixthsummit/ship-api/client`, `@sixthsummit/ship-api/observability/logger`, etc.
+- Relative imports for module-internal references.
+- **Never import from `node_modules/@sixthsummit/ship-api/lib/`** — those are build artifacts; the path is not part of the public API.
+
+### Test fixtures
+
+When modules import from `@sixthsummit/ship-api/...`, tests must too. Mixing source paths (`../../app/...`) and package-export paths leads to two distinct class identities, breaking `instanceof AppError` checks. Stick to package-export paths everywhere outside `packages/core/src/`.
+
+## Type-driven schema flow
+
+ShipAPI v4 propagates types end-to-end through:
+
+```
+Drizzle table (modules/<name>/schema.ts)
+   ↓ drizzle-zod
+Zod schema (modules/<name>/validation/schemas.ts)
+   ↓ validate("json", schema)
+Hono route handler (c.req.valid("json"))
+   ↓ typeof app
+ShipApiClient type (consumer's src/index.ts)
+   ↓ hc<ShipApiClient>(BASE_URL)
+Typed RPC client (web / mobile / another service)
+```
+
+**No codegen, no manifest sync.** Schema changes propagate through TypeScript types alone. Don't add manual type duplications between layers — let inference flow.
+
+## Null safety
+
+- Prefer `T | undefined` for "not yet known" / "may not be present"; use `T | null` only when the database column is nullable (or another external system distinguishes null from absent).
+- Don't use the non-null assertion `!` to suppress null errors. If TS thinks a value can be null, narrow with a check or fix the type.
+- Optional chaining (`?.`) and nullish coalescing (`??`) over `&&` / `||` for default-value patterns when you mean "null or undefined", not "any falsy".
+
+## Branded types
+
+For IDs and other opaque scalars where mixing types would be a bug:
+
+```ts
+type AccountId = string & { readonly _brand: "AccountId" };
+type PostId = string & { readonly _brand: "PostId" };
+```
+
+Then `getPost(accountId)` fails to compile. Branded types are zero-cost at runtime.
+
+## Generics
+
+- Default to inference. Explicit generics belong on factory APIs (`createApp<TSchema>`, `DrizzleEntityService<TTable>`) — not on call sites where TS can infer.
+- Constrain generics with `extends` where it documents intent: `function fn<T extends { id: string }>(x: T)`.
+- Avoid `any` as a generic constraint. `unknown` is almost always better.
+
+## Error narrowing
+
+Use `instanceof` against the AppError taxonomy when you need to react to specific errors:
+
+```ts
+try { await service.create(input); }
+catch (err) {
+  if (err instanceof ConflictError) return c.json({ message: "exists" }, 409);
+  throw err;
+}
+```
+
+Otherwise let `registerErrorHandlers(app)` handle it — don't catch errors just to re-throw with a custom shape.
+
+## Async + transactions
+
+- `async` / `await` everywhere; no callback-style APIs.
+- `withTransaction(db, async tx => ...)` (not `db.transaction(...)` directly) — the wrapper adds an OTel span, translates `TransactionRollbackError` to `RollbackError`, and supports `retryOnDeadlock`.
+- Inside a transaction, all DB operations go through `tx`, not `db`. Mix-and-match leaks operations outside the transaction boundary.
+
+## Service patterns
+
+```ts
+import { DrizzleEntityService } from "@sixthsummit/ship-api";
+import { posts } from "../schema";
+
+export class PostService extends DrizzleEntityService<typeof posts> {
+  protected getTable() { return posts; }
+  protected getDefaultSearchFields() { return ["title", "body"] as const; }
+  protected getDefaultRelations() { return ["author"] as const; }
+
+  // Domain methods on top
+  async publish(id: PostId, ctx: RequestContext) {
+    return this.update(id, { publishedAt: new Date() }, ctx);
+  }
+}
+```
+
+Lifecycle hooks override per-service:
+
+```ts
+protected async beforeCreate(values: Insert, ctx: RequestContext) {
+  return { ...values, slug: slugify(values.title) };  // returns transform
+}
+```
+
+**Query through the abstraction, not raw Drizzle.** Express list / search / filter logic via `DrizzleEntityService` + the `QueryOptions` operator DSL (`where`, `search`, `relations`, pagination) — don't import `eq` / `and` / `sql` from `drizzle-orm` into a service. `QueryOptions` is the ORM-swap insurance: keeping raw Drizzle confined to the data-access layer (`DrizzleEntityService`, `app/db` / `src/db`, schema files) means a future ORM change touches only that layer. ESLint's `@typescript-eslint/no-restricted-imports` rule fires on a raw `drizzle-orm` value import outside that layer; for genuinely specialized access (row locking, raw `sql`) add a justified `// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- <reason>`. Type-only imports (`InferSelectModel`, …) are allowed.
+
+## Conventions
+
+- File names: `PascalCase.ts` for classes / services (`PostService.ts`), `camelCase.ts` for utilities (`buildQuery.ts`), `kebab-case` for route directories.
+- Exported types: name after what they represent (`Post`, `CreatePostInput`), not how they're derived (`PostType`, `CreatePostBody`).
+- Prefer `type` over `interface` unless you specifically need declaration merging.
+- Barrel exports (`index.ts`) only when consumers benefit from a single import path; don't create barrel files just to have one.
+
+## Constructor-based DI
+
+Services accept their dependencies via constructor:
+
+```ts
+export class PostService {
+  constructor(
+    private readonly db: DrizzleDb<typeof schema>,
+    private readonly cache: Cache,
+  ) {}
+}
+```
+
+Don't reach for a DI container. The framework's primitives (`createApp()`, `buildXxxApp({ service, provider })` mounted via `root.route("/", ...)`) compose explicitly; that's enough.
+
+## Don'ts
+
+- **Don't reach for `as any` to suppress type errors.** That's a bug being silenced. Find the actual type.
+- **Don't write `Record<string, any>`.** Either it's a known shape (define it) or genuinely unknown (use `unknown` and narrow).
+- **Don't use `Function` as a type.** Use `() => void` or a proper signature.
+- **Don't enable `experimentalDecorators` outside the v3 paths** (which are gone post-cut-over). v4 doesn't use decorators; the auth + permission system is middleware.
+- **Don't import from `lib/`** — those are build artifacts.

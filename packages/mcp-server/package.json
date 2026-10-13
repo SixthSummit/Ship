@@ -1,0 +1,43 @@
+{
+  "name": "@sixthsummit/ship-api-mcp-server",
+  "version": "0.1.1",
+  "description": "MCP server exposing ShipAPI route-registry introspection tools to Claude Code, Cursor, and other LLM agents",
+  "type": "module",
+  "author": "Scott Gibson",
+  "license": "Apache-2.0",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "bin": {
+    "ship-api-mcp-server": "./lib/server.js"
+  },
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc",
+    "prepublishOnly": "pnpm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^4.3.6"
+  },
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/mcp-server"
+  }
+}

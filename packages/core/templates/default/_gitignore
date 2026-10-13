@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# Drizzle
+src/db/migrations/meta/
+.drizzle/
+
+# Build / cache
+*.tsbuildinfo
+.turbo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Coverage
+coverage/
+
+# Wrangler (only relevant if you opt into edge runtime)
+.wrangler/

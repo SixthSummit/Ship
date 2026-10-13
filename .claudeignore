@@ -1,0 +1,32 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+lib/
+**/lib/
+coverage/
+**/coverage/
+*.tsbuildinfo
+**/*.tsbuildinfo
+.turbo/
+**/.turbo/
+tmp/
+**/tmp/
+.next/
+.vercel/
+.cache/
+
+# Auto-generated TypeORM migrations — read entity files instead
+**/migrations/*.sql
+
+# Build artifacts
+**/openapi.json
+
+# Logs
+*.log
+**/*.log
+
+# Local env (should not be committed; ignore in case)
+.env
+.env.local
+.env.*.local

@@ -1,0 +1,23 @@
+# Astro build outputs
+dist/
+.astro/
+
+# Auto-synced content (sourced from /docs at build time by
+# scripts/copy-docs.mjs). The source-of-truth lives in /docs/*.md
+# and /docs/v4/*.md; what lands under src/content/docs/ is a build
+# artifact. Keep this list in sync with the ALLOW_LIST entries.
+src/content/docs/getting-started/
+src/content/docs/concepts/
+src/content/docs/cross-framework/
+src/content/docs/tooling/
+src/content/docs/features/
+src/content/docs/v4-launch.md
+src/content/docs/v4-status.md
+src/content/docs/migration-v3-to-v4.md
+src/content/docs/public-api-surface.md
+src/content/docs/versioning.md
+
+# Local
+.env
+.env.production
+node_modules/

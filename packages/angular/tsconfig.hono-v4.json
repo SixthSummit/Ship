@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["hono-v4/src/**/*.ts"],
+  "exclude": ["hono-v4/src/**/*.test.ts", "node_modules", "lib"]
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateModule",
+  "title": "ShipAngular: generate module",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Module name in kebab-case (e.g. 'feedback'). Becomes the directory name and the route path.",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Module name (kebab-case):"
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line description for module.json.",
+      "default": "A ShipAngular feature module"
+    },
+    "dependencies": {
+      "type": "string",
+      "description": "Comma-separated list of module names this module depends on (e.g. 'core,auth').",
+      "default": ""
+    },
+    "addRoute": {
+      "type": "boolean",
+      "default": true,
+      "description": "Inject the module's routes into the app's main routes file."
+    },
+    "routePath": {
+      "type": "string",
+      "description": "Path under which to mount the module. Defaults to the module name."
+    },
+    "guarded": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the scaffolded route includes canActivate: [authGuard]."
+    }
+  },
+  "required": ["name"]
+}

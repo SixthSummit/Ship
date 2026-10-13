@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["operations/src/**/*.type-test.ts", "query/src/**/*.type-test.ts"],
+  "exclude": ["node_modules", "lib"]
+}

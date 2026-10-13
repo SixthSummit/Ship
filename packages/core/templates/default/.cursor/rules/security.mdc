@@ -1,0 +1,92 @@
+---
+alwaysApply: true
+description: "Security guidelines for ShipAPI v4 apps"
+tags: ["security", "authentication", "authorization"]
+globs: ["modules/**/*.ts", "src/index.ts", "src/environment.ts"]
+---
+
+# Security Guidelines
+
+## Authentication
+
+ShipAPI v4 uses a pluggable `AuthProvider` interface. The default adapter is `FirebaseAuthProvider`; v4.x will add Better-Auth / Clerk / WorkOS / Auth.js adapters.
+
+### Token verification
+
+- Bearer tokens (Authorization header or session cookie) are verified by the configured `AuthProvider`.
+- The framework's `JwtAuthFlow` issues stateless ES256 JWT cookies (`httpOnly, secure, sameSite=lax`) plus a `refresh_tokens` table for revocation.
+- **Never disable signature verification.** Don't bypass the provider chain "for tests" — use a `MockAuthProvider` adapter instead.
+
+### Middleware
+
+- `requireAuth({ provider })` — rejects with 401 if no valid token. Set `optional: true` only for routes that have a public + authenticated mode.
+- `requirePermission(slug)` — rejects with 403 if the resolved account lacks the slug.
+- **Authorization runs at the route, not the controller.** Always chain `requireAuth → requirePermission` on protected routes. The framework's `ship-reviewer` plugin agent flags missing chains.
+
+### Permission slugs
+
+- Format: `module:resource:action` (e.g., `posts:create`, `accounts:list`, `billing:invoice:read`).
+- Define as constants in `modules/<name>/permissions.ts`. Reference the constant from both `requirePermission(slug)` and any seed-data inserts.
+- Permissions are durable — adding new ones is fine, renaming or removing one needs a migration plan.
+
+### Secrets
+
+- **No hardcoded fallbacks** in `src/environment.ts`. `defineEnv(zodSchema)` fail-fasts at boot — that's the design. A boot failure is preferable to running on an attacker-known default.
+- Never commit `.env` files. The template's `.env.example` is the only env file checked in.
+- Rotate `JWT_SIGNING_KEY` per the framework's documented procedure (add new key to `JWT_VERIFICATION_KEYS` first, cut signing over, wait > max token lifetime, remove old key).
+
+## Input validation
+
+- All request input goes through Zod via `validate("json"|"query"|"param", schema)`. Read with `c.req.valid(...)`.
+- Use `.strict()` on object schemas to reject unknown fields — defense against parameter-injection accidents and forward-compat bugs.
+- Validate at the boundary; don't re-validate inside services.
+
+### Webhooks
+
+- Webhook routes (`POST /webhooks/<provider>`) need raw-body signature verification. Use `parseWebhook(c, { provider, secret })` — handles Stripe, GitHub, Slack, Twilio out of the box; pluggable via the `WebhookVerifier` interface for custom providers.
+- Don't apply `validate("json", ...)` before signature verification — Zod consuming the body breaks the raw-body contract some signatures depend on.
+
+### File uploads
+
+- Use `parseUpload(c, schema)` from the framework — Web Standards FormData with magic-byte MIME validation via `file-type`.
+- Be aware that uploads are buffered in memory up to `bodyLimit` (default 25 MB) before the handler runs. For large files, drop to `c.req.raw.body` and pipe directly to a `StorageService` adapter.
+- Always validate MIME via magic bytes, not the Content-Type header (which clients control).
+
+## CSRF
+
+- **Default**: `httpOnly, secure, sameSite=lax` cookies + automatic Origin / Sec-Fetch-Site checking on mutating requests. Protects against top-level navigation CSRF.
+- **Hardened mode**: `csrf({ doubleSubmit: true })` middleware adds an `X-CSRF-Token` double-submit cookie. Opt in for third-party-iframed apps or multi-subdomain consumers.
+
+## Rate limit
+
+- `rateLimit({ windowMs, max, keyGenerator, scope })` — Redis-backed sliding window. Apply to login / signup / password-reset / any endpoint where unauthenticated retry is cheap.
+- **Default fail-mode is fail-closed** when Redis is unavailable. Override with `onRedisUnavailable: 'allow'` only with a deliberate threat-model decision.
+- Emits RFC-draft `RateLimit-Limit` / `RateLimit-Remaining` / `RateLimit-Policy` headers.
+
+## SQL injection
+
+- Drizzle uses parameterized queries by default — `eq(table.col, userInput)` is safe.
+- Don't drop to raw SQL via `sql\`...\${input}...\`` with user input interpolated. If you need raw SQL, parameterize via `sql.placeholder` or build the string from a constant whitelist.
+
+## Logging
+
+- Sensitive fields are redacted by pino's redaction list: `authorization`, `cookie`, `*.password`, `*.token`, `firebaseCredentials`.
+- **Never `console.log` user PII or secrets.** `console.*` bypasses redaction; use `logger`.
+- Don't log full request bodies on routes that accept secrets (login, password reset, payment intent).
+
+## WebSocket auth
+
+- The framework uses subprotocol-header authentication: client opens `new WebSocket(url, ['ship-api.v1', \`bearer.${token}\`])`. Server reads `Sec-WebSocket-Protocol`, runs the same `AuthProvider` chain as `requireAuth`, rejects the upgrade with 401 if invalid.
+- Don't auth via URL `?token=...` — leaks into access logs. Don't auth via first-message handshake — creates "connected but unauthenticated" footgun.
+
+## Audit
+
+- `audit-ci` runs in CI and hard-fails on `high` / `critical` findings. Don't `--allow-list` a high finding without a tracking issue + remediation date.
+- Run `npm run audit` locally before opening a PR that bumps deps.
+
+## When in doubt
+
+- Default to fail-closed.
+- Default to validating at boundaries.
+- Default to using the framework's middleware factories rather than rolling your own.
+- If a security-relevant change feels surprising, check `docs/V4_LAUNCH.md` and the framework's `.cursor/rules/security.mdc` for the intended pattern.

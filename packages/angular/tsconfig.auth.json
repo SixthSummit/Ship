@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["auth/src/**/*.ts", "firebase-auth/src/**/*.ts"],
+  "exclude": ["auth/src/**/*.test.ts", "firebase-auth/src/**/*.test.ts", "node_modules", "lib"]
+}

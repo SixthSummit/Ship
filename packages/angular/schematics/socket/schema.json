@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateSocket",
+  "title": "ShipAngular: generate operation socket",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Socket service name:"
+    },
+    "bindingPackage": {
+      "type": "string",
+      "default": "@my-org/ship-api-client"
+    },
+    "bindingName": {
+      "type": "string",
+      "description": "Generated OperationSocketBinding export."
+    },
+    "apiImport": {
+      "type": "string",
+      "default": "../../api"
+    },
+    "path": {
+      "type": "string",
+      "default": "src/app/services"
+    }
+  },
+  "required": ["name"]
+}

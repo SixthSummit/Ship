@@ -1,0 +1,15 @@
+{
+  "$schema": "https://claude.com/schemas/plugin.json",
+  "name": "ship-api",
+  "version": "0.1.0-alpha.1",
+  "description": "Claude Code plugin for ShipAPI v4 — agents that scaffold modules, review diffs against project conventions, and trace requests; slash commands wrapping common workflows; skills auto-loaded from .cursor/rules/ for in-context pattern guidance.",
+  "displayName": "ShipAPI",
+  "author": "Sixth Summit",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/claude-plugin"
+  },
+  "license": "ISC",
+  "keywords": ["ship-api", "hono", "drizzle", "v4", "framework", "agent", "claude-code"]
+}

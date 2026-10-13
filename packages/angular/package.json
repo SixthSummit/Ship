@@ -1,0 +1,195 @@
+{
+  "name": "@sixthsummit/ship-angular",
+  "version": "4.1.0",
+  "description": "Frontend-only Angular framework for typed ShipAPI operations and agent-safe applications",
+  "type": "module",
+  "main": "lib/fesm2022/sixthsummit-ship-angular.mjs",
+  "module": "lib/fesm2022/sixthsummit-ship-angular.mjs",
+  "types": "lib/index.d.ts",
+  "sideEffects": false,
+  "bin": {
+    "ship-angular": "./cli/ship-angular.js"
+  },
+  "scripts": {
+    "prebuild": "node ../../angular/scripts/sync-version.js",
+    "build": "node build-package.mjs && pnpm run build:schematics && node ../../angular/scripts/build-core.js",
+    "build:schematics": "tsc -p tsconfig.schematics.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage && pnpm test:query-generator:coverage",
+    "lint": "eslint src/ operations/src/ ship-api/src/ hono-v4/src/ legacy-rest/src/ auth/src/ firebase-auth/src/ download/src/ upload/src/ stream/src/ socket/src/ realtime/src/ forms/src/ testing/src/ query/src/",
+    "type-check": "tsc --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.ship-api.json && tsc -p tsconfig.hono-v4.json && tsc -p tsconfig.legacy-rest.json && tsc -p tsconfig.auth.json && tsc -p tsconfig.transports.json && tsc -p tsconfig.realtime.json && tsc -p tsconfig.query.json",
+    "test:query-generator:coverage": "vitest run --config vitest.query-generator.config.ts --coverage"
+  },
+  "keywords": [
+    "angular",
+    "typescript",
+    "firebase",
+    "authentication",
+    "framework",
+    "boilerplate",
+    "cli",
+    "tailwind",
+    "standalone-components"
+  ],
+  "author": "Sixth Summit",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular.mjs"
+    },
+    "./testing": {
+      "types": "./lib/testing/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-testing.mjs"
+    },
+    "./operations": {
+      "types": "./lib/operations/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-operations.mjs"
+    },
+    "./ship-api": {
+      "types": "./lib/ship-api/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-ship-api.mjs"
+    },
+    "./hono-v4": {
+      "types": "./lib/hono-v4/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-hono-v4.mjs"
+    },
+    "./legacy-rest": {
+      "types": "./lib/legacy-rest/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-legacy-rest.mjs"
+    },
+    "./auth": {
+      "types": "./lib/auth/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-auth.mjs"
+    },
+    "./firebase-auth": {
+      "types": "./lib/firebase-auth/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-firebase-auth.mjs"
+    },
+    "./download": {
+      "types": "./lib/download/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-download.mjs"
+    },
+    "./upload": {
+      "types": "./lib/upload/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-upload.mjs"
+    },
+    "./stream": {
+      "types": "./lib/stream/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-stream.mjs"
+    },
+    "./socket": {
+      "types": "./lib/socket/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-socket.mjs"
+    },
+    "./realtime": {
+      "types": "./lib/realtime/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-realtime.mjs"
+    },
+    "./forms": {
+      "types": "./lib/forms/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-forms.mjs"
+    },
+    "./eslint": {
+      "types": "./eslint/index.d.ts",
+      "default": "./eslint/index.js"
+    },
+    "./package.json": {
+      "default": "./package.json"
+    },
+    "./query": {
+      "types": "./lib/query/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-query.mjs"
+    }
+  },
+  "files": [
+    "lib/",
+    "cli/",
+    "schematics/",
+    "templates/",
+    "eslint/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "schematics": "./schematics/collection.json",
+  "ng-add": {
+    "save": "dependencies"
+  },
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^12.1.0",
+    "tslib": "^2.8.1"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-contract": "^1.1.0 || ^1.2.0-alpha-20260924191925",
+    "@angular/common": "^20.0.0",
+    "@angular/core": "^20.0.0",
+    "@angular/fire": "^20.0.0",
+    "@angular/forms": "^20.0.0",
+    "@angular/router": "^20.0.0",
+    "firebase": "^11.10.0",
+    "rxjs": ">=7.0.0",
+    "socket.io-client": "^4.8.0",
+    "zod": "^3.23.0 || ^4.0.0",
+    "@tanstack/angular-query-experimental": "5.104.1"
+  },
+  "peerDependenciesMeta": {
+    "@sixthsummit/ship-contract": {
+      "optional": true
+    },
+    "@angular/fire": {
+      "optional": true
+    },
+    "firebase": {
+      "optional": true
+    },
+    "@angular/forms": {
+      "optional": true
+    },
+    "socket.io-client": {
+      "optional": true
+    },
+    "@tanstack/angular-query-experimental": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@angular-devkit/core": "^20.3.36",
+    "@angular-devkit/schematics": "^20.3.36",
+    "@angular/common": "20.3.33",
+    "@angular/compiler": "20.3.33",
+    "@angular/compiler-cli": "20.3.33",
+    "@angular/core": "20.3.33",
+    "@angular/fire": "^20.1.0",
+    "@angular/forms": "20.3.33",
+    "@angular/platform-browser": "20.3.33",
+    "@angular/router": "20.3.33",
+    "@sixthsummit/ship-contract": "workspace:*",
+    "@types/node": "^24.13.3",
+    "firebase": "^11.10.0",
+    "jsdom": "^30.1.2",
+    "ng-packagr": "^20.3.2",
+    "rxjs": "^7.8.2",
+    "socket.io-client": "^4.8.4",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3",
+    "zod": "^3.25.76",
+    "@tanstack/angular-query-experimental": "5.104.1",
+    "@vitest/coverage-v8": "^5.0.3",
+    "eslint": "^10.12.0",
+    "typescript-eslint": "^8.71.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/angular"
+  }
+}

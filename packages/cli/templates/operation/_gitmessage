@@ -1,0 +1,12 @@
+# <type>[optional scope]: <imperative description>
+#
+# Why is this change needed?
+#
+# What evidence proves it works?
+#
+# Optional footers:
+# BREAKING CHANGE: <consumer impact and migration path>
+# Refs: <issue, ADR, or RFC>
+#
+# Types: feat, fix, perf, refactor, docs, style, test, build, ci, chore
+# Use fix only for user-facing defects. Changesets, not commit types, control releases.

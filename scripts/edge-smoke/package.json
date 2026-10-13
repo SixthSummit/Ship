@@ -1,0 +1,12 @@
+{
+  "name": "@sixthsummit/ship-api-edge-smoke",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sixthsummit/ship-api": "workspace:*",
+    "@sixthsummit/ship-contract": "workspace:*",
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-hono": "workspace:*",
+    "hono": "^4.12.15"
+  }
+}

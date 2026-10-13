@@ -1,0 +1,54 @@
+---
+description: ShipAngular 4.0 testing conventions (Vitest, MSW, Playwright tripwire, conformance suite).
+globs: ["**/*.spec.ts", "**/*.test.ts", "**/test-setup.ts", "**/mocks/**"]
+alwaysApply: false
+---
+
+# Testing conventions
+
+## Frameworks
+
+- **Vitest** is the unit/integration test runner (root + per-package).
+- **jsdom** is the default environment.
+- **Playwright** owns deterministic browser behavior that jsdom cannot prove.
+- **MSW** mocks HTTP requests in vitest and dev mode. Module-level handler files live in `mocks/handlers.ts`.
+- **`axe-playwright`** runs against every Playwright test from Phase 1b on. Build fails on serious/critical a11y violations.
+
+## Conformance suite
+
+`../packages/angular/src/auth/adapters/conformance.spec.ts` (Phase 1a) is **the contract** for `AuthAdapter` implementations. Every adapter — Firebase, Auth0, custom — must pass it. To run against a custom adapter:
+
+```ts
+import { runConformance } from '@sixthsummit/ship-angular/testing';
+import { MyAdapter } from './my-adapter';
+
+runConformance(() => new MyAdapter(/* args */));
+```
+
+If you change `AuthAdapter`'s interface, update the conformance suite first; the suite is the source of truth.
+
+## File layout
+
+- New tests sit next to source: `auth.service.ts` ↔ `auth.service.test.ts`.
+- Existing `.spec.ts` files remain supported until a separate mechanical rename. No `__tests__` directories.
+- One `describe` per public API method or behavior.
+- Each test verifies one behavior and must be deterministic.
+- Global and changed-file coverage stay at or above 80% in statements, branches, functions, and lines.
+
+## Package and contract tests
+
+- `pnpm test:packed-conformance` and `pnpm test:browser-conformance` are required and may not use sibling source links or optional skips.
+- `pnpm test:joint-conformance -- --manifest <path>` consumes real ShipAPI tarballs and intentionally requires an explicit manifest.
+- Use type-negative programs for invalid operation IDs, input locations, fields, statuses, and error assumptions.
+- Scan emitted browser JavaScript and declarations for server-only dependency leaks.
+
+## Component tests
+
+- **Standalone components** are tested via `TestBed.configureTestingModule({ imports: [MyComponent] })`. No `declarations`.
+- Provide signal-based services via `provideZonelessChangeDetection()` (Phase 1b on) — match the runtime contract.
+
+## What NOT to test
+
+- Don't test framework code from inside an app's tests. The framework has its own coverage.
+- Don't test Angular itself. Trust `@angular/core`'s correctness.
+- Don't mock `@angular/*` packages. Mock the network layer (MSW), not the framework.

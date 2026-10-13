@@ -1,0 +1,14 @@
+[
+  {
+    "name": "@sixthsummit/ship-angular (FESM2022, gzipped)",
+    "path": "../packages/angular/lib/fesm2022/*.mjs",
+    "limit": "60 KB",
+    "gzip": true
+  },
+  {
+    "name": "@sixthsummit/ship-angular (types)",
+    "path": "../packages/angular/lib/**/*.d.ts",
+    "limit": "30 KB",
+    "gzip": true
+  }
+]

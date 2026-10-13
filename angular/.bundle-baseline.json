@@ -1,0 +1,220 @@
+{
+  "generatedAt": "2026-09-18T18:04:07.859Z",
+  "measurements": [
+    {
+      "name": "@sixthsummit/ship-angular (runtime)",
+      "fileCount": 1,
+      "raw": 92451,
+      "gz": 24812,
+      "br": 21145
+    },
+    {
+      "name": "@sixthsummit/ship-angular (types)",
+      "fileCount": 1,
+      "raw": 68972,
+      "gz": 21233,
+      "br": 18447
+    },
+    {
+      "name": "@sixthsummit/ship-angular/operations (runtime)",
+      "fileCount": 1,
+      "raw": 40442,
+      "gz": 9384,
+      "br": 8140
+    },
+    {
+      "name": "@sixthsummit/ship-angular/operations (types)",
+      "fileCount": 1,
+      "raw": 34094,
+      "gz": 7846,
+      "br": 6781
+    },
+    {
+      "name": "@sixthsummit/ship-angular/ship-api (runtime)",
+      "fileCount": 1,
+      "raw": 12037,
+      "gz": 3083,
+      "br": 2615
+    },
+    {
+      "name": "@sixthsummit/ship-angular/ship-api (types)",
+      "fileCount": 1,
+      "raw": 3297,
+      "gz": 1066,
+      "br": 876
+    },
+    {
+      "name": "@sixthsummit/ship-angular/auth (runtime)",
+      "fileCount": 1,
+      "raw": 10992,
+      "gz": 2341,
+      "br": 1997
+    },
+    {
+      "name": "@sixthsummit/ship-angular/auth (types)",
+      "fileCount": 1,
+      "raw": 2987,
+      "gz": 953,
+      "br": 785
+    },
+    {
+      "name": "@sixthsummit/ship-angular/firebase-auth (runtime)",
+      "fileCount": 1,
+      "raw": 7252,
+      "gz": 1970,
+      "br": 1717
+    },
+    {
+      "name": "@sixthsummit/ship-angular/firebase-auth (types)",
+      "fileCount": 1,
+      "raw": 1904,
+      "gz": 697,
+      "br": 565
+    },
+    {
+      "name": "@sixthsummit/ship-angular/download (runtime)",
+      "fileCount": 1,
+      "raw": 12187,
+      "gz": 3064,
+      "br": 2645
+    },
+    {
+      "name": "@sixthsummit/ship-angular/download (types)",
+      "fileCount": 1,
+      "raw": 3883,
+      "gz": 1065,
+      "br": 912
+    },
+    {
+      "name": "@sixthsummit/ship-angular/upload (runtime)",
+      "fileCount": 1,
+      "raw": 23982,
+      "gz": 4846,
+      "br": 4122
+    },
+    {
+      "name": "@sixthsummit/ship-angular/upload (types)",
+      "fileCount": 1,
+      "raw": 8831,
+      "gz": 1957,
+      "br": 1658
+    },
+    {
+      "name": "@sixthsummit/ship-angular/stream (runtime)",
+      "fileCount": 1,
+      "raw": 35419,
+      "gz": 8524,
+      "br": 7319
+    },
+    {
+      "name": "@sixthsummit/ship-angular/stream (types)",
+      "fileCount": 1,
+      "raw": 15148,
+      "gz": 4434,
+      "br": 3765
+    },
+    {
+      "name": "@sixthsummit/ship-angular/socket (runtime)",
+      "fileCount": 1,
+      "raw": 19726,
+      "gz": 4024,
+      "br": 3511
+    },
+    {
+      "name": "@sixthsummit/ship-angular/socket (types)",
+      "fileCount": 1,
+      "raw": 5014,
+      "gz": 1303,
+      "br": 1116
+    },
+    {
+      "name": "@sixthsummit/ship-angular/realtime (runtime)",
+      "fileCount": 1,
+      "raw": 24402,
+      "gz": 5854,
+      "br": 5075
+    },
+    {
+      "name": "@sixthsummit/ship-angular/realtime (types)",
+      "fileCount": 1,
+      "raw": 15066,
+      "gz": 4131,
+      "br": 3516
+    },
+    {
+      "name": "@sixthsummit/ship-angular/forms (runtime)",
+      "fileCount": 1,
+      "raw": 6874,
+      "gz": 1927,
+      "br": 1679
+    },
+    {
+      "name": "@sixthsummit/ship-angular/forms (types)",
+      "fileCount": 1,
+      "raw": 4016,
+      "gz": 1089,
+      "br": 969
+    },
+    {
+      "name": "@sixthsummit/ship-angular/testing (runtime)",
+      "fileCount": 1,
+      "raw": 15281,
+      "gz": 3734,
+      "br": 3183
+    },
+    {
+      "name": "@sixthsummit/ship-angular/testing (types)",
+      "fileCount": 1,
+      "raw": 7163,
+      "gz": 2372,
+      "br": 1962
+    },
+    {
+      "name": "@sixthsummit/ship-angular/hono-v4 (runtime)",
+      "fileCount": 1,
+      "raw": 5939,
+      "gz": 1718,
+      "br": 1431
+    },
+    {
+      "name": "@sixthsummit/ship-angular/hono-v4 (types)",
+      "fileCount": 1,
+      "raw": 3103,
+      "gz": 1107,
+      "br": 897
+    },
+    {
+      "name": "@sixthsummit/ship-angular/legacy-rest (runtime)",
+      "fileCount": 1,
+      "raw": 6119,
+      "gz": 1797,
+      "br": 1510
+    },
+    {
+      "name": "@sixthsummit/ship-angular/legacy-rest (types)",
+      "fileCount": 1,
+      "raw": 3906,
+      "gz": 1336,
+      "br": 1087
+    },
+    {
+      "name": "@sixthsummit/ship-angular/query (runtime)",
+      "fileCount": 1,
+      "raw": 62167,
+      "gz": 12846,
+      "br": 10598
+    },
+    {
+      "name": "@sixthsummit/ship-angular/query (types)",
+      "fileCount": 1,
+      "raw": 19633,
+      "gz": 4745,
+      "br": 4065
+    }
+  ],
+  "totals": {
+    "raw": 572287,
+    "gz": 145258,
+    "br": 124088
+  }
+}

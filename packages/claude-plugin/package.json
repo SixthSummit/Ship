@@ -1,0 +1,48 @@
+{
+  "name": "@sixthsummit/ship-api-claude-plugin",
+  "version": "0.1.1",
+  "description": "Claude Code plugin for ShipAPI v4 \u2014 agents, slash commands, and skills for module design / scaffolding / convention review.",
+  "type": "module",
+  "author": "Scott Gibson",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/claude-plugin"
+  },
+  "files": [
+    "plugin.json",
+    ".mcp.json",
+    "agents/",
+    "commands/",
+    "skills/",
+    "hooks/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "NOTICE"
+  ],
+  "peerDependencies": {
+    "@sixthsummit/ship-api-mcp-server": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@sixthsummit/ship-api-mcp-server": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "ship-api",
+    "claude-code",
+    "claude-code-plugin",
+    "agent",
+    "v4",
+    "hono",
+    "drizzle"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-api-mcp-server": "workspace:^"
+  }
+}

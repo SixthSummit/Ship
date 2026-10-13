@@ -1,0 +1,12 @@
+{
+  "$schema": "https://claude.com/schemas/mcp.json",
+  "mcpServers": {
+    "ship-api": {
+      "command": "npx",
+      "args": ["-y", "@sixthsummit/ship-api-mcp-server"],
+      "env": {
+        "SHIP_API_DEV_URL": "http://localhost:3000"
+      }
+    }
+  }
+}

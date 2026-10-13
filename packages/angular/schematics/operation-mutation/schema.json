@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "ShipAngularGenerateOperationMutation",
+  "title": "ShipAngular: generate operation mutation",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Mutation name (for example 'create-account').",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Mutation name (for example 'create-account'):"
+    },
+    "operationId": {
+      "type": "string",
+      "description": "Stable HTTP operation ID from the packed application contract.",
+      "default": "accounts.create"
+    },
+    "contractPackage": {
+      "type": "string",
+      "description": "Browser-safe package exporting the application contract type.",
+      "default": "@my-org/ship-api-contract"
+    },
+    "contractType": {
+      "type": "string",
+      "description": "Application contract type exported by contractPackage.",
+      "default": "AppContract"
+    },
+    "apiImport": {
+      "type": "string",
+      "description": "Import path to the generated application API boundary.",
+      "default": "../../api"
+    },
+    "path": {
+      "type": "string",
+      "description": "Directory to scaffold under.",
+      "default": "src/app/mutations"
+    }
+  },
+  "required": ["name"]
+}

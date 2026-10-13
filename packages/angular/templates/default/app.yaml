@@ -1,0 +1,62 @@
+# App Engine — STATIC-ONLY opt-out path.
+#
+# **The default deploy target for ShipAngular v4 is Cloud Run** (see
+# Dockerfile + cloudbuild.yaml in this directory). Cloud Run runs the SSR
+# server, autoscales to zero, and supports per-route prerender vs SSR vs
+# client-render that Phase 2's app.routes.server.ts declares.
+#
+# This file is the alternate path for teams that want to ship a fully
+# static site with no SSR. To use it:
+#
+#   1. In angular.json, change `outputMode: 'server'` to `outputMode: 'static'`.
+#   2. Remove `server`, `ssr`, and the SSR portion of `prerender` from the
+#      build options. Keep just the prerendered routes (`/home` etc.).
+#   3. Replace 'your-app-name' below with the project name from
+#      angular.json (this is what `ship-angular create` does at scaffold
+#      time when `--with-ssr=false` is passed — Phase 3 schematics).
+#   4. Deploy with `gcloud app deploy`.
+#
+# All authenticated routes (dashboard) become client-rendered SPAs in this
+# mode, since there's no SSR runtime to handle them.
+
+service: default
+runtime: nodejs22
+instance_class: F1
+entrypoint: pnpm noop
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 3
+
+inbound_services:
+  - warmup
+
+handlers:
+  # Hashed CSS/JS bundles — long cache, immutable.
+  - url: /(.*\.(css|js|mjs|json))$
+    static_files: dist/{{PROJECT_NAME}}/browser/\1
+    upload: dist/{{PROJECT_NAME}}/browser/.*\.(css|js|mjs|json)$
+    secure: always
+    http_headers:
+      cache-control: public, max-age=31536000, immutable
+
+  # Media assets — moderate cache.
+  - url: /(.*\.(gif|png|jpg|jpeg|svg|webp|ico|woff2?))$
+    static_files: dist/{{PROJECT_NAME}}/browser/\1
+    upload: dist/{{PROJECT_NAME}}/browser/.*\.(gif|png|jpg|jpeg|svg|webp|ico|woff2?)$
+    secure: always
+    http_headers:
+      cache-control: public, max-age=604800, must-revalidate
+
+  - url: /assets
+    static_dir: dist/{{PROJECT_NAME}}/browser/assets
+    secure: always
+    http_headers:
+      cache-control: public, max-age=604800, must-revalidate
+
+  # SPA fallback. NOTE: in static-only mode, App Engine cannot inject CSP
+  # headers per-request. Configure CSP via your CDN / Cloud Armor instead.
+  - url: /.*
+    static_files: dist/{{PROJECT_NAME}}/browser/index.html
+    upload: dist/{{PROJECT_NAME}}/browser/index.html
+    secure: always

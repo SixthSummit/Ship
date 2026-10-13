@@ -1,0 +1,38 @@
+version: "3.8"
+services:
+  postgres:
+    container_name: ship-api-postgres
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: ship-api
+      POSTGRES_USER: ship-api
+      POSTGRES_PASSWORD: ship-api
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_ship-api:/var/lib/postgresql/data
+
+  api:
+    container_name: ship-api
+    build: .
+    restart: always
+    environment:
+      - ENVIRONMENT_NAME=local
+      - NODE_ENV=local
+      - PORT=3000
+      - DB_NAME=ship-api
+      - DB_USERNAME=ship-api
+      - DB_PASSWORD=ship-api
+      - DB_HOST=ship-api-postgres
+      - DB_PORT=5432
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./:/usr/src/app
+      - /usr/src/app/node_modules
+
+volumes:
+  postgres_data_ship-api:

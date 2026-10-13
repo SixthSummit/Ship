@@ -1,0 +1,81 @@
+{
+  "name": "@sixthsummit/ship-webhooks",
+  "version": "0.1.0",
+  "description": "Optional provider webhook verifiers for Ship inbound webhook operations",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./stripe": {
+      "types": "./lib/stripe.d.ts",
+      "import": "./lib/stripe.js",
+      "default": "./lib/stripe.js"
+    },
+    "./github": {
+      "types": "./lib/github.d.ts",
+      "import": "./lib/github.js",
+      "default": "./lib/github.js"
+    },
+    "./slack": {
+      "types": "./lib/slack.d.ts",
+      "import": "./lib/slack.js",
+      "default": "./lib/slack.js"
+    },
+    "./twilio": {
+      "types": "./lib/twilio.d.ts",
+      "import": "./lib/twilio.js",
+      "default": "./lib/twilio.js"
+    },
+    "./resend": {
+      "types": "./lib/resend.d.ts",
+      "import": "./lib/resend.js",
+      "default": "./lib/resend.js"
+    },
+    "./ghl": {
+      "types": "./lib/ghl.d.ts",
+      "import": "./lib/ghl.js",
+      "default": "./lib/ghl.js"
+    },
+    "./shared-secret": {
+      "types": "./lib/shared-secret.d.ts",
+      "import": "./lib/shared-secret.js",
+      "default": "./lib/shared-secret.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/webhooks/src",
+    "test:coverage": "vitest run --root ../.. packages/webhooks/src --coverage"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/webhooks"
+  }
+}

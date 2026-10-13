@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "target": "ES2022",
+    "rootDir": "schematics",
+    "outDir": "schematics",
+    "declaration": false,
+    "sourceMap": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "useUnknownInCatchVariables": false,
+    "types": ["node"]
+  },
+  "include": ["schematics/**/*.ts"],
+  "exclude": [
+    "schematics/**/*.spec.ts",
+    "schematics/**/files/**",
+    "schematics/**/*.test.ts",
+    "schematics/**/fixtures/**"
+  ]
+}
