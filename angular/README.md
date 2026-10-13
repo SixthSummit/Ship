@@ -62,8 +62,8 @@ a source-copy feature catalog.
 ## Installation
 
 Use Angular 20 and an exact framework version from [the package changelog](../packages/angular/CHANGELOG.md).
-Packages target public npmjs releases under `@sixthsummit`, without a read token.
-The first npm publication is pending launch; see [the release guide](../RELEASE_GUIDE.md).
+Packages use public npmjs releases under `@sixthsummit`, without a read token.
+See [the release guide](../RELEASE_GUIDE.md) for alpha and stable release channels.
 See [installation](docs/getting-started/INSTALLATION.md) and the
 [query guide](docs/guides/TANSTACK_QUERY.md) for optional TanStack Query setup.
 

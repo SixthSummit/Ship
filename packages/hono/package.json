@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-hono",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Hono transport and credential adapter for the Ship application kernel",
   "type": "module",
   "main": "./lib/index.js",

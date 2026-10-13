@@ -1,6 +1,6 @@
 # ADR-0002: npm distribution and selective monorepo CI
 
-- Status: Accepted for preparation; publication remains disabled
+- Status: Accepted; publication enabled for the public launch
 - Date: 2026-10-12
 
 ## Context
@@ -11,7 +11,7 @@ API and Angular share a pnpm/Turbo repository but retain independent package ver
 
 Keep Changesets and preview its full pending release plan in CI. Use one change-planning workflow with API, Angular and documentation jobs and one required `CI Summary`. Shared tooling and unknown paths select all checks. Changes affecting the joint contract, transport and CLI select both frameworks. A failed planner or an unexpectedly skipped selected job fails the summary.
 
-Use public npmjs package metadata and token-free consumer installation. Publishing is a separate, manually dispatched workflow, disabled by default. Alpha versions come from `dev`; stable versions require explicit Changesets version bookkeeping on `main`. Query npm and pack only the selected absent versions. Verify archive identity and dependency resolution before uploading the exact archives with npm trusted publishing and provenance. First publication requires explicit bootstrap setup. No source visibility or production promotion is part of this preparation.
+Use public npmjs package metadata and token-free consumer installation. Publishing is a separate, manually dispatched workflow, disabled by default. Alpha versions come from `dev`; stable versions require explicit Changesets version bookkeeping on `main`. Query npm and pack only the selected absent versions. Verify archive identity and dependency resolution before uploading the exact archives with npm trusted publishing and provenance. First publication requires explicit bootstrap setup. The initial preparation kept the source private; the subsequent public launch enables the repository publishing gate.
 
 ## Consequences
 

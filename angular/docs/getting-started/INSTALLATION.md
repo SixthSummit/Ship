@@ -1,9 +1,10 @@
 # Installation
 
 Stable versions are released from `main`; `dev` produces alpha snapshots. Framework
-development uses pnpm; consumers may use another package manager. Packages target
-public npmjs releases under `@sixthsummit`; no read token is needed. The first npm
-publication is pending launch. See the root `RELEASE_GUIDE.md` for release status and setup.
+development uses pnpm; consumers may use another package manager. Packages use
+public npmjs releases under `@sixthsummit`; no read token is needed. Use `latest` for
+stable releases or explicitly select `alpha` for development snapshots. See the root
+`RELEASE_GUIDE.md` for the release process.
 
 ## Framework checkout
 
