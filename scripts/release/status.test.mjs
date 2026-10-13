@@ -1,6 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { getReleasePlan } from "@changesets/get-release-plan";
 import { afterEach, expect, it } from "vitest";
 
@@ -27,6 +29,33 @@ function fixture() {
 }
 afterEach(() => {
   for (const cwd of directories.splice(0)) rmSync(cwd, { recursive: true, force: true });
+});
+it("finishes the alpha planner with zero outputs without invoking snapshot versioning", () => {
+  const cwd = fixture();
+  writeFileSync(
+    join(cwd, "packages/example/package.json"),
+    JSON.stringify({ name: "example", version: "1.0.0", private: true }),
+  );
+  const output = join(cwd, "outputs");
+  const result = execFileSync(
+    process.execPath,
+    [fileURLToPath(new URL("./plan.mjs", import.meta.url))],
+    {
+      cwd,
+      env: {
+        ...process.env,
+        RELEASE_CHANNEL: "alpha",
+        RELEASE_BOOTSTRAP: "false",
+        GITHUB_OUTPUT: output,
+      },
+      encoding: "utf8",
+    },
+  );
+  expect(result).toContain("Nothing to publish.");
+  expect(readFileSync(output, "utf8")).toContain("count=0");
+  expect(JSON.parse(readFileSync(join(cwd, ".release/publish-plan.json"), "utf8")).plan).toEqual(
+    [],
+  );
 });
 it("accepts a consumed or documentation-only release plan without requiring a changeset", async () => {
   const cwd = fixture();
