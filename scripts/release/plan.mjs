@@ -103,7 +103,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const before = manifests();
   const status = await getReleasePlan(process.cwd());
   writeFileSync(".release/status.json", `${JSON.stringify(status, null, 2)}\n`);
-  if (channel === "alpha") {
+  if (
+    channel === "alpha" &&
+    (bootstrap || status.releases.some((release) => release.type !== "none"))
+  ) {
     if (bootstrap)
       writeFileSync(
         ".changeset/npm-bootstrap.md",
@@ -128,7 +131,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       "--write",
       "../packages/angular/CHANGELOG.md",
     ]);
-  } else
+  } else if (channel === "latest")
     assert.equal(
       status.changesets.length,
       0,
