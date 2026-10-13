@@ -59,7 +59,7 @@ feat(resource)!: replace Hono thunks
 BREAKING CHANGE: Resources now use stable operation IDs and typed inputs.
 ```
 
-Conventional Commits describe git history. Changesets independently describe package release impact. A consumer-visible change normally needs both an appropriate commit and a `.changeset/*.md` entry.
+Conventional Commits describe git history. Changesets independently describe package release impact. A consumer-visible change normally needs both an appropriate commit and a root `.changeset/*.md` entry.
 
 ### Commit template
 
@@ -100,7 +100,7 @@ do not make pnpm a runtime dependency.
 
 ## Pull requests
 
-Use `.github/PULL_REQUEST_TEMPLATE.md`. A PR must state:
+Use the root `.github/PULL_REQUEST_TEMPLATE.md`. A PR must state:
 
 - user/consumer outcome;
 - affected rearchitecture phase/checkpoint when applicable;
