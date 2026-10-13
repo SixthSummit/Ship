@@ -114,6 +114,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     });
     run(["exec", "changeset", "version", "--snapshot", "alpha"]);
     run(["--filter", "ship-angular", "sync-version"]);
+    // Changesets emits Markdown that differs from Angular's enforced formatting.
+    run([
+      "--filter",
+      "ship-angular",
+      "exec",
+      "prettier",
+      "--write",
+      "../packages/angular/CHANGELOG.md",
+    ]);
   } else
     assert.equal(
       status.changesets.length,
