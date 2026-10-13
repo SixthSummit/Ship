@@ -59,6 +59,7 @@ jobs:
         with:
           name: npm-release-artifacts
           path: .release/
+          include-hidden-files: true
       - name: Install npm with trusted publishing support
         if: steps.plan.outputs.count != '0'
         run: npm install --global npm@11.6.2
