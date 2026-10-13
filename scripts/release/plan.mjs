@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } f
 import { pathToFileURL } from "node:url";
 import { getReleasePlan } from "@changesets/get-release-plan";
 import { classifyChanges } from "../ci/plan.mjs";
+import { changelogEntry } from "./notes.mjs";
 
 export const REGISTRY = "https://registry.npmjs.org";
 export function manifests() {
@@ -102,7 +103,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const before = manifests();
   const status = await getReleasePlan(process.cwd());
   writeFileSync(".release/status.json", `${JSON.stringify(status, null, 2)}\n`);
-  if (channel === "alpha") {
+  if (
+    channel === "alpha" &&
+    (bootstrap || status.releases.some((release) => release.type !== "none"))
+  ) {
     if (bootstrap)
       writeFileSync(
         ".changeset/npm-bootstrap.md",
@@ -127,7 +131,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       "--write",
       "../packages/angular/CHANGELOG.md",
     ]);
-  } else
+  } else if (channel === "latest")
     assert.equal(
       status.changesets.length,
       0,
@@ -153,9 +157,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     selected.map((pkg) => `- ${pkg.name}@${pkg.version} (${channel})`).join("\n") ||
     "Nothing to publish.";
   console.log(summary);
-  if (process.env.GITHUB_STEP_SUMMARY)
-    appendFileSync(
-      process.env.GITHUB_STEP_SUMMARY,
-      `## Exact npm publication plan\n\n${summary}\n`,
-    );
+  const notes = !selected.length
+    ? ""
+    : channel === "alpha"
+      ? status.changesets.map((entry) => `### ${entry.id}\n\n${entry.summary}`).join("\n\n")
+      : selected
+          .map(
+            (pkg) =>
+              `### ${pkg.name}@${pkg.version}\n\n${changelogEntry(readFileSync(`${pkg.path}/CHANGELOG.md`, "utf8"), pkg.version)}`,
+          )
+          .join("\n\n");
+  const review = `## Exact npm publication plan\n\n${summary}\n\n${notes}\n`;
+  writeFileSync(".release/review.md", review);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, review);
 }

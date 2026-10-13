@@ -1,11 +1,15 @@
 # Ship changelogs
 
+## Unreleased
+
+- Prepare eligible releases automatically on merges to dev and main; require approval after verification before publishing the same archives. Include package versions and change descriptions in the approval summary.
+
 ## Initial public npm release
 
 - Combine API and Angular in a pnpm/Turborepo workspace with independent package releases.
 - Preserve package APIs and names, Apache-2.0 licensing, and framework-only documentation.
 
-- Target public npmjs packages under `@sixthsummit`; remove GitHub package authentication from Angular scaffolds. Publication is manually dispatched.
+- Target public npmjs packages under `@sixthsummit`; remove GitHub package authentication from Angular scaffolds. Publication is queued by merges and requires release approval.
 - Select API, Angular and documentation checks from changed paths, retain the required CI summary, and preview the combined Changesets release plan.
 - Select and validate exact release archives before publication; require explicit first-publication bootstrap.
 - Patch remaining Hono and ip-address advisory matches; document the private-workspace AngularJS audit false match in `docs/DEPENDENCY_TRIAGE.md`.

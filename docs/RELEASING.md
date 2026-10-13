@@ -1,6 +1,6 @@
 # Releasing ShipAPI
 
-The root [Ship release guide](../RELEASE_GUIDE.md) is authoritative for npmjs publication, selective CI, initial setup, alpha snapshots and stable versioning. Releases remain manually dispatched and gated by the publishing repository variable.
+The root [Ship release guide](../RELEASE_GUIDE.md) is authoritative for npmjs publication, selective CI, initial setup, alpha snapshots and stable versioning. Merges into `dev` and `main` automatically prepare eligible releases. Publishing requires approval in the `npm` environment and remains gated by the publishing repository variable.
 
 ## Published package set
 
