@@ -12,6 +12,7 @@ export const SHIP_API_PACKAGE_DIRECTORIES = Object.freeze([
   "observability-otel",
   "testing",
   "realtime-socketio",
+  "push",
   "jobs-bullmq",
   "mcp-server",
   "claude-plugin",

@@ -123,6 +123,7 @@ Implemented surface on `dev`:
 - **`/firebase-auth`:** optional Firebase provider integration, isolated from the root and operation bundles.
 - **`/realtime`:** declared realtime publication typed from the manifest's `channels`, with presence, reconnect/resubscribe, and an SSR no-op. Socket.IO is an optional peer of this entry only. See ADR 0005 and `docs/guides/REALTIME_SUBSCRIPTIONS.md`.
 - **`/download`, `/upload`, `/stream`, `/socket`:** explicit non-JSON capability contracts with cancellation and protocol state. `/stream`'s `createStream()` implements the canonical SSE wire contract for operations declared `response.mode: "stream"` (ADR 0004).
+- **`/push`:** optional Angular service worker subscriptions and signals, with explicit app-owned persistence and an SSR no-op. See ADR 0006 and `docs/guides/WEB_PUSH.md`.
 - **`/forms`:** generated client-safe form bindings; no Drizzle or server-schema import.
 - **`/testing`:** reusable auth and operation-client conformance helpers.
 - **Compatibility:** `createResource()` keeps its current URL/factory and Hono thunk shapes during migration. New behavior belongs in explicit operation APIs.

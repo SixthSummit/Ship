@@ -19,6 +19,7 @@ pnpm run ci
 
 - [ShipAPI](API_README.md): operation kernel, HTTP transport, contracts, adapters, and the compatibility API distribution. Source: `packages/`, `modules/`, and `libraries/`.
 - [ShipAngular](angular/README.md): signal-first Angular framework and typed operation clients. Source: `packages/angular/`.
+- [Web Push](angular/docs/guides/WEB_PUSH.md): optional Angular PWA notifications and a Node VAPID sender (pending release).
 - Documentation sites: `apps/docs/` (API) and `apps/angular-docs/` (Angular). Canonical content is in `docs/` and `angular/docs/`.
 - [Architecture decisions](docs/architecture/README.md), [changelogs](CHANGELOG.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), and [releases](RELEASE_GUIDE.md).
 

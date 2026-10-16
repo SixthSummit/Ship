@@ -154,3 +154,10 @@ actor/tenant-scoped cache identity, and SSR hydration. Install the exact optiona
 peer version declared in the package manifest. See the
 [TanStack Query guide](../guides/TANSTACK_QUERY.md); this entrypoint is pending
 release on `dev` and is not part of the previously released 4.1.0 package.
+
+## `/push`
+
+Optional Web Push: `provideShipPush`, `injectPush`, `SHIP_PUSH`, `ShipPush`,
+`ShipPushOptions`, `ShipPushSubscription`, `PushNotificationClick`, and redacted
+`ShipPushError`/`ShipPushErrorCode`. Requires Angular's optional service-worker peer
+and an application-owned PWA setup. See [Web Push](../guides/WEB_PUSH.md).

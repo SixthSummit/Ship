@@ -13,6 +13,8 @@ what changed without rewriting the decision history.
 | [0004](0004-streaming-response-mode.md)       | Accepted | Manifest-declared SSE response mode                                                            |
 | [0005](0005-declared-realtime-publication.md) | Accepted | Manifest-declared realtime subscriptions                                                       |
 
+| [0006](0006-web-push.md) | Accepted | Optional service-worker Web Push and application-owned subscription persistence |
+
 The historical Hono decision was recorded in `../CONTRACT.md`; this directory
 has no numbered ADR 0001. The optional query integration is documented in
 [the query guide](../../guides/TANSTACK_QUERY.md), with implementation evidence

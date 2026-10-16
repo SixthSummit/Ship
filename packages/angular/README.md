@@ -26,6 +26,7 @@ response, protocol, and programmer failures remain exceptional.
 ## Secondary entrypoints
 
 - `/query` — optional TanStack Query reads, mutations, cache identity, and SSR hydration
+- `/push` — optional Angular service worker subscriptions and notification messages/clicks
 - `/realtime` — manifest-declared subscriptions and presence
 - `/operations` — unary client kernel, request policy, DI, resources, and mutations
 - `/ship-api` — adapter for ShipAPI's browser-safe structural client and manifest

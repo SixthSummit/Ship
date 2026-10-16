@@ -66,6 +66,8 @@ try {
       'package/lib/stream/index.d.ts',
       'package/lib/socket/index.d.ts',
       'package/lib/realtime/index.d.ts',
+      'package/lib/push/index.d.ts',
+      'package/lib/fesm2022/sixthsummit-ship-angular-push.mjs',
       'package/lib/forms/index.d.ts',
       'package/eslint/index.js',
       'package/eslint/index.d.ts',
