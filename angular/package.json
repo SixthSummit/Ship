@@ -16,7 +16,7 @@
     "test:coverage": "pnpm -w exec turbo run test:coverage --filter=@sixthsummit/ship-angular",
     "test:packed-conformance": "node scripts/verify-packed-conformance.mjs",
     "test:joint-conformance": "node scripts/verify-packed-conformance.mjs --require-external --manifest ../.ship/joint/manifest.json",
-    "test:browser-conformance": "node scripts/run-browser-conformance.mjs",
+    "test:browser-conformance": "node scripts/run-browser-conformance.mjs && node scripts/verify-push-browser.mjs",
     "lint": "cd .. && angular/node_modules/.bin/eslint --config angular/eslint.config.js angular packages/angular apps/angular-docs && pnpm --filter ship-angular imports:check",
     "lint:fix": "cd .. && angular/node_modules/.bin/eslint --fix --config angular/eslint.config.js angular packages/angular apps/angular-docs && pnpm --filter ship-angular imports:check",
     "imports:check": "node scripts/format-workspace.mjs imports",
