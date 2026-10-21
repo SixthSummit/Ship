@@ -318,6 +318,9 @@ importers:
 
   packages/auth-firebase:
     dependencies:
+      '@opentelemetry/api':
+        specifier: '>=1.9.1 <1.10.0'
+        version: 1.9.1
       firebase-admin:
         specifier: ^13.10.0
         version: 13.10.0(@firebase/app-compat@0.4.2)(@firebase/app@0.13.2)
@@ -400,11 +403,14 @@ importers:
         specifier: ^0.7.6
         version: 0.7.6(hono@4.13.13)(zod@4.5.4)
       '@opentelemetry/api':
-        specifier: ^1.9.1
+        specifier: '>=1.9.1 <1.10.0'
         version: 1.9.1
       '@opentelemetry/auto-instrumentations-node':
         specifier: ^0.80.0
         version: 0.80.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
+      '@opentelemetry/core':
+        specifier: ^2.11.0
+        version: 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-prometheus':
         specifier: ^0.222.0
         version: 0.222.0(@opentelemetry/api@1.9.1)
@@ -539,7 +545,7 @@ importers:
   packages/drizzle:
     dependencies:
       '@opentelemetry/api':
-        specifier: ^1.9.1
+        specifier: '>=1.9.1 <1.10.0'
         version: 1.9.1
       drizzle-orm:
         specifier: ^0.45.2
@@ -592,7 +598,7 @@ importers:
   packages/jobs-bullmq:
     dependencies:
       '@opentelemetry/api':
-        specifier: ^1.9.1
+        specifier: '>=1.9.1 <1.10.0'
         version: 1.9.1
       bullmq:
         specifier: ^5.76.3
@@ -650,11 +656,14 @@ importers:
   packages/observability-otel:
     dependencies:
       '@opentelemetry/api':
-        specifier: ^1.9.1
+        specifier: '>=1.9.1 <1.10.0'
         version: 1.9.1
       '@opentelemetry/auto-instrumentations-node':
         specifier: ^0.80.0
         version: 0.80.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
+      '@opentelemetry/core':
+        specifier: ^2.11.0
+        version: 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-prometheus':
         specifier: ^0.222.0
         version: 0.222.0(@opentelemetry/api@1.9.1)
@@ -697,7 +706,7 @@ importers:
   packages/realtime-socketio:
     dependencies:
       '@opentelemetry/api':
-        specifier: ^1.9.1
+        specifier: '>=1.9.1 <1.10.0'
         version: 1.9.1
       '@sixthsummit/ship-observability-otel':
         specifier: workspace:^
@@ -742,6 +751,9 @@ importers:
 
   packages/testing:
     dependencies:
+      '@opentelemetry/api':
+        specifier: '>=1.9.1 <1.10.0'
+        version: 1.9.1
       '@testcontainers/postgresql':
         specifier: ^12.0.1
         version: 12.1.0
