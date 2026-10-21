@@ -47,8 +47,9 @@ export interface MetricsServerOptions {
   /** Listen port. Defaults: `process.env.METRICS_PORT` then `9464`. */
   port?: number;
   /**
-   * Listen host. Defaults: `process.env.METRICS_HOST` then unset
-   * (Node binds to all interfaces).
+   * Listen host. Defaults: `process.env.METRICS_HOST` then `0.0.0.0`
+   * (all interfaces, so a monitoring network can scrape the port). Pass
+   * `"127.0.0.1"` / `"localhost"` to restrict scrapes to the local host.
    */
   host?: string;
   /** HTTP endpoint path. Defaults `/metrics`. */
@@ -82,13 +83,18 @@ export interface MetricsServerHandle {
   exporter: PrometheusExporter;
   /** Resolved port the exporter bound to (or would bind to). */
   port: number;
-  /** Resolved host. `undefined` means "all interfaces". */
-  host: string | undefined;
+  /** Resolved host the exporter binds to (`0.0.0.0` = all interfaces). */
+  host: string;
   /** Resolved endpoint path. */
   endpoint: string;
 }
 
 const DEFAULT_PORT = 9464;
+// `@opentelemetry/exporter-prometheus` >= 0.300 binds to `localhost` when no
+// host is given. Ship's contract has always been "all interfaces unless told
+// otherwise" (the port is meant to be scraped by a monitoring network and
+// firewalled there), so the default is made explicit instead of inherited.
+const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_ENDPOINT = "/metrics";
 
 let started = false;
@@ -111,8 +117,8 @@ function resolvePort(opt?: number): number {
   return DEFAULT_PORT;
 }
 
-function resolveHost(opt?: string): string | undefined {
-  return opt ?? process.env.METRICS_HOST ?? undefined;
+function resolveHost(opt?: string): string {
+  return opt ?? process.env.METRICS_HOST ?? DEFAULT_HOST;
 }
 
 /**

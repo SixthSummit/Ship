@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-realtime-socketio",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Socket.IO and Redis realtime gateway adapter for declared Ship channels",
   "type": "module",
   "main": "./lib/index.js",
@@ -26,7 +26,7 @@
     "test:coverage": "vitest run --root ../.. packages/realtime-socketio/src --exclude '**/*.integration.test.ts' --coverage"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api": "^1.10.0",
     "@sixthsummit/ship-observability-otel": "workspace:^",
     "ioredis": "^5.11.1",
     "socket.io": "^4.8.3"
@@ -36,7 +36,7 @@
     "@sixthsummit/ship-hono": "workspace:^"
   },
   "devDependencies": {
-    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^3.0.0",
     "@sixthsummit/ship-core": "workspace:*",
     "@sixthsummit/ship-drizzle": "workspace:^",
     "@sixthsummit/ship-hono": "workspace:*",

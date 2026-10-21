@@ -35,6 +35,7 @@ The historical Hono-primary decision is retained in
 | `/auth`                     | operation-backed session adapter                                        |
 | `/firebase-auth`            | optional Firebase frontend adapter                                      |
 | `/query`                    | optional TanStack Query reads, mutations, cache keys, and SSR hydration |
+| `/push`                     | optional PWA Web Push subscriptions and notification messages/clicks    |
 | `/realtime`                 | manifest-declared realtime subscriptions and presence                   |
 | `/forms`                    | operation input forms and browser-safe codecs                           |
 | `/upload`, `/download`      | progress-aware upload and exact-byte download                           |

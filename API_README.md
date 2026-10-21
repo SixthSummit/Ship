@@ -41,6 +41,7 @@ depending on an agent prompt or framework-specific base class.
 | `@sixthsummit/ship-cache-redis` | Optional Redis backend for declared read caching |
 | `@sixthsummit/ship-jobs-bullmq` | Optional BullMQ jobs backend |
 | `@sixthsummit/ship-realtime-socketio` | Socket.IO + Redis realtime gateway |
+| `@sixthsummit/ship-push` | Optional encrypted VAPID Web Push delivery |
 | `@sixthsummit/ship-webhooks` | Provider webhook signature verifiers |
 | `@sixthsummit/ship-observability-otel` | Optional OpenTelemetry integration |
 | `@sixthsummit/ship-testing` | Parity fixtures and disposable PostgreSQL support |
@@ -98,7 +99,7 @@ testing, and booting them.
 
 ## Installation
 
-Use Node.js 22.22 or newer and the pnpm version pinned in `package.json`.
+Use Node.js 22.23.4, 24.22.1, or 26.12.1 or newer and the pnpm version pinned in `package.json`.
 Packages use public npmjs releases under `@sixthsummit`; no read token is required.
 See [the release guide](RELEASE_GUIDE.md) for alpha and stable release channels.
 Pin exact released versions for deployed applications.

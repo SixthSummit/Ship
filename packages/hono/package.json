@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-hono",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Hono transport and credential adapter for the Ship application kernel",
   "type": "module",
   "main": "./lib/index.js",
@@ -26,7 +26,7 @@
     "test:coverage": "vitest run --root ../.. packages/hono/src --coverage"
   },
   "dependencies": {
-    "hono": "^4.13.7"
+    "hono": "^4.13.13"
   },
   "peerDependencies": {
     "@sixthsummit/ship-core": "workspace:^"

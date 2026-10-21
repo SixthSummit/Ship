@@ -4,7 +4,7 @@ Apache-2.0 frameworks for TypeScript APIs and Angular applications. ShipAPI and 
 
 ## Get started
 
-Use Node 24.15 or newer in the Node 24 line (Node 22.22.2+ and Node 26+ are also supported) and the pinned pnpm 10.34.6.
+Use Node 24.22.1 or newer in the Node 24 line (Node 22.23.4+ and Node 26.12.1+ are also supported) and the pinned pnpm 10.34.6.
 
 ```sh
 corepack enable
@@ -19,6 +19,7 @@ pnpm run ci
 
 - [ShipAPI](API_README.md): operation kernel, HTTP transport, contracts, adapters, and the compatibility API distribution. Source: `packages/`, `modules/`, and `libraries/`.
 - [ShipAngular](angular/README.md): signal-first Angular framework and typed operation clients. Source: `packages/angular/`.
+- [Web Push](angular/docs/guides/WEB_PUSH.md): optional Angular PWA notifications and a Node VAPID sender (pending release).
 - Documentation sites: `apps/docs/` (API) and `apps/angular-docs/` (Angular). Canonical content is in `docs/` and `angular/docs/`.
 - [Architecture decisions](docs/architecture/README.md), [changelogs](CHANGELOG.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md), and [releases](RELEASE_GUIDE.md).
 

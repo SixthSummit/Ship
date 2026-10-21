@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-testing",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Portable parity fixtures and real PostgreSQL test harnesses for Ship applications",
   "type": "module",
   "main": "./lib/index.js",
@@ -66,6 +66,7 @@
     "test:coverage": "vitest run --root ../.. packages/testing/src --coverage"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.10.0",
     "@testcontainers/postgresql": "^12.0.1",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",

@@ -17,6 +17,7 @@ const PACKAGE_DIRECTORIES = [
   "observability-otel",
   "testing",
   "realtime-socketio",
+  "push",
   "webhooks",
   "jobs-bullmq",
   "mcp-server",

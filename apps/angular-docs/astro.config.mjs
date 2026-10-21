@@ -69,6 +69,7 @@ export default defineConfig({
             { label: 'Firebase Setup', slug: 'guides/firebase-setup' },
             { label: 'TanStack Query', slug: 'guides/tanstack-query' },
             { label: 'Realtime Subscriptions', slug: 'guides/realtime-subscriptions' },
+            { label: 'Web Push', slug: 'guides/web-push' },
           ],
         },
         {

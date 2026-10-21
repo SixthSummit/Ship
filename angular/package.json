@@ -1,6 +1,6 @@
 {
   "name": "ship-angular",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "private": true,
   "description": "ShipAngular Framework",
   "author": "Scott Gibson",
@@ -16,7 +16,7 @@
     "test:coverage": "pnpm -w exec turbo run test:coverage --filter=@sixthsummit/ship-angular",
     "test:packed-conformance": "node scripts/verify-packed-conformance.mjs",
     "test:joint-conformance": "node scripts/verify-packed-conformance.mjs --require-external --manifest ../.ship/joint/manifest.json",
-    "test:browser-conformance": "node scripts/run-browser-conformance.mjs",
+    "test:browser-conformance": "node scripts/run-browser-conformance.mjs && node scripts/verify-push-browser.mjs",
     "lint": "cd .. && angular/node_modules/.bin/eslint --config angular/eslint.config.js angular packages/angular apps/angular-docs && pnpm --filter ship-angular imports:check",
     "lint:fix": "cd .. && angular/node_modules/.bin/eslint --fix --config angular/eslint.config.js angular packages/angular apps/angular-docs && pnpm --filter ship-angular imports:check",
     "imports:check": "node scripts/format-workspace.mjs imports",
@@ -45,8 +45,8 @@
   },
   "devDependencies": {
     "@angular-devkit/schematics": "20.3.36",
-    "@angular/core": "20.3.33",
-    "@angular/platform-server": "20.3.33",
+    "@angular/core": "20.3.34",
+    "@angular/platform-server": "20.3.34",
     "@biomejs/biome": "2.5.15",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.3",
@@ -64,6 +64,6 @@
     "astro": "^7.3.8"
   },
   "engines": {
-    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }

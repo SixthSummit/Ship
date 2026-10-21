@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add optional Angular Web Push subscriptions and a Node VAPID sender; see [pending release notes](.changeset/optional-web-push.md) and the [Web Push guide](angular/docs/guides/WEB_PUSH.md).
+
 - Prepare eligible releases automatically on merges to dev and main; require approval after verification before publishing the same archives. Include package versions and change descriptions in the approval summary.
 
 ## Initial public npm release
