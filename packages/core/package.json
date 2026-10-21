@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-api",
-  "version": "4.1.1",
+  "version": "4.2.0",
   "description": "ShipAPI Framework — TypeScript backend on Hono + Drizzle + pluggable AuthProvider + BullMQ + OpenTelemetry. Designed to be edited by AI coding agents.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
