@@ -26,7 +26,7 @@
     "test:coverage": "vitest run --root ../.. packages/drizzle/src --exclude '**/*.integration.test.ts' --coverage"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api": ">=1.9.1 <1.10.0",
     "drizzle-orm": "^0.45.2"
   },
   "peerDependencies": {

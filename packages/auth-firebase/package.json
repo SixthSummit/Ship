@@ -26,6 +26,7 @@
     "test:coverage": "vitest run --root ../.. packages/auth-firebase/src --coverage"
   },
   "dependencies": {
+    "@opentelemetry/api": ">=1.9.1 <1.10.0",
     "firebase-admin": "^13.10.0"
   },
   "peerDependencies": {

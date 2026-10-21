@@ -26,7 +26,7 @@
     "test:coverage": "vitest run --root ../.. packages/realtime-socketio/src --exclude '**/*.integration.test.ts' --coverage"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/api": ">=1.9.1 <1.10.0",
     "@sixthsummit/ship-observability-otel": "workspace:^",
     "ioredis": "^5.11.1",
     "socket.io": "^4.8.3"
