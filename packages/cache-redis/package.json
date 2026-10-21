@@ -35,7 +35,7 @@
     "testcontainers": "^12.1.0"
   },
   "engines": {
-    "node": ">=22.22.0"
+    "node": ">=22.23.4"
   },
   "license": "Apache-2.0",
   "publishConfig": {
