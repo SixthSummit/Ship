@@ -4,7 +4,7 @@ Apache-2.0 frameworks for TypeScript APIs and Angular applications. ShipAPI and 
 
 ## Get started
 
-Use Node 24.15 or newer in the Node 24 line (Node 22.22.2+ and Node 26+ are also supported) and the pinned pnpm 10.34.6.
+Use Node 24.22.1 or newer in the Node 24 line (Node 22.23.4+ and Node 26.12.1+ are also supported) and the pinned pnpm 10.34.6.
 
 ```sh
 corepack enable

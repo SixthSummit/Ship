@@ -49,7 +49,7 @@ normally land with behavior. Live production/Firebase services are not PR gates.
 
 ## GitHub Actions
 
-Maintainer tooling uses Node 24 LTS. The `.nvmrc` and `.node-version` files pin 24.21.0.
+Maintainer tooling uses Node 24 LTS. The `.nvmrc` and `.node-version` files pin 24.22.1.
 Workflows install pnpm 10.34.6 with npm into a temporary runner directory and run a frozen install.
 The matrix retains Node 20 for the published library contract and Node 22 for compatibility.
 The primary Node 24 build produces the exact package artifact consumed by a

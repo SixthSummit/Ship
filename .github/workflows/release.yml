@@ -28,7 +28,7 @@ jobs:
         run: git show-ref --verify --quiet refs/heads/dev || git branch dev origin/dev
       - uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: "24"
+          node-version: "24.22.1"
       - name: Check release branch
         run: |
           case "$GITHUB_REF_NAME" in
@@ -79,7 +79,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: "24"
+          node-version: "24.22.1"
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@v4
         with:

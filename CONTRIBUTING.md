@@ -24,7 +24,7 @@ Read [`AGENTS.md`](AGENTS.md) before touching code — it's the entry-point doc 
 
 ## Development workflow
 
-The repository requires Node.js 22.22 or newer. This matches the minimum runtime required by the
+The repository requires Node.js 22.23.4, 24.22.1, or 26.12.1 or newer (the October 2026 Node.js security releases). This matches the minimum runtime required by the
 locked test and documentation toolchain; older Node 22 patches are rejected before installation.
 
 ```sh

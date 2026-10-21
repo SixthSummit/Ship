@@ -45,8 +45,8 @@
   },
   "devDependencies": {
     "@angular-devkit/schematics": "20.3.36",
-    "@angular/core": "20.3.33",
-    "@angular/platform-server": "20.3.33",
+    "@angular/core": "20.3.34",
+    "@angular/platform-server": "20.3.34",
     "@biomejs/biome": "2.5.15",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.3",
@@ -64,6 +64,6 @@
     "astro": "^7.3.8"
   },
   "engines": {
-    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }

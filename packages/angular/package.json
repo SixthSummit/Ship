@@ -166,14 +166,14 @@
   "devDependencies": {
     "@angular-devkit/core": "^20.3.36",
     "@angular-devkit/schematics": "^20.3.36",
-    "@angular/common": "20.3.33",
-    "@angular/compiler": "20.3.33",
-    "@angular/compiler-cli": "20.3.33",
-    "@angular/core": "20.3.33",
+    "@angular/common": "20.3.34",
+    "@angular/compiler": "20.3.34",
+    "@angular/compiler-cli": "20.3.34",
+    "@angular/core": "20.3.34",
     "@angular/fire": "^20.1.0",
-    "@angular/forms": "20.3.33",
-    "@angular/platform-browser": "20.3.33",
-    "@angular/router": "20.3.33",
+    "@angular/forms": "20.3.34",
+    "@angular/platform-browser": "20.3.34",
+    "@angular/router": "20.3.34",
     "@sixthsummit/ship-contract": "workspace:*",
     "@types/node": "^24.13.3",
     "firebase": "^11.10.0",
@@ -188,7 +188,7 @@
     "@vitest/coverage-v8": "^5.0.3",
     "eslint": "^10.12.0",
     "typescript-eslint": "^8.71.1",
-    "@angular/service-worker": "20.3.33"
+    "@angular/service-worker": "20.3.34"
   },
   "engines": {
     "node": ">=20"

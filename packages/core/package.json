@@ -1,7 +1,7 @@
 {
   "name": "@sixthsummit/ship-api",
   "version": "4.1.1",
-  "description": "ShipAPI Framework \u2014 TypeScript backend on Hono + Drizzle + pluggable AuthProvider + BullMQ + OpenTelemetry. Designed to be edited by AI coding agents.",
+  "description": "ShipAPI Framework — TypeScript backend on Hono + Drizzle + pluggable AuthProvider + BullMQ + OpenTelemetry. Designed to be edited by AI coding agents.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "bin": {
@@ -126,7 +126,7 @@
     "drizzle-zod": "^0.8.3",
     "file-type": "^21.3.4",
     "firebase-admin": "^13.10.0",
-    "hono": "^4.13.7",
+    "hono": "^4.13.13",
     "ioredis": "^5.10.1",
     "jose": "^6.2.3",
     "lru-cache": "^11.3.5",
