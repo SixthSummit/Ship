@@ -723,6 +723,7 @@ describe("customized declared jobs", () => {
       graph.jobs.map((job) => [job.id, job.trigger.kind, job.concurrency.mode, job.enqueues]),
     ).toEqual([
       ["jobs.cleanup", "schedule", "single-runner", []],
+      ["mail.deliver", "enqueue", "parallel", []],
       ["reports.deliver", "enqueue", "single-runner", []],
       ["reports.digest", "schedule", "single-runner", ["reports.deliver"]],
     ]);
