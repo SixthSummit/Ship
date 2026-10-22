@@ -7,6 +7,7 @@ export const contractMetadata = Object.freeze({
     'accounts.create': Object.freeze({ transport: 'http' }),
     'accounts.delete': Object.freeze({ transport: 'http' }),
     'public.status': Object.freeze({ transport: 'http' }),
+    'oauth.callback': Object.freeze({ transport: 'http' }),
     'reports.download': Object.freeze({ transport: 'download' }),
     'assets.upload': Object.freeze({ transport: 'upload' }),
     'events.watch': Object.freeze({ transport: 'stream' }),
@@ -62,6 +63,12 @@ export const clientContract = Object.freeze({
     Object.freeze({
       id: 'public.status',
       success: Object.freeze([{ status: 200 }]),
+      errors: Object.freeze([]),
+    }),
+    Object.freeze({
+      id: 'oauth.callback',
+      transport: Object.freeze({ kind: 'http', metadata: Object.freeze({ response: 'redirect' }) }),
+      success: Object.freeze([{ status: 302 }]),
       errors: Object.freeze([]),
     }),
     Object.freeze({
