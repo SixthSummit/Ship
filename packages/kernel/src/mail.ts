@@ -44,24 +44,41 @@ export interface MailMessageDefinition<TPayload extends RuntimeSchema = RuntimeS
   readonly description?: string;
 }
 
-export type MailMessageDefinitions = Readonly<Record<string, MailMessageDefinition<RuntimeSchema>>>;
+/** Message name to payload schema; the type parameter every mailer is inferred over. */
+export type MailMessageSchemas = Readonly<Record<string, RuntimeSchema>>;
 
-export interface MailerDefinition<TId extends string, TMessages extends MailMessageDefinitions> {
+/**
+ * Homomorphic over the schema map so TypeScript infers each `payload` first
+ * and then contextually types `render` and `sample` from it.
+ */
+export type MailMessageDefinitions<TSchemas extends MailMessageSchemas = MailMessageSchemas> = {
+  readonly [TName in keyof TSchemas]: MailMessageDefinition<TSchemas[TName]>;
+};
+
+/** A message with its payload type erased; what `AnyMailer` exposes. */
+export interface AnyMailMessage {
+  readonly payload: RuntimeSchema;
+  readonly render: (payload: never) => MailRendering;
+  readonly sample?: unknown;
+  readonly description?: string;
+}
+
+export interface MailerDefinition<TId extends string, TSchemas extends MailMessageSchemas> {
   readonly id: TId;
   /** Default sender for every message; the delivery package may require it when it has no default of its own. */
   readonly from?: string;
   readonly replyTo?: string;
-  readonly messages: TMessages;
+  readonly messages: MailMessageDefinitions<TSchemas>;
 }
 
-export interface Mailer<TId extends string, TMessages extends MailMessageDefinitions> {
+export interface Mailer<TId extends string, TSchemas extends MailMessageSchemas> {
   readonly kind: "ship.mailer";
   readonly id: TId;
   readonly from?: string;
   readonly replyTo?: string;
-  readonly messages: TMessages;
+  readonly messages: MailMessageDefinitions<TSchemas>;
   /** Declared message names in declaration order. */
-  readonly messageNames: readonly (keyof TMessages & string)[];
+  readonly messageNames: readonly (keyof TSchemas & string)[];
 }
 
 export interface AnyMailer {
@@ -69,7 +86,7 @@ export interface AnyMailer {
   readonly id: string;
   readonly from?: string;
   readonly replyTo?: string;
-  readonly messages: MailMessageDefinitions;
+  readonly messages: Readonly<Record<string, AnyMailMessage>>;
   readonly messageNames: readonly string[];
 }
 
@@ -109,30 +126,32 @@ export class InvalidMailerDefinitionError extends Error {
  * enumerate every message by name; delivery is the job of
  * `@sixthsummit/ship-mail`, which sends through the jobs capability.
  */
-export function defineMailer<const TId extends string, const TMessages extends MailMessageDefinitions>(
-  definition: MailerDefinition<TId, TMessages>,
-): Mailer<TId, TMessages> {
+export function defineMailer<const TId extends string, const TSchemas extends MailMessageSchemas>(
+  definition: MailerDefinition<TId, TSchemas>,
+): Mailer<TId, TSchemas> {
   assertMailerDefinition(definition);
   const messages = Object.freeze(
     Object.fromEntries(
-      Object.entries(definition.messages).map(([name, message]) => [
-        name,
-        Object.freeze({
-          payload: message.payload,
-          render: message.render,
-          ...(message.sample !== undefined ? { sample: message.sample } : {}),
-          ...(message.description !== undefined ? { description: message.description } : {}),
-        }),
-      ]),
+      Object.entries(definition.messages as Readonly<Record<string, AnyMailMessage>>).map(
+        ([name, message]) => [
+          name,
+          Object.freeze({
+            payload: message.payload,
+            render: message.render,
+            ...(message.sample !== undefined ? { sample: message.sample } : {}),
+            ...(message.description !== undefined ? { description: message.description } : {}),
+          }),
+        ],
+      ),
     ),
-  ) as TMessages;
+  ) as MailMessageDefinitions<TSchemas>;
   return Object.freeze({
     kind: "ship.mailer" as const,
     id: definition.id,
     ...(definition.from !== undefined ? { from: definition.from } : {}),
     ...(definition.replyTo !== undefined ? { replyTo: definition.replyTo } : {}),
     messages,
-    messageNames: Object.freeze(Object.keys(messages)) as readonly (keyof TMessages & string)[],
+    messageNames: Object.freeze(Object.keys(messages)) as readonly (keyof TSchemas & string)[],
   });
 }
 
@@ -244,10 +263,10 @@ export async function renderMailMessage(
   payload: unknown,
 ): Promise<RenderedMail> {
   const validated = await validateMailPayload(mailer, message, payload);
-  const definition = mailer.messages[message] as MailMessageDefinition<RuntimeSchema>;
+  const definition = mailer.messages[message] as AnyMailMessage;
   let rendering: unknown;
   try {
-    rendering = definition.render(validated);
+    rendering = definition.render(validated as never);
   } catch (cause) {
     throw new MailRenderError(
       "SHIP_MAIL_RENDERING_INVALID",
@@ -410,7 +429,10 @@ export interface MailLedger {
     idempotencyKey: string,
     outcome: { readonly providerMessageId?: string; readonly now: Date },
   ): Promise<void>;
-  markFailed(idempotencyKey: string, outcome: { readonly error: string; readonly now: Date }): Promise<void>;
+  markFailed(
+    idempotencyKey: string,
+    outcome: { readonly error: string; readonly now: Date },
+  ): Promise<void>;
   find(idempotencyKey: string): Promise<MailSendRecord | undefined>;
   list(query: MailLedgerQuery): Promise<readonly MailSendRecord[]>;
   /** Deletes terminal rows created before `before`; returns how many were removed. */
@@ -551,7 +573,7 @@ export function collectMailers(modules: readonly AnyModule[]): readonly AnyMaile
 
 function assertMailerDefinition(
   definition: unknown,
-): asserts definition is MailerDefinition<string, MailMessageDefinitions> {
+): asserts definition is MailerDefinition<string, MailMessageSchemas> {
   if (typeof definition !== "object" || definition === null) {
     fail("SHIP_MAILER_DEFINITION_INVALID", "mailer definition must be an object");
   }
@@ -631,7 +653,10 @@ function assertMailerDefinition(
       );
     }
     const description = Reflect.get(message, "description");
-    if (description !== undefined && (typeof description !== "string" || description.length === 0)) {
+    if (
+      description !== undefined &&
+      (typeof description !== "string" || description.length === 0)
+    ) {
       fail(
         "SHIP_MAILER_MESSAGE_DESCRIPTION_INVALID",
         `message ${JSON.stringify(name)} description must be a non-empty string when present`,

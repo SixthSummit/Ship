@@ -18,6 +18,7 @@ ShipAPI is a pnpm workspace containing an operation-oriented application kernel 
 | `packages/realtime-socketio` / `@sixthsummit/ship-realtime-socketio` | Socket.IO + Redis gateway for kernel channels (`defineChannel`); wire protocol in `docs/v4/realtime.md` |
 | `packages/jobs-bullmq`, `packages/webhooks` | Optional jobs backend and provider webhook verifiers |
 | `packages/push` / `@sixthsummit/ship-push` | Optional VAPID Web Push sender; apps own subscription storage and delivery jobs |
+| `packages/mail` / `@sixthsummit/ship-mail` | Declared transactional mail: `defineMailDelivery` on the jobs capability, typed sender, send ledger, allowlist interceptor, previews, log + Resend adapters (`defineMailer` lives in the kernel; ADR-0023, `docs/v4/features/mail.md`) |
 | `packages/testing`, `packages/cli` | Parity/integration harness and graph/contract tooling |
 | `packages/core` / `@sixthsummit/ship-api` | Existing route-first v4 compatibility APIs and scaffolds |
 

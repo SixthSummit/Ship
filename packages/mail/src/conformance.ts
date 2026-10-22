@@ -90,21 +90,25 @@ export function mailProviderConformance(
     });
 
     api.it("returns a provider message id when the service issues one", async () => {
-      const outcome = await harness.provider.send(conformanceRequest({ idempotencyKey: "conformance:2" }));
+      const outcome = await harness.provider.send(
+        conformanceRequest({ idempotencyKey: "conformance:2" }),
+      );
       api.expect(outcome.accepted).toBe(true);
       if (outcome.accepted) {
         api.expect(typeof outcome.providerMessageId).toBe("string");
       }
     });
 
-    api.it("forwards a repeated idempotency key again rather than silently dropping it", async () => {
-      await harness.provider.send(conformanceRequest({ idempotencyKey: "conformance:3" }));
-      await harness.provider.send(conformanceRequest({ idempotencyKey: "conformance:3" }));
-      api.expect(harness.forwarded().map((item) => item.idempotencyKey)).toEqual([
-        "conformance:3",
-        "conformance:3",
-      ]);
-    });
+    api.it(
+      "forwards a repeated idempotency key again rather than silently dropping it",
+      async () => {
+        await harness.provider.send(conformanceRequest({ idempotencyKey: "conformance:3" }));
+        await harness.provider.send(conformanceRequest({ idempotencyKey: "conformance:3" }));
+        api
+          .expect(harness.forwarded().map((item) => item.idempotencyKey))
+          .toEqual(["conformance:3", "conformance:3"]);
+      },
+    );
   });
 }
 
@@ -137,34 +141,39 @@ export function mailLedgerConformance(
       api.expect(isMailLedger(ledger)).toBe(true);
     });
 
-    api.it("claims a new key once, answers a sent key from the ledger and lists by recipient", async () => {
-      const now = new Date("2026-10-22T10:00:00.000Z");
-      const first = await ledger.claim({ ...base, idempotencyKey: "k1", now });
-      api.expect(first).toEqual({ outcome: "claimed", attempt: 1 });
-      const live = await ledger.claim({ ...base, idempotencyKey: "k1", now });
-      api.expect(live.outcome).toBe("in-flight");
-      await ledger.markSent("k1", { providerMessageId: "msg-1", now });
-      const sent = await ledger.claim({ ...base, idempotencyKey: "k1", now });
-      api.expect(sent.outcome).toBe("sent");
-      api.expect((sent as { record: MailSendRecord }).record).toMatchObject({
-        idempotencyKey: "k1",
-        status: "sent",
-        attempts: 1,
-        providerMessageId: "msg-1",
-        to: ["ada@example.test"],
-      });
-      const listed = await ledger.list({ recipient: "ada@example.test", limit: 10 });
-      api.expect(listed).toHaveLength(1);
-      api.expect(await ledger.list({ recipient: "nobody@example.test", limit: 10 })).toHaveLength(0);
-      api.expect((await ledger.find("k1"))?.status).toBe("sent");
-      api.expect(await ledger.find("missing")).toBeUndefined();
-    });
+    api.it(
+      "claims a new key once, answers a sent key from the ledger and lists by recipient",
+      async () => {
+        const now = new Date("2026-10-22T10:00:00.000Z");
+        const first = await ledger.claim({ ...base, idempotencyKey: "k1", now });
+        api.expect(first).toEqual({ outcome: "claimed", attempt: 1 });
+        const live = await ledger.claim({ ...base, idempotencyKey: "k1", now });
+        api.expect(live.outcome).toBe("in-flight");
+        await ledger.markSent("k1", { providerMessageId: "msg-1", now });
+        const sent = await ledger.claim({ ...base, idempotencyKey: "k1", now });
+        api.expect(sent.outcome).toBe("sent");
+        api.expect((sent as { record: MailSendRecord }).record).toMatchObject({
+          idempotencyKey: "k1",
+          status: "sent",
+          attempts: 1,
+          providerMessageId: "msg-1",
+          to: ["ada@example.test"],
+        });
+        const listed = await ledger.list({ recipient: "ada@example.test", limit: 10 });
+        api.expect(listed).toHaveLength(1);
+        api
+          .expect(await ledger.list({ recipient: "nobody@example.test", limit: 10 }))
+          .toHaveLength(0);
+        api.expect((await ledger.find("k1"))?.status).toBe("sent");
+        api.expect(await ledger.find("missing")).toBeUndefined();
+      },
+    );
 
     api.it("retakes a failed row and a stale sending claim, counting attempts", async () => {
       const now = new Date("2026-10-22T10:00:00.000Z");
       await ledger.claim({ ...base, idempotencyKey: "k2", now });
       await ledger.markFailed("k2", { error: "429", now });
-      api.expect((await ledger.find("k2"))).toMatchObject({ status: "failed", lastError: "429" });
+      api.expect(await ledger.find("k2")).toMatchObject({ status: "failed", lastError: "429" });
       const second = await ledger.claim({ ...base, idempotencyKey: "k2", now });
       api.expect(second).toEqual({ outcome: "claimed", attempt: 2 });
       const later = new Date(now.getTime() + base.leaseMs + 1);
@@ -187,10 +196,9 @@ export function mailLedgerConformance(
       api.expect(await ledger.cleanup({ before: new Date("2026-10-15T00:00:00.000Z") })).toEqual({
         deleted: 1,
       });
-      api.expect((await ledger.list({ limit: 10 })).map((row) => row.idempotencyKey).sort()).toEqual([
-        "old-live",
-        "recent",
-      ]);
+      api
+        .expect((await ledger.list({ limit: 10 })).map((row) => row.idempotencyKey).sort())
+        .toEqual(["old-live", "recent"]);
     });
   });
 }

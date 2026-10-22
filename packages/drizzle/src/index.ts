@@ -27,14 +27,14 @@ export {
   JOB_METRICS,
 } from "./job-metrics.js";
 export { nextOccurrence } from "./job-schedule.js";
+export type { JobStoredFailure, ShipJobRunsTable, ShipJobStateTable } from "./job-store.js";
+export { shipJobRunsTable, shipJobStateTable } from "./job-store.js";
 export type {
   DrizzleMailLedger,
   DrizzleMailLedgerDefinition,
   ShipMailSendsTable,
 } from "./mail-ledger.js";
 export { createDrizzleMailLedger, shipMailSendsTable } from "./mail-ledger.js";
-export type { JobStoredFailure, ShipJobRunsTable, ShipJobStateTable } from "./job-store.js";
-export { shipJobRunsTable, shipJobStateTable } from "./job-store.js";
 export type { DrizzleOutbox, DrizzleOutboxDefinition, ShipOutboxTable } from "./outbox.js";
 export { createDrizzleOutbox, shipOutboxTable } from "./outbox.js";
 export type {

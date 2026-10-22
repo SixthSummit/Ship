@@ -80,9 +80,15 @@ describe("mail delivery against PostgreSQL", () => {
       tenantId: "acme",
     });
     expect(rows[0]?.sentAt).toBeInstanceOf(Date);
-    await expect(ledger.list({ recipient: "ada@example.test", limit: 10 })).resolves.toHaveLength(1);
-    await expect(ledger.list({ tenantId: "acme", mailerId: "accounts.mailer", limit: 10 })).resolves.toHaveLength(1);
-    await expect(ledger.list({ recipient: "bob@example.test", limit: 10 })).resolves.toHaveLength(0);
+    await expect(ledger.list({ recipient: "ada@example.test", limit: 10 })).resolves.toHaveLength(
+      1,
+    );
+    await expect(
+      ledger.list({ tenantId: "acme", mailerId: "accounts.mailer", limit: 10 }),
+    ).resolves.toHaveLength(1);
+    await expect(ledger.list({ recipient: "bob@example.test", limit: 10 })).resolves.toHaveLength(
+      0,
+    );
   });
 
   it("records the redirected delivery while keeping the original recipient queryable", async () => {
@@ -91,7 +97,10 @@ describe("mail delivery against PostgreSQL", () => {
     const { app } = createFixtureApplication({
       provider,
       ledger,
-      interceptor: allowlistInterceptor({ allow: ["@example.test"], redirectTo: ["inbox@example.test"] }),
+      interceptor: allowlistInterceptor({
+        allow: ["@example.test"],
+        redirectTo: ["inbox@example.test"],
+      }),
     });
     const executor = createExecutor(app);
     const result = await runJobOnce(

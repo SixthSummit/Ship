@@ -29,7 +29,10 @@ function fixture(overrides: Partial<Parameters<typeof createFixtureApplication>[
   return { ...built, provider, ledger, executor };
 }
 
-async function attach(app: ReturnType<typeof fixture>["app"], jobs: ReturnType<typeof fixture>["jobs"]) {
+async function attach(
+  app: ReturnType<typeof fixture>["app"],
+  jobs: ReturnType<typeof fixture>["jobs"],
+) {
   await startJobRuntime(app, { backend: jobs, mode: "api" });
 }
 
@@ -48,7 +51,10 @@ describe("defineMailDelivery", () => {
       effects: ["ship.mail.provider"],
       operations: { enqueuedBy: ["accounts.send-welcome"] },
     });
-    expect(app.graph.mailers.map((mailer) => mailer.id)).toEqual(["accounts.mailer", "billing.mailer"]);
+    expect(app.graph.mailers.map((mailer) => mailer.id)).toEqual([
+      "accounts.mailer",
+      "billing.mailer",
+    ]);
     expect(
       app.graph.operations.find((operation) => operation.id === "accounts.send-welcome")?.job,
     ).toEqual([{ role: "enqueue", jobId: "mail.deliver" }]);
@@ -88,7 +94,9 @@ describe("MailSender", () => {
       ok: false,
       status: 400,
     });
-    await expect(run({ to: "ada@example.test", name: "Ada", key: "has space" })).rejects.toMatchObject({
+    await expect(
+      run({ to: "ada@example.test", name: "Ada", key: "has space" }),
+    ).rejects.toMatchObject({
       cause: expect.objectContaining({ code: "SHIP_MAIL_IDEMPOTENCY_KEY_INVALID" }),
     });
     expect(jobs.runs()).toEqual([]);
@@ -99,9 +107,18 @@ describe("MailSender", () => {
     const other = defineMailer({
       id: "other.mailer",
       from: "o@example.test",
-      messages: { ping: { payload: jsonValueSchema(), render: () => ({ subject: "p", html: "h", text: "t" }) } },
+      messages: {
+        ping: {
+          payload: jsonValueSchema(),
+          render: () => ({ subject: "p", html: "h", text: "t" }),
+        },
+      },
     });
-    const facade = (delivery.dependency.adapt as (enqueuer: unknown) => { send: (...args: unknown[]) => Promise<unknown> })({
+    const facade = (
+      delivery.dependency.adapt as (enqueuer: unknown) => {
+        send: (...args: unknown[]) => Promise<unknown>;
+      }
+    )({
       kind: "ship.job-enqueuer",
       jobId: "mail.deliver",
       enqueue: async () => ({ accepted: true, runId: "r", deduplicated: false }),
@@ -225,11 +242,22 @@ describe("mail.deliver", () => {
     const { app, provider, ledger, executor } = fixture();
     const first = await runJobOnce(app, "mail.deliver", input(), { executor });
     const again = await runJobOnce(app, "mail.deliver", input(), { executor });
-    const third = await runJobOnce(app, "mail.deliver", input({ to: ["someone-else@example.test"] }), {
-      executor,
+    const third = await runJobOnce(
+      app,
+      "mail.deliver",
+      input({ to: ["someone-else@example.test"] }),
+      {
+        executor,
+      },
+    );
+    expect(first).toMatchObject({
+      ok: true,
+      data: { status: "sent", attempt: 1, providerMessageId: "log-1" },
     });
-    expect(first).toMatchObject({ ok: true, data: { status: "sent", attempt: 1, providerMessageId: "log-1" } });
-    expect(again).toMatchObject({ ok: true, data: { status: "duplicate", attempt: 1, providerMessageId: "log-1" } });
+    expect(again).toMatchObject({
+      ok: true,
+      data: { status: "duplicate", attempt: 1, providerMessageId: "log-1" },
+    });
     expect(third).toMatchObject({ ok: true, data: { status: "duplicate" } });
     expect(provider.sent()).toHaveLength(1);
     expect(ledger.records()).toHaveLength(1);
@@ -297,7 +325,10 @@ describe("mail.deliver", () => {
     });
 
     outcomes = ["reject"];
-    await jobs.enqueue("mail.deliver", input({ idempotencyKey: "welcome:bob", to: ["bob@example.test"] }));
+    await jobs.enqueue(
+      "mail.deliver",
+      input({ idempotencyKey: "welcome:bob", to: ["bob@example.test"] }),
+    );
     const rejected = await jobs.drain();
     expect(rejected).toEqual({ executed: 1, completed: 0, failed: 1 });
     expect(jobs.runs()[1]).toMatchObject({
@@ -320,7 +351,10 @@ describe("mail.deliver", () => {
     ).resolves.toMatchObject({
       ok: false,
       status: 422,
-      error: { code: "MAIL_MESSAGE_UNKNOWN", details: { mailerId: "accounts.mailer", message: "goodbye" } },
+      error: {
+        code: "MAIL_MESSAGE_UNKNOWN",
+        details: { mailerId: "accounts.mailer", message: "goodbye" },
+      },
     });
     await expect(
       runJobOnce(app, "mail.deliver", input({ mailerId: "nobody.mailer" }), { executor }),
@@ -348,7 +382,10 @@ describe("mail.deliver", () => {
     });
     await expect(runJobOnce(app, "mail.deliver", input(), { executor })).rejects.toMatchObject({
       code: "SHIP_OPERATION_HANDLER_FAILED",
-      cause: expect.objectContaining({ code: "SHIP_MAIL_SEND_IN_FLIGHT", idempotencyKey: "welcome:ada" }),
+      cause: expect.objectContaining({
+        code: "SHIP_MAIL_SEND_IN_FLIGHT",
+        idempotencyKey: "welcome:ada",
+      }),
     });
     expect(provider.sent()).toHaveLength(0);
   });
@@ -376,7 +413,9 @@ describe("mail.deliver", () => {
       deliveredTo: ["inbox@example.test"],
       intercepted: true,
     });
-    expect(await ledger.list({ recipient: "customer@real-customer.example", limit: 5 })).toHaveLength(1);
+    expect(
+      await ledger.list({ recipient: "customer@real-customer.example", limit: 5 }),
+    ).toHaveLength(1);
     const output = (result as { data: MailDeliveryOutput }).data;
     expect(output.idempotencyKey).toBe("welcome:customer");
   });

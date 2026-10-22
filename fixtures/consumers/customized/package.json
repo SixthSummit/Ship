@@ -19,6 +19,7 @@
     "@sixthsummit/ship-core": "^1.0.0",
     "@sixthsummit/ship-drizzle": "^1.0.0",
     "@sixthsummit/ship-hono": "^1.0.0",
+    "@sixthsummit/ship-mail": "0.1.0",
     "@sixthsummit/ship-webhooks": "^0.1.0-alpha.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.15",

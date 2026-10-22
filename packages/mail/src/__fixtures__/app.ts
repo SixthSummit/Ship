@@ -71,7 +71,9 @@ export interface FixtureOptions {
   readonly provider: MailProvider;
   readonly ledger: MailLedger;
   readonly interceptor?: MailInterceptor;
-  readonly delivery?: Partial<MailDeliveryOptions<readonly [typeof accountsMailer, typeof billingMailer]>>;
+  readonly delivery?: Partial<
+    MailDeliveryOptions<readonly [typeof accountsMailer, typeof billingMailer]>
+  >;
   readonly jobs?: ReturnType<typeof createInMemoryJobBackend>;
 }
 

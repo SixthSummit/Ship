@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { publicAccess, systemAccess } from "./access.js";
+import { systemActor } from "./actor.js";
 import { ApplicationCompilationError, compileApp, defineApp } from "./application.js";
 import { createExecutor } from "./executor.js";
+import { jsonValueSchema, objectSchema, stringSchema } from "./framework-schema.js";
+import type { JobBackend } from "./job.js";
 import { adaptedJobDependency, defineJob, jobBackendDependency } from "./job.js";
 import {
   collectMailerOwners,
@@ -22,11 +26,7 @@ import {
 } from "./mail.js";
 import { defineModule } from "./module.js";
 import { defineOperation } from "./operation.js";
-import { publicAccess, systemAccess } from "./access.js";
-import { systemActor } from "./actor.js";
 import { valueProvider } from "./provider.js";
-import { jsonValueSchema, objectSchema, stringSchema } from "./framework-schema.js";
-import type { JobBackend } from "./job.js";
 
 const welcomePayload = z.object({ name: z.string().min(1), url: z.string().url() });
 
@@ -87,7 +87,12 @@ describe("defineMailer", () => {
       "SHIP_MAILER_REPLY_TO_INVALID",
       "replyTo",
     ],
-    ["no messages", { id: "accounts.mailer", messages: {} }, "SHIP_MAILER_MESSAGES_EMPTY", "messages"],
+    [
+      "no messages",
+      { id: "accounts.mailer", messages: {} },
+      "SHIP_MAILER_MESSAGES_EMPTY",
+      "messages",
+    ],
     [
       "array messages",
       { id: "accounts.mailer", messages: [] },
@@ -96,7 +101,10 @@ describe("defineMailer", () => {
     ],
     [
       "bad message name",
-      { id: "accounts.mailer", messages: { "Welcome-Mail": { payload: welcomePayload, render: () => ({}) } } },
+      {
+        id: "accounts.mailer",
+        messages: { "Welcome-Mail": { payload: welcomePayload, render: () => ({}) } },
+      },
       "SHIP_MAILER_MESSAGE_NAME_INVALID",
       "messages.Welcome-Mail",
     ],
@@ -213,9 +221,9 @@ describe("mail dependency tokens and contracts", () => {
   });
 
   it("recognizes structural providers, ledgers and interceptors", () => {
-    expect(isMailProvider({ kind: "ship.mail-provider", adapter: "log", send: () => undefined })).toBe(
-      true,
-    );
+    expect(
+      isMailProvider({ kind: "ship.mail-provider", adapter: "log", send: () => undefined }),
+    ).toBe(true);
     expect(isMailProvider({ kind: "ship.mail-provider", adapter: "log" })).toBe(false);
     const ledger = Object.fromEntries(
       ["claim", "markSent", "markFailed", "find", "list", "cleanup"].map((name) => [
@@ -226,7 +234,11 @@ describe("mail dependency tokens and contracts", () => {
     expect(isMailLedger({ kind: "ship.mail-ledger", adapter: "memory", ...ledger })).toBe(true);
     expect(isMailLedger({ kind: "ship.mail-ledger", adapter: "memory" })).toBe(false);
     expect(
-      isMailInterceptor({ kind: "ship.mail-interceptor", adapter: "allowlist", intercept: () => 1 }),
+      isMailInterceptor({
+        kind: "ship.mail-interceptor",
+        adapter: "allowlist",
+        intercept: () => 1,
+      }),
     ).toBe(true);
     expect(isMailInterceptor({ kind: "ship.mail-interceptor" })).toBe(false);
   });
@@ -293,7 +305,12 @@ describe("modules and the application graph", () => {
     });
     const foreign = defineMailer({
       id: "notes.mailer",
-      messages: { ping: { payload: jsonValueSchema(), render: () => ({ subject: "p", html: "h", text: "t" }) } },
+      messages: {
+        ping: {
+          payload: jsonValueSchema(),
+          render: () => ({ subject: "p", html: "h", text: "t" }),
+        },
+      },
     });
     const second = defineModule({
       id: "billing",
@@ -400,9 +417,15 @@ describe("adaptedJobDependency", () => {
       ],
     });
     expect(app.graph.jobs[0]?.operations.enqueuedBy).toEqual(["mail.send"]);
-    const result = await createExecutor(app).run("mail.send", {}, { actor: systemActor({ id: "t" }) });
+    const result = await createExecutor(app).run(
+      "mail.send",
+      {},
+      { actor: systemActor({ id: "t" }) },
+    );
     expect(result).toMatchObject({ ok: true, data: { accepted: true, runId: "run-1" } });
-    expect(enqueued).toEqual([["mail.deliver", { to: "ada@example.test" }, { dedupeKey: "ada@example.test" }]]);
+    expect(enqueued).toEqual([
+      ["mail.deliver", { to: "ada@example.test" }, { dedupeKey: "ada@example.test" }],
+    ]);
     expect(systemAccess().kind).toBe("system");
   });
 });

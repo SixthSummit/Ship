@@ -124,6 +124,9 @@ function assertOptions(options: unknown): asserts options is AllowlistIntercepto
   }
   const subjectPrefix = Reflect.get(options, "subjectPrefix");
   if (subjectPrefix !== undefined && typeof subjectPrefix !== "boolean") {
-    throw new MailInterceptorError("allowlist interceptor subjectPrefix must be a boolean", "subjectPrefix");
+    throw new MailInterceptorError(
+      "allowlist interceptor subjectPrefix must be a boolean",
+      "subjectPrefix",
+    );
   }
 }

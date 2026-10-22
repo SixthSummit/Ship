@@ -75,6 +75,7 @@ export default defineConfig({
             { label: "Rate limiting", slug: "features/rate-limit" },
             { label: "Idempotency", slug: "features/idempotency" },
             { label: "Webhooks", slug: "features/webhooks" },
+            { label: "Transactional mail", slug: "features/mail" },
             { label: "File uploads", slug: "features/uploads" },
             { label: "Health checks", slug: "features/health-checks" },
             { label: "JWT sessions", slug: "features/sessions" },

@@ -39,6 +39,13 @@ application exercises:
   the outbox intent in the same transaction; plus the framework retention sweep
   (`jobs.cleanup`, which also sweeps both outboxes) and `ship.jobs:manage`
   dead-letter operations; and
+- declared transactional mail: `reports.mailer` (`mail.ts`) renders the digest
+  notice from a typed payload, `reports.email` sends it through the typed
+  `MailSender` as an enqueued `mail.deliver` run, the `mail` module binds the
+  provider and the `ship_mail_sends` ledger, the non-production allowlist
+  interceptor redirects real customers to the QA inbox with
+  `X-Ship-Original-To`, and the `mail.preview-*` operations render every
+  message from its sample;
 - a legacy call-site bridge (`bridge.ts`) that publishes to any declared
   channel through a registry derived from the application, narrows to a typed
   publisher where the channel is known, answers every operation call with a

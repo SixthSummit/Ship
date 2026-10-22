@@ -186,11 +186,17 @@ function assertOptions(options: unknown): asserts options is MailPreviewOptions 
   }
   const mailers = Reflect.get(options, "mailers");
   if (!Array.isArray(mailers) || !mailers.every((item) => isMailer(item))) {
-    throw new MailPreviewError("mail preview mailers must contain only defineMailer() results", "mailers");
+    throw new MailPreviewError(
+      "mail preview mailers must contain only defineMailer() results",
+      "mailers",
+    );
   }
   const prefix = Reflect.get(options, "prefix");
   if (prefix !== undefined && (typeof prefix !== "string" || !PREFIX_PATTERN.test(prefix))) {
-    throw new MailPreviewError("mail preview prefix must be a lowercase single-segment module id", "prefix");
+    throw new MailPreviewError(
+      "mail preview prefix must be a lowercase single-segment module id",
+      "prefix",
+    );
   }
   const access = Reflect.get(options, "access");
   if (access !== undefined && (!isOperationAccess(access) || access.kind === "public")) {

@@ -18,11 +18,7 @@ import {
   JOB_BACKEND_ID,
   JOB_LOCK_PROVIDER_ID,
 } from "./job.js";
-import {
-  collectMailerOwners,
-  type MailerGraphNode,
-  projectMailers,
-} from "./mail.js";
+import { collectMailerOwners, type MailerGraphNode, projectMailers } from "./mail.js";
 import type { AnyModule } from "./module.js";
 import { isShipModule } from "./module.js";
 import type {

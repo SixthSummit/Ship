@@ -286,6 +286,7 @@ export {
 } from "./job.js";
 export type {
   AnyMailer,
+  AnyMailMessage,
   MailEnvelope,
   Mailer,
   MailerDefinition,
@@ -299,6 +300,7 @@ export type {
   MailLedgerQuery,
   MailMessageDefinition,
   MailMessageDefinitions,
+  MailMessageSchemas,
   MailProvider,
   MailProviderOutcome,
   MailRenderErrorCode,

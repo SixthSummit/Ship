@@ -106,7 +106,11 @@ export class MailDeliveryError extends Error {
   constructor(
     code: MailDeliveryErrorCode,
     message: string,
-    options: { readonly idempotencyKey?: string; readonly field?: string; readonly cause?: unknown } = {},
+    options: {
+      readonly idempotencyKey?: string;
+      readonly field?: string;
+      readonly cause?: unknown;
+    } = {},
   ) {
     super(message, { cause: options.cause });
     this.name = "MailDeliveryError";
@@ -142,7 +146,10 @@ export type MailSendResult =
   | { readonly accepted: true; readonly sendId: string; readonly deduplicated: boolean }
   | { readonly accepted: false; readonly rejected: "queue-full" };
 
-type MessagePayload<TMailer extends AnyMailer, TName extends string> = TMailer["messages"][TName] extends {
+type MessagePayload<
+  TMailer extends AnyMailer,
+  TName extends string,
+> = TMailer["messages"][TName] extends {
   readonly payload: infer TSchema extends RuntimeSchema;
 }
   ? InferSchemaInput<TSchema>
@@ -209,10 +216,14 @@ function createMailSender<TMailers extends readonly AnyMailer[]>(
       }
     }
     if (to.length === 0) {
-      throw new MailSendError("SHIP_MAIL_RECIPIENT_INVALID", "a send needs at least one recipient", {
-        mailerId: mailer.id,
-        messageName: message,
-      });
+      throw new MailSendError(
+        "SHIP_MAIL_RECIPIENT_INVALID",
+        "a send needs at least one recipient",
+        {
+          mailerId: mailer.id,
+          messageName: message,
+        },
+      );
     }
     if (
       typeof options.idempotencyKey !== "string" ||
@@ -244,7 +255,11 @@ function createMailSender<TMailers extends readonly AnyMailer[]>(
     };
     const result = await enqueuer.enqueue(input, enqueueOptions);
     return result.accepted
-      ? Object.freeze({ accepted: true as const, sendId: result.runId, deduplicated: result.deduplicated })
+      ? Object.freeze({
+          accepted: true as const,
+          sendId: result.runId,
+          deduplicated: result.deduplicated,
+        })
       : Object.freeze({ accepted: false as const, rejected: "queue-full" as const });
   };
   return Object.freeze({ kind: "ship.mail-sender" as const, jobId, send }) as MailSender<TMailers>;
@@ -440,7 +455,9 @@ function duplicate(record: MailSendRecord): MailDeliveryOutput {
   });
 }
 
-function assertOptions(options: unknown): asserts options is MailDeliveryOptions<readonly AnyMailer[]> {
+function assertOptions(
+  options: unknown,
+): asserts options is MailDeliveryOptions<readonly AnyMailer[]> {
   if (typeof options !== "object" || options === null) {
     throw new MailDeliveryError(
       "SHIP_MAIL_DELIVERY_OPTIONS_INVALID",

@@ -1,6 +1,10 @@
 import type { MailSendRequest } from "@sixthsummit/ship-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { conformanceRequest, mailLedgerConformance, mailProviderConformance } from "./conformance.js";
+import {
+  conformanceRequest,
+  mailLedgerConformance,
+  mailProviderConformance,
+} from "./conformance.js";
 import { logMailProvider } from "./log.js";
 import { createInMemoryMailLedger } from "./memory-ledger.js";
 import { RESEND_API_URL, resendMailProvider } from "./resend.js";
@@ -103,7 +107,9 @@ describe("resendMailProvider", () => {
     [403, false],
     [422, false],
   ])("maps HTTP %s to retryable=%s and never echoes the key", async (status, retryable) => {
-    const transport = fakeResend(() => Response.json({ message: "nope", name: "validation_error" }, { status }));
+    const transport = fakeResend(() =>
+      Response.json({ message: "nope", name: "validation_error" }, { status }),
+    );
     const provider = resendMailProvider({ apiKey: "re_secret", fetch: transport.fetch });
     const outcome = await provider.send(conformanceRequest());
     expect(outcome).toEqual({ accepted: false, retryable, error: "nope", status });
@@ -145,7 +151,10 @@ describe("resendMailProvider", () => {
       retryable: true,
       error: "resend request timed out after 5 ms",
     });
-    const accepted = resendMailProvider({ apiKey: "k", fetch: async () => new Response("ok", { status: 200 }) });
+    const accepted = resendMailProvider({
+      apiKey: "k",
+      fetch: async () => new Response("ok", { status: 200 }),
+    });
     await expect(accepted.send(conformanceRequest())).resolves.toEqual({ accepted: true });
   });
 

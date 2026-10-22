@@ -80,14 +80,17 @@ export function resendMailProvider(options: ResendMailProviderOptions): MailProv
     clearTimeout(timer);
     const payload = await readJson(response);
     if (response.ok) {
-      const id = typeof payload === "object" && payload !== null ? Reflect.get(payload, "id") : undefined;
+      const id =
+        typeof payload === "object" && payload !== null ? Reflect.get(payload, "id") : undefined;
       return Object.freeze({
         accepted: true as const,
         ...(typeof id === "string" && id.length > 0 ? { providerMessageId: id } : {}),
       });
     }
     const message =
-      typeof payload === "object" && payload !== null && typeof Reflect.get(payload, "message") === "string"
+      typeof payload === "object" &&
+      payload !== null &&
+      typeof Reflect.get(payload, "message") === "string"
         ? (Reflect.get(payload, "message") as string)
         : `resend answered ${response.status}`;
     return Object.freeze({
@@ -119,7 +122,10 @@ function assertOptions(options: unknown): asserts options is ResendMailProviderO
   }
   const apiKey = Reflect.get(options, "apiKey");
   if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
-    throw new ResendMailProviderError("resend provider apiKey must be a non-empty string", "apiKey");
+    throw new ResendMailProviderError(
+      "resend provider apiKey must be a non-empty string",
+      "apiKey",
+    );
   }
   const baseUrl = Reflect.get(options, "baseUrl");
   if (baseUrl !== undefined && (typeof baseUrl !== "string" || !/^https:\/\//u.test(baseUrl))) {
@@ -130,7 +136,13 @@ function assertOptions(options: unknown): asserts options is ResendMailProviderO
     throw new ResendMailProviderError("resend provider fetch must be a function", "fetch");
   }
   const timeoutMs = Reflect.get(options, "timeoutMs");
-  if (timeoutMs !== undefined && !(typeof timeoutMs === "number" && Number.isInteger(timeoutMs) && timeoutMs > 0)) {
-    throw new ResendMailProviderError("resend provider timeoutMs must be a positive integer", "timeoutMs");
+  if (
+    timeoutMs !== undefined &&
+    !(typeof timeoutMs === "number" && Number.isInteger(timeoutMs) && timeoutMs > 0)
+  ) {
+    throw new ResendMailProviderError(
+      "resend provider timeoutMs must be a positive integer",
+      "timeoutMs",
+    );
   }
 }

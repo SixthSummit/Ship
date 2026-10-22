@@ -65,7 +65,11 @@ describe("allowlistInterceptor", () => {
     ["bad domain entry", { allow: ["@nodot"], redirectTo: ["a@example.test"] }, "allow"],
     ["empty redirect", { allow: [], redirectTo: [] }, "redirectTo"],
     ["bad redirect", { allow: [], redirectTo: ["x"] }, "redirectTo"],
-    ["bad prefix flag", { allow: [], redirectTo: ["a@example.test"], subjectPrefix: 1 }, "subjectPrefix"],
+    [
+      "bad prefix flag",
+      { allow: [], redirectTo: ["a@example.test"], subjectPrefix: 1 },
+      "subjectPrefix",
+    ],
   ])("rejects %s", (_name, options, field) => {
     expect(() => (allowlistInterceptor as (value: unknown) => unknown)(options)).toThrowError(
       expect.objectContaining({ code: "SHIP_MAIL_INTERCEPTOR_INVALID", field }),

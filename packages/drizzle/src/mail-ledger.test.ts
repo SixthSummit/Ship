@@ -21,9 +21,9 @@ describe("createDrizzleMailLedger", () => {
     ["missing database", { database: null }, "database"],
     ["bad table", { database, table: 3 }, "table"],
   ])("rejects %s definitions", (_name, definition, field) => {
-    expect(() =>
-      (createDrizzleMailLedger as (value: unknown) => unknown)(definition),
-    ).toThrowError(expect.objectContaining({ code: "SHIP_DRIZZLE_MAIL_LEDGER_INVALID", field }));
+    expect(() => (createDrizzleMailLedger as (value: unknown) => unknown)(definition)).toThrowError(
+      expect.objectContaining({ code: "SHIP_DRIZZLE_MAIL_LEDGER_INVALID", field }),
+    );
     expect(() => shipMailSendsTable("Bad Name")).toThrowError(
       expect.objectContaining({ code: "SHIP_DRIZZLE_MAIL_LEDGER_INVALID" }),
     );

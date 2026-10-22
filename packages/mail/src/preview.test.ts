@@ -58,12 +58,21 @@ describe("defineMailPreview", () => {
         welcome: { ...accountsMailer.messages.welcome, sample: { name: "" } },
       },
     };
-    const preview = defineMailPreview({ mailers: [accountsMailer, broken as never], prefix: "dev" });
+    const preview = defineMailPreview({
+      mailers: [accountsMailer, broken as never],
+      prefix: "dev",
+    });
     const { defineApp, defineModule } = await import("@sixthsummit/ship-core");
     const app = defineApp({
       id: "preview",
       modules: [
-        defineModule({ id: "dev", operations: [...preview.operations], providers: [], imports: [], exports: [] }),
+        defineModule({
+          id: "dev",
+          operations: [...preview.operations],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
       ],
     });
     const executor = createExecutor(app);
@@ -99,7 +108,9 @@ describe("defineMailPreview", () => {
     expect(preview.list.access).toEqual(permission("ops:mail"));
     expect(preview.list.transport).toMatchObject({ kind: "http" });
     expect(preview.render.transport).toBeUndefined();
-    expect(() => defineMailPreview({ mailers: [accountsMailer], access: publicAccess() })).toThrowError(
+    expect(() =>
+      defineMailPreview({ mailers: [accountsMailer], access: publicAccess() }),
+    ).toThrowError(
       expect.objectContaining({ code: "SHIP_MAIL_PREVIEW_OPTIONS_INVALID", field: "access" }),
     );
     expect(() => defineMailPreview({ mailers: [{}] as never })).toThrowError(

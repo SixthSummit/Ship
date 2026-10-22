@@ -24,11 +24,11 @@ export {
   DEFAULT_MAIL_RETRY,
   defineMailDelivery,
   MailDeliveryError,
+  MailSendError,
   mailDeliveryInputSchema,
   mailMessageUnknown,
   mailPayloadInvalid,
   mailRejected,
-  MailSendError,
 } from "./delivery.js";
 export type { AllowlistInterceptorOptions } from "./interceptor.js";
 export { allowlistInterceptor, MailInterceptorError } from "./interceptor.js";
@@ -38,8 +38,8 @@ export type { InMemoryMailLedger } from "./memory-ledger.js";
 export { createInMemoryMailLedger } from "./memory-ledger.js";
 export type { MailPreview, MailPreviewOptions } from "./preview.js";
 export {
-  MAIL_PREVIEW_PERMISSION,
   defineMailPreview,
+  MAIL_PREVIEW_PERMISSION,
   MailPreviewError,
   mailPreviewNotFound,
   mailPreviewSampleInvalid,
