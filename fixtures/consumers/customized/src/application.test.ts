@@ -7,6 +7,7 @@ import {
   operationActor,
   providerActor,
   REALTIME_PUBLICATION_OUTBOX_ID,
+  startJobRuntime,
   systemActor,
   type TenantScope,
   type UnitOfWork,
@@ -103,7 +104,7 @@ function fixtureInfrastructure(
     webhookSecrets: { stripe: webhookSecret("whsec_fixture"), twilio: webhookSecret("auth-token") },
     jobs: createInMemoryJobBackend(),
     locks: createInMemoryLockProvider(),
-    storage: createInMemoryStorageAdapter(),
+    storage: createInMemoryStorageAdapter(overrides.clock ? { now: overrides.clock } : {}),
     attachmentLedger: createInMemoryAttachmentLedger(),
     purgeOutbox: createInMemoryOutbox(defineStoragePurgeOutbox()),
     scheduledTenants: ["acme", "beta"],
@@ -319,6 +320,7 @@ describe("customized portfolio application", () => {
       "reports.outbox",
       "ship-cache.invalidation",
       REALTIME_PUBLICATION_OUTBOX_ID,
+      "ship-storage.purge",
     ]);
     expect(graph.outboxes).toEqual(
       expect.arrayContaining([
@@ -723,6 +725,8 @@ describe("customized declared jobs", () => {
       ["jobs.cleanup", "schedule", "single-runner", []],
       ["reports.deliver", "enqueue", "single-runner", []],
       ["reports.digest", "schedule", "single-runner", ["reports.deliver"]],
+      ["ship-storage.generate-variant", "enqueue", "parallel", []],
+      ["ship-storage.sweep", "interval", "single-runner", []],
     ]);
     expect(graph.jobs.find((job) => job.id === "reports.deliver")).toMatchObject({
       transaction: "write",
@@ -1109,6 +1113,7 @@ describe("managed storage", () => {
   it("uploads through a signed intent, attaches to a project, lists with a pending thumbnail and purges on removal", async () => {
     const infrastructure = fixtureInfrastructure();
     const application = createCustomizedApplication(infrastructure);
+    await startJobRuntime(application, { backend: infrastructure.jobs, mode: "api" });
     const executor = createExecutor(application);
     const { objectId } = await uploadPhoto(executor, infrastructure.storage);
 
