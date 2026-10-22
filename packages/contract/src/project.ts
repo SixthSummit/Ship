@@ -10,6 +10,7 @@ import type {
 import type {
   ClientContract,
   ClientContractChannel,
+  ClientContractMailer,
   ClientContractOperation,
   ClientContractStreamResponse,
   ClientContractSuccess,
@@ -23,6 +24,7 @@ export type {
   ClientContractChannel,
   ClientContractChannelScope,
   ClientContractError,
+  ClientContractMailer,
   ClientContractOperation,
   ClientContractStreamLimits,
   ClientContractStreamResponse,
@@ -54,11 +56,18 @@ export function projectClientContract<
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((channel) => [channel.id, projectChannel(channel)]),
   );
+  const mailers: Record<string, ClientContractMailer> = Object.fromEntries(
+    application.graph.mailers.map((mailer) => [
+      mailer.id,
+      Object.freeze({ messages: Object.freeze([...mailer.messages]) }),
+    ]),
+  );
   const unsigned = stableJson({
     schemaVersion: 1,
     appId: application.id,
     operations,
     channels,
+    ...(Object.keys(mailers).length > 0 ? { mailers } : {}),
   });
   const fingerprint = `sha256:${createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
   return deepFreeze({ ...unsigned, fingerprint }) as unknown as ClientContract;

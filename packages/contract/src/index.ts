@@ -20,6 +20,7 @@ export type {
   ClientContractChannel,
   ClientContractChannelScope,
   ClientContractError,
+  ClientContractMailer,
   ClientContractOperation,
   ClientContractStreamLimits,
   ClientContractStreamResponse,

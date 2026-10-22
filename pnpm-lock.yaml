@@ -644,6 +644,24 @@ importers:
         specifier: ^4.3.6
         version: 4.5.4
 
+  packages/mail:
+    devDependencies:
+      '@sixthsummit/ship-core':
+        specifier: workspace:*
+        version: link:../kernel
+      '@sixthsummit/ship-drizzle':
+        specifier: workspace:^
+        version: link:../drizzle
+      '@sixthsummit/ship-testing':
+        specifier: workspace:^
+        version: link:../testing
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
+      zod:
+        specifier: ^4.3.6
+        version: 4.6.7
+
   packages/mcp-server:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -8916,7 +8934,7 @@ snapshots:
   '@astrojs/sitemap@3.7.4':
     dependencies:
       sitemap: 9.0.1
-      zod: 4.5.4
+      zod: 4.6.7
 
   '@astrojs/starlight@0.42.6(@astrojs/markdown-remark@7.3.2)(astro@7.3.8(@astrojs/markdown-remark@7.3.2)(@types/node@24.13.3)(esbuild@0.28.2)(ioredis@5.11.1)(jiti@2.7.0)(less@4.9.1)(sass@1.105.1)(tsx@4.23.13)(yaml@2.9.1))(typescript@5.9.3)':
     dependencies:
