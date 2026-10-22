@@ -1051,7 +1051,7 @@ describe("managed storage", () => {
   const projectId = "33333333-3333-4333-8333-333333333333";
 
   async function uploadPhoto(
-    executor: ReturnType<typeof createExecutor>,
+    executor: ReturnType<typeof createExecutor<ReturnType<typeof createCustomizedApplication>>>,
     storage: ReturnType<typeof createInMemoryStorageAdapter>,
     bytes = new TextEncoder().encode("png-bytes"),
   ) {
