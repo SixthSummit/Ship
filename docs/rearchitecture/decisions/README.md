@@ -37,3 +37,4 @@ Architecture decision records capture consequential decisions for the ShipAPI re
 | [0018](./0018-inbound-webhook-operations.md) | Accepted | Declare inbound webhooks as bounded raw-body operations with a pure verifier contract, provider actors after verification, executor idempotency, durable receipt, replay and retention; provider protocols live in an optional adapter package |
 | [0019](./0019-declared-read-cache.md) | Accepted | Declare read caching per operation with framework-owned, actor- and tenant-scoped keys and durable tag invalidation |
 | [0020](./0020-current-architecture-agent-tooling.md) | Proposed | Replace compatibility MCP and Claude tooling with operation-oriented inspection and evidence-driven workflows |
+| [0021](./0021-schema-safety-gates.md) | Accepted | Enforce the production column rules with a migration linter, make migrations a gated release step that refuses to run at boot, and fail CI on physical schema drift |
