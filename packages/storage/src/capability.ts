@@ -152,7 +152,7 @@ export function createAttachmentCapability(
       attachmentId: attachment.id,
       attach: async ({ ownerId, objectId }) => {
         const transaction = requireScope("attach");
-        const existing = await ledger.listObjects(attachment.id, ownerId);
+        const existing = await ledger.listObjects(transaction, attachment.id, ownerId);
         if (attachment.cardinality === "single") {
           // A single field replaces its object: the previous one is purged
           // in the same transaction as the new binding.
@@ -188,13 +188,13 @@ export function createAttachmentCapability(
       },
       detach: async ({ ownerId, objectId }) =>
         detachInScope(requireScope("detach"), ownerId, objectId),
-      list: (ownerId) => ledger.listObjects(attachment.id, ownerId),
+      list: (ownerId) => ledger.listObjects(scope, attachment.id, ownerId),
       read: async (objectId) => {
-        const object = await ledger.readObject(objectId);
+        const object = await ledger.readObject(scope, objectId);
         return object?.attachmentId === attachment.id ? object : undefined;
       },
       url: async (objectId, urlOptions) => {
-        const object = readable(await ledger.readObject(objectId));
+        const object = readable(await ledger.readObject(scope, objectId));
         if (!object || object.attachmentId !== attachment.id) return undefined;
         return urlFor(object.key, urlOptions?.expiresInMs);
       },
@@ -222,7 +222,7 @@ export function createAttachmentCapability(
             url: await urlFor(cached.key, urlOptions?.expiresInMs),
           });
         }
-        const object = readable(await ledger.readObject(objectId));
+        const object = readable(await ledger.readObject(scope, objectId));
         if (!object || object.attachmentId !== attachment.id) return undefined;
         const rendered = object.variants[name];
         if (rendered) {

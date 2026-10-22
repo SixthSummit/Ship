@@ -96,9 +96,9 @@ describe("createInMemoryAttachmentLedger", () => {
       attachedAt: at,
     });
     expect(attached?.status).toBe("attached");
-    expect((await ledger.listObjects("gallery.photo", "owner")).map((item) => item.id)).toEqual([
-      "object-1",
-    ]);
+    expect(
+      (await ledger.listObjects(undefined, "gallery.photo", "owner")).map((item) => item.id),
+    ).toEqual(["object-1"]);
     await ledger.recordVariant("object-1", "thumb", {
       key: "gallery.photo/intent-1/variants/thumb.webp",
       contentType: "image/webp",
@@ -116,8 +116,8 @@ describe("createInMemoryAttachmentLedger", () => {
     ]);
     expect(await ledger.markPurged("object-1", at)).toBe(true);
     expect(await ledger.markPurged("object-1", at)).toBe(false);
-    expect((await ledger.readObject("object-1"))?.status).toBe("purged");
-    expect(await ledger.listObjects("gallery.photo", "owner")).toEqual([]);
+    expect((await ledger.readObject(undefined, "object-1"))?.status).toBe("purged");
+    expect(await ledger.listObjects(undefined, "gallery.photo", "owner")).toEqual([]);
   });
 
   it("claims expired intents and stale uploads once", async () => {

@@ -212,16 +212,20 @@ export function createDrizzleAttachmentLedger<TSchema extends Record<string, unk
     return Object.freeze(rows.map(toIntent));
   };
 
-  const readObject = async (objectId: string): Promise<AttachmentObject | undefined> => {
-    const [row] = await database.select().from(objects).where(eq(objects.id, objectId));
+  const readObject = async (
+    scope: object | undefined,
+    objectId: string,
+  ): Promise<AttachmentObject | undefined> => {
+    const [row] = await executor(scope).select().from(objects).where(eq(objects.id, objectId));
     return row ? toObject(row) : undefined;
   };
 
   const listObjects = async (
+    scope: object | undefined,
     attachmentId: string,
     ownerId: string,
   ): Promise<readonly AttachmentObject[]> => {
-    const rows = await database
+    const rows = await executor(scope)
       .select()
       .from(objects)
       .where(

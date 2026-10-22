@@ -260,7 +260,7 @@ export function defineStorageModule<
     },
     effects: [storageAdapterEffect, storageImageProcessorEffect],
     handler: async ({ input, services }) => {
-      const object = await services.ledger.readObject(input.objectId);
+      const object = await services.ledger.readObject(undefined, input.objectId);
       if (!object || (object.status !== "uploaded" && object.status !== "attached")) {
         return { rendered: false, reason: "object-unavailable" };
       }

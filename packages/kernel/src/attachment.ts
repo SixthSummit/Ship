@@ -640,8 +640,13 @@ export interface AttachmentLedger {
   ): Promise<{ readonly intent: AttachmentIntent; readonly object: AttachmentObject } | undefined>;
   /** Atomically claims pending intents past expiry as abandoned; safe across concurrent sweepers. */
   claimExpiredIntents(now: Date, limit: number): Promise<readonly AttachmentIntent[]>;
-  readObject(objectId: string): Promise<AttachmentObject | undefined>;
-  listObjects(attachmentId: string, ownerId: string): Promise<readonly AttachmentObject[]>;
+  /** Reads join `scope` when one is given, so a write transaction sees its own attach/detach. */
+  readObject(scope: object | undefined, objectId: string): Promise<AttachmentObject | undefined>;
+  listObjects(
+    scope: object | undefined,
+    attachmentId: string,
+    ownerId: string,
+  ): Promise<readonly AttachmentObject[]>;
   /** Returns undefined when the object is not an unattached upload of this attachment. */
   attach(
     scope: object | undefined,

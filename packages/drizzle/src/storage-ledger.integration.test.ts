@@ -133,7 +133,7 @@ describe("createDrizzleAttachmentLedger", () => {
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
-    expect((await ledger.readObject(OBJECT_A))?.status).toBe("uploaded");
+    expect((await ledger.readObject(undefined, OBJECT_A))?.status).toBe("uploaded");
 
     await unitOfWork.run("write", async (scope) => {
       await ledger.attach(scope, {
@@ -143,9 +143,9 @@ describe("createDrizzleAttachmentLedger", () => {
         attachedAt: at,
       });
     });
-    expect((await ledger.listObjects("gallery.photo", "project-1")).map((item) => item.id)).toEqual(
-      [OBJECT_A],
-    );
+    expect(
+      (await ledger.listObjects(undefined, "gallery.photo", "project-1")).map((item) => item.id),
+    ).toEqual([OBJECT_A]);
     expect(
       await ledger.attach(undefined, {
         attachmentId: "gallery.photo",
@@ -171,7 +171,7 @@ describe("createDrizzleAttachmentLedger", () => {
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
-    expect((await ledger.readObject(OBJECT_A))?.status).toBe("attached");
+    expect((await ledger.readObject(undefined, OBJECT_A))?.status).toBe("attached");
     expect(await ledger.readPurge(OBJECT_A)).toBeUndefined();
 
     await unitOfWork.run("write", async (scope) => {
@@ -187,10 +187,10 @@ describe("createDrizzleAttachmentLedger", () => {
       `gallery.photo/${INTENT_A}`,
       `gallery.photo/${INTENT_A}/variants/thumb.webp`,
     ]);
-    expect(await ledger.listObjects("gallery.photo", "project-1")).toEqual([]);
+    expect(await ledger.listObjects(undefined, "gallery.photo", "project-1")).toEqual([]);
     expect(await ledger.markPurged(OBJECT_A, at)).toBe(true);
     expect(await ledger.markPurged(OBJECT_A, at)).toBe(false);
-    expect((await ledger.readObject(OBJECT_A))?.status).toBe("purged");
+    expect((await ledger.readObject(undefined, OBJECT_A))?.status).toBe("purged");
     expect((await ledger.readPurge(OBJECT_A))?.attempts).toBe(1);
   });
 

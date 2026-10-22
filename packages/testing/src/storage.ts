@@ -229,8 +229,8 @@ export function createInMemoryAttachmentLedger(): InMemoryAttachmentLedger {
       }
       return Object.freeze(claimed);
     },
-    readObject: async (objectId) => objects.get(objectId),
-    listObjects: async (attachmentId, ownerId) =>
+    readObject: async (_scope, objectId) => objects.get(objectId),
+    listObjects: async (_scope, attachmentId, ownerId) =>
       Object.freeze(
         [...objects.values()]
           .filter(

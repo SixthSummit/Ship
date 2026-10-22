@@ -342,7 +342,7 @@ describe("defineStorageModule", () => {
     expect(drained.completed).toBe(1);
     expect(adapter.keys()).toEqual([]);
     expect((await ledger.readPurge("uuid-2"))?.purgedAt).toBeDefined();
-    expect((await ledger.readObject("uuid-2"))?.status).toBe("purged");
+    expect((await ledger.readObject(undefined, "uuid-2"))?.status).toBe("purged");
     // A replayed purge is a no-op rather than a failure.
     await executor
       .run("gallery.urls", { body: { objectId: object.objectId } }, { actor })
