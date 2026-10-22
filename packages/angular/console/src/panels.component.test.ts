@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { describe, expect, it, vi } from 'vitest';
 import { provideRouter } from '@angular/router';
+import { describe, expect, it, vi } from 'vitest';
 import { ShipConsoleAppComponent } from './console-app.component';
 import type { ShipConsoleCallResult } from './console-contract';
 import { ShipConsoleCronPanelComponent } from './cron-panel.component';
