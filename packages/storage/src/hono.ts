@@ -20,7 +20,9 @@ export function storageHttpTransports<const TBasePath extends string = "/storage
   const requestBody = http.body.json({ maxBytes: options.maxBodyBytes ?? 4_096 });
   return Object.freeze({
     createIntent: http.post(`${basePath}/intents`, { requestBody }),
-    complete: http.post(`${basePath}/intents/:intentId/complete`, { requestBody }),
+    // Completion carries no body: the adapter rejects a custom body policy
+    // on an operation without a body input, so the default policy stays.
+    complete: http.post(`${basePath}/intents/:intentId/complete`),
   }) satisfies Required<StorageModuleTransports>;
 }
 

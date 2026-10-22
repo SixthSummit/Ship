@@ -3,6 +3,7 @@ import {
   type ApplicationDiagnosticCode,
   authenticatedAccess,
   createExecutor,
+  defineActorResolver,
   defineApp,
   defineAttachment,
   defineModule,
@@ -21,6 +22,7 @@ import {
   unitOfWorkDependency,
   valueProvider,
 } from "@sixthsummit/ship-core";
+import { createHonoAdapter } from "@sixthsummit/ship-hono";
 import {
   createInMemoryAttachmentLedger,
   createInMemoryJobBackend,
@@ -560,6 +562,37 @@ describe("defineStorageModule", () => {
       cause: expect.objectContaining({ code: "SHIP_ATTACHMENT_SCOPE_REQUIRED" }),
     });
     expect(object.data.objectId).toBeDefined();
+  });
+
+  it("projects through the Hono adapter with consistent body policies", async () => {
+    const { app, adapter, actor } = await fixture();
+    const http = createHonoAdapter(app, {
+      auth: {
+        credentials: { id: "test.session", extract: () => "editor" },
+        actors: defineActorResolver({
+          id: "test.actors",
+          resolve: async () => ({ ok: true, actor }),
+        }),
+      },
+    });
+    const intent = await http.request("/storage/intents", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ attachment: "gallery.photo", contentType: "image/png", size: 3 }),
+    });
+    expect(intent.status).toBe(201);
+    const issued = (await intent.json()) as {
+      intentId: string;
+      upload: { url: string; headers: Record<string, string> };
+    };
+    expect(await adapter.upload(issued.upload.url, new Uint8Array(3), issued.upload.headers)).toBe(
+      200,
+    );
+    const complete = await http.request(`/storage/intents/${issued.intentId}/complete`, {
+      method: "POST",
+    });
+    expect(complete.status).toBe(200);
+    expect(await complete.json()).toMatchObject({ contentType: "image/png", size: 3 });
   });
 
   it("validates its options", () => {
