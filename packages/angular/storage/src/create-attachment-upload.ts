@@ -107,7 +107,10 @@ export interface AttachmentUpload<TContract extends StorageContract> {
   readonly error: Signal<Error | undefined>;
   /** The intent the current transfer runs under, for diagnostics; cleared on reset. */
   readonly intent: Signal<StorageIntentData | undefined>;
-  start(file: File, options?: AttachmentUploadCallOptions): Promise<AttachmentUploadResult<TContract>>;
+  start(
+    file: File,
+    options?: AttachmentUploadCallOptions
+  ): Promise<AttachmentUploadResult<TContract>>;
   cancel(): boolean;
   reset(): void;
   destroy(): void;
@@ -126,7 +129,11 @@ export function createAttachmentUpload<TContract extends StorageContract>(
   options: CreateAttachmentUploadOptions
 ): AttachmentUpload<TContract> {
   let currentIntent: StorageIntentData | undefined;
-  const upload = createOperationSignedUpload<TContract, IntentIdOf<TContract>, CompleteIdOf<TContract>>(
+  const upload = createOperationSignedUpload<
+    TContract,
+    IntentIdOf<TContract>,
+    CompleteIdOf<TContract>
+  >(
     client,
     {
       sign: {

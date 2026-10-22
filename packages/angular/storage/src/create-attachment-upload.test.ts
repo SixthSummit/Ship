@@ -46,7 +46,12 @@ const intentSuccess = {
 const completionSuccess = {
   ok: true,
   status: 200,
-  data: { objectId: 'object-1', objectKey: 'gallery.photo/intent-1', contentType: 'image/png', size: 5 },
+  data: {
+    objectId: 'object-1',
+    objectKey: 'gallery.photo/intent-1',
+    contentType: 'image/png',
+    size: 5,
+  },
   headers: EMPTY_RESPONSE_METADATA,
 } as const;
 
@@ -59,7 +64,8 @@ function clientFrom(
   handler: (operation: string, input: unknown) => Promise<OperationResult<unknown, string>>
 ): OperationClient<Contract> {
   return {
-    call: ((operation: string, input: unknown) => handler(operation, input)) as OperationClient<Contract>['call'],
+    call: ((operation: string, input: unknown) =>
+      handler(operation, input)) as OperationClient<Contract>['call'],
   };
 }
 
@@ -132,7 +138,9 @@ describe('attachmentPolicyFromManifest', () => {
       cardinality: 'many',
       maxCount: 12,
     });
-    expect(() => attachmentPolicyFromManifest(manifest, 'gallery.nope')).toThrow(AttachmentPolicyError);
+    expect(() => attachmentPolicyFromManifest(manifest, 'gallery.nope')).toThrow(
+      AttachmentPolicyError
+    );
     expect(() => attachmentPolicyFromManifest({}, 'gallery.photo')).toThrow(
       'declares no attachment "gallery.photo"'
     );
@@ -156,9 +164,9 @@ describe('createAttachmentUpload', () => {
       binding,
       options
     );
-    await expect(upload.start(new File(['x'], 'note.txt', { type: 'text/plain' }))).rejects.toBeInstanceOf(
-      OperationUploadValidationError
-    );
+    await expect(
+      upload.start(new File(['x'], 'note.txt', { type: 'text/plain' }))
+    ).rejects.toBeInstanceOf(OperationUploadValidationError);
     await expect(
       upload.start(new File(['0123456789abcdef'], 'big.png', { type: 'image/png' }))
     ).rejects.toBeInstanceOf(OperationUploadValidationError);
@@ -196,7 +204,12 @@ describe('createAttachmentUpload', () => {
       {
         operation: 'ship-storage.create-intent',
         input: {
-          body: { attachment: 'gallery.photo', contentType: 'image/png', size: 5, filename: 'photo.png' },
+          body: {
+            attachment: 'gallery.photo',
+            contentType: 'image/png',
+            size: 5,
+            filename: 'photo.png',
+          },
         },
       },
       { operation: 'ship-storage.complete', input: { params: { intentId: 'intent-1' } } },
@@ -214,7 +227,11 @@ describe('createAttachmentUpload', () => {
       error: { code: 'ATTACHMENT_TOO_LARGE', message: 'too large' },
       headers: EMPTY_RESPONSE_METADATA,
     } as const;
-    const upload = createAttachmentUpload(clientFrom(async () => rejected), binding, options);
+    const upload = createAttachmentUpload(
+      clientFrom(async () => rejected),
+      binding,
+      options
+    );
     const result = await upload.start(new File(['hello'], 'photo.png', { type: 'image/png' }));
     expect(result).toMatchObject({ ok: false, stage: 'sign' });
     expect(attachmentUploadFailure(result)).toMatchObject({
@@ -251,8 +268,14 @@ describe('createAttachmentUpload', () => {
         upload: { ...intentSuccess.data.upload, url: 'https://evil.example.test/upload' },
       },
     };
-    const upload = createAttachmentUpload(clientFrom(async () => elsewhere), binding, options);
-    await expect(upload.start(new File(['hello'], 'photo.png', { type: 'image/png' }))).rejects.toThrow();
+    const upload = createAttachmentUpload(
+      clientFrom(async () => elsewhere),
+      binding,
+      options
+    );
+    await expect(
+      upload.start(new File(['hello'], 'photo.png', { type: 'image/png' }))
+    ).rejects.toThrow();
     expect(MockXhr.instances).toHaveLength(0);
   });
 

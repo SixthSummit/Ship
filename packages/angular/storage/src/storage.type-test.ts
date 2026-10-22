@@ -17,7 +17,12 @@ interface AppContract extends StorageContract {
 declare const client: OperationClient<AppContract>;
 declare const file: File;
 declare const manifest: {
-  readonly attachments: { readonly 'gallery.photo': { readonly contentTypes: readonly string[]; readonly maxBytes: number } };
+  readonly attachments: {
+    readonly 'gallery.photo': {
+      readonly contentTypes: readonly string[];
+      readonly maxBytes: number;
+    };
+  };
 };
 
 const upload = createAttachmentUpload(
@@ -37,6 +42,10 @@ interface WithoutStorage {
 }
 declare const bare: OperationClient<WithoutStorage>;
 // @ts-expect-error a contract without the storage module's operations cannot drive an attachment upload
-void createAttachmentUpload(bare, { attachment: 'gallery.photo', policy: { contentTypes: [], maxBytes: 1 } }, {
-  allowedProviderOrigins: [],
-});
+void createAttachmentUpload(
+  bare,
+  { attachment: 'gallery.photo', policy: { contentTypes: [], maxBytes: 1 } },
+  {
+    allowedProviderOrigins: [],
+  }
+);
