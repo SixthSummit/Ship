@@ -138,7 +138,6 @@ export function lintMigrationSql(
   const inlineEntries: AllowEntry[] = [];
   const inlineProblems: string[] = [];
   const rawFindings: Finding[] = [];
-  const createdSoFar = new Set<string>();
   let reporting = options.since === undefined && allowlist.baseline === undefined;
   let linted = 0;
   const sinceTag = options.since ?? allowlist.baseline;
@@ -166,7 +165,6 @@ export function lintMigrationSql(
       const created = createdTable(statement);
       if (created) {
         createdInMigration.add(tableKey(created));
-        createdSoFar.add(tableKey(created));
       }
     }
     if (reporting) linted += 1;

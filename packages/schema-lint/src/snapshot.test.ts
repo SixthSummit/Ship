@@ -8,7 +8,6 @@ import {
   diffSchemaSnapshots,
   formatSnapshotDifferences,
   readSnapshotFile,
-  type SchemaSnapshot,
   SnapshotFileError,
   type SnapshotQueryable,
   serializeSnapshot,
@@ -214,11 +213,7 @@ describe("snapshot files", () => {
     await writeFile(malformed, "{", "utf8");
     await expect(readSnapshotFile(malformed)).rejects.toThrow(/not valid JSON/u);
     const wrongShape = resolve(directory, "wrong.json");
-    await writeFile(
-      wrongShape,
-      JSON.stringify({ schemaVersion: 2 } satisfies Partial<SchemaSnapshot>),
-      "utf8",
-    );
+    await writeFile(wrongShape, JSON.stringify({ schemaVersion: 2 }), "utf8");
     await expect(readSnapshotFile(wrongShape)).rejects.toThrow(/schemaVersion 1/u);
   });
 });

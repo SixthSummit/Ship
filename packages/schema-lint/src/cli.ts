@@ -10,6 +10,7 @@ import {
 } from "./lint.js";
 import { type DatabaseConnection, defaultConnect, runRelease } from "./release.js";
 import {
+  captureSchemaSnapshot,
   checkSchemaSnapshot,
   formatSnapshotDifferences,
   SnapshotFileError,
@@ -194,7 +195,6 @@ export async function runSchemaLintCli(argv: readonly string[], io: CliIo = {}):
       }
       const connection = await connect(databaseUrl);
       try {
-        const { captureSchemaSnapshot } = await import("./snapshot.js");
         stdout(
           serializeSnapshot(
             await captureSchemaSnapshot(connection.client, { schemas: options.schema }),
