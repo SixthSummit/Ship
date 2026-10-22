@@ -390,6 +390,25 @@ describe("webhook ingress over PostgreSQL", () => {
     }
   });
 
+  it("lists stored events newest first, by webhook and before an instant", async () => {
+    const processA = createProcess({ pool: poolA, send: vi.fn(async () => undefined) });
+    const first = await processA.http.request("/webhooks/durable", await signed('{"id":"a"}', "a"));
+    const second = await processA.http.request(
+      "/webhooks/durable",
+      await signed('{"id":"b"}', "b"),
+    );
+    const eventA = ((await first.json()) as { eventId: string }).eventId;
+    const eventB = ((await second.json()) as { eventId: string }).eventId;
+    const store = createDrizzleWebhookEventStore({ database: context.db, table: eventsTable });
+    const listed = await store.list?.({ limit: 10 });
+    expect(listed?.map((event) => event.id)).toEqual([eventB, eventA]);
+    expect(listed?.[0]).toMatchObject({ webhookId: "ingress.durable-hook", providerEventId: "b" });
+    expect(await store.list?.({ webhookId: "ingress.other", limit: 10 })).toEqual([]);
+    expect(await store.list?.({ limit: 1 })).toHaveLength(1);
+    const before = listed?.[0]?.receivedAt ?? new Date();
+    expect((await store.list?.({ before, limit: 10 }))?.map((event) => event.id)).toEqual([eventA]);
+  });
+
   it("dispatches, replays and cleans up stored events without deleting undispatched ones", async () => {
     const send = vi.fn(async () => undefined);
     const clock = { now: new Date() };

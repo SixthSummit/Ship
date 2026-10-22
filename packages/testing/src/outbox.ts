@@ -165,9 +165,15 @@ export function createInMemoryOutbox(outbox: AnyOutbox): InMemoryOutbox {
   const listRecords = async (query: OutboxRecordQuery): Promise<readonly OutboxRecord[]> =>
     Object.freeze(
       rows
-        .filter((row) => query.status === undefined || row.status === query.status)
-        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
-        .slice(0, query.limit),
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) => query.status === undefined || row.status === query.status)
+        .sort(
+          (left, right) =>
+            right.row.createdAt.getTime() - left.row.createdAt.getTime() ||
+            right.index - left.index,
+        )
+        .slice(0, query.limit)
+        .map(({ row }) => row),
     );
 
   const retry = async (recordId: string, now: Date) => {

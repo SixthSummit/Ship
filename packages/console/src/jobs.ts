@@ -20,9 +20,9 @@ import {
   runViewSchema,
 } from "./views.js";
 
-export interface ConsolePanelOptions {
+export interface ConsolePanelOptions<TPrefix extends string = string> {
   /** Operation id prefix; the owning module id. */
-  readonly prefix: string;
+  readonly prefix: TPrefix;
   /** HTTP path prefix every console route is mounted under. */
   readonly basePath: string;
   readonly clock: () => Date;
@@ -86,7 +86,9 @@ export function jobCapabilities(backend: JobBackend) {
  * the backend supports it. Every operation binds the raw job backend and is
  * gated by `console.operate`.
  */
-export function defineConsoleJobOperations(options: ConsolePanelOptions) {
+export function defineConsoleJobOperations<const TPrefix extends string = string>(
+  options: ConsolePanelOptions<TPrefix>,
+) {
   const { prefix, basePath, clock } = options;
   const backend = jobBackendDependency();
 
@@ -298,7 +300,9 @@ export function defineConsoleJobOperations(options: ConsolePanelOptions) {
   });
 }
 
-export type ConsoleJobOperations = ReturnType<typeof defineConsoleJobOperations>;
+export type ConsoleJobOperations<TPrefix extends string = string> = ReturnType<
+  typeof defineConsoleJobOperations<TPrefix>
+>;
 
 function assertDeclared(introspection: JobIntrospection, jobId: string): void {
   if (!introspection.declarations().some((item) => item.id === jobId)) {

@@ -53,6 +53,11 @@ function memoryStore() {
   const paused = new Set<string>();
   let tokens = 0;
   const snapshot = (row: Row): JobRun => Object.freeze({ ...row, history: [...row.history] });
+  const delayedView = (row: Row, now: Date): JobRun =>
+    Object.freeze({
+      ...snapshot(row),
+      status: row.status === "waiting" && row.availableAt > now ? "delayed" : row.status,
+    });
   const owned = (runId: string, token: string) =>
     rows.find((row) => row.runId === runId && row.status === "active" && row.claimToken === token);
   const store: JobRunStore = {
@@ -212,12 +217,16 @@ function memoryStore() {
                   ? row.status === "waiting" && row.availableAt <= now
                   : row.status === query.status)),
         )
-        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .sort(
+          (left, right) =>
+            right.createdAt.getTime() - left.createdAt.getTime() ||
+            rows.indexOf(right) - rows.indexOf(left),
+        )
         .slice(0, query.limit)
-        .map(snapshot),
-    getRun: async (runId) => {
+        .map((row) => delayedView(row, now)),
+    getRun: async (runId, now) => {
       const row = rows.find((item) => item.runId === runId);
-      return row ? snapshot(row) : undefined;
+      return row ? delayedView(row, now) : undefined;
     },
     listSchedules: async () =>
       [...schedules]
@@ -365,6 +374,56 @@ describe("createJobBackendOverStore", () => {
     });
     const health = await backend.health(new Date());
     expect(health.jobs[0]).toMatchObject({ jobId: "t.keyed", waiting: 2, delayed: 1 });
+  });
+
+  it("exposes introspection over the store and skips paused jobs when polling", async () => {
+    const { store, schedules } = memoryStore();
+    const executed: string[] = [];
+    const backend = backendOver(store, { pollIntervalMs: 5 });
+    backends.push(backend);
+    backend.attach({
+      jobs: [job("t.paused"), job("t.cron", { trigger: { kind: "interval", everyMs: 60_000 } })],
+      execute: async (jobId) => {
+        executed.push(jobId);
+        return { ok: true, data: undefined };
+      },
+    });
+    expect(backend.introspection.declarations().map((item) => item.id)).toEqual([
+      "t.paused",
+      "t.cron",
+    ]);
+    const first = await backend.enqueue("t.paused", { n: 1 });
+    await backend.enqueue("t.paused", { n: 2 }, { delayMs: 60_000 });
+    if (!first.accepted) throw new Error("unreachable");
+    expect((await backend.introspection.listRuns({ limit: 10 })).map((run) => run.status)).toEqual([
+      "delayed",
+      "waiting",
+    ]);
+    expect(await backend.introspection.getRun(first.runId)).toMatchObject({ input: { n: 1 } });
+    await backend.schedule("t.cron", { kind: "interval", everyMs: 60_000 });
+    expect(await backend.introspection.listSchedules()).toMatchObject([
+      { jobId: "t.cron", trigger: { kind: "interval", everyMs: 60_000 } },
+    ]);
+    expect(schedules.has("t.cron")).toBe(true);
+
+    await backend.introspection.pause?.("t.paused");
+    expect(await backend.introspection.listPaused()).toEqual(["t.paused"]);
+    await backend.startWorkers("worker");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(executed).toEqual([]);
+    await backend.introspection.resume?.("t.paused");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(executed).toEqual(["t.paused"]);
+    await expect(backend.introspection.pause?.("t.unknown")).rejects.toMatchObject({
+      code: "SHIP_DRIZZLE_JOB_BACKEND_INVALID",
+    });
+    await backend.quit();
+
+    const { store: plain } = memoryStore();
+    const { setPaused: _ignored, ...withoutControl } = plain;
+    const bare = backendOver(withoutControl as JobRunStore);
+    expect(bare.introspection.pause).toBeUndefined();
+    expect(await bare.introspection.listPaused()).toEqual([]);
   });
 
   it("surfaces a dedupe insert that keeps losing the race as a backend error", async () => {

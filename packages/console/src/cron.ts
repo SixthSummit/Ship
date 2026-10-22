@@ -25,7 +25,9 @@ const triggerOutput = z.object({
  * and a trigger-now that enqueues one run with the empty payload a scheduler
  * tick would carry.
  */
-export function defineConsoleCronOperations(options: ConsolePanelOptions) {
+export function defineConsoleCronOperations<const TPrefix extends string = string>(
+  options: ConsolePanelOptions<TPrefix>,
+) {
   const { prefix, basePath, clock } = options;
   const backend = jobBackendDependency();
 
@@ -100,4 +102,6 @@ export function defineConsoleCronOperations(options: ConsolePanelOptions) {
   });
 }
 
-export type ConsoleCronOperations = ReturnType<typeof defineConsoleCronOperations>;
+export type ConsoleCronOperations<TPrefix extends string = string> = ReturnType<
+  typeof defineConsoleCronOperations<TPrefix>
+>;

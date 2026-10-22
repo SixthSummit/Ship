@@ -1,3 +1,4 @@
+import { CONSOLE_OPERATE_PERMISSION } from "@sixthsummit/ship-console";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
 import {
   cacheInvalidationOutbox,
@@ -7,9 +8,11 @@ import {
   operationActor,
   providerActor,
   REALTIME_PUBLICATION_OUTBOX_ID,
+  startJobRuntime,
   systemActor,
   type TenantScope,
   type UnitOfWork,
+  WEBHOOK_REPLAY_PERMISSION,
   webhookSecret,
 } from "@sixthsummit/ship-core";
 import {
@@ -1030,5 +1033,157 @@ describe("customized legacy bridge", () => {
         actorId: "ana",
       }),
     ).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("customized ops console", () => {
+  const sre = operationActor({ id: "sre", permissions: [CONSOLE_OPERATE_PERMISSION] });
+  /** The existing operator role holds replay and read rights but never the console slug. */
+  const operator = operationActor({
+    id: "operator",
+    permissions: ["portfolio:read", WEBHOOK_REPLAY_PERMISSION],
+  });
+
+  it("mounts every panel as console.* operations behind console.operate only", async () => {
+    const app = createCustomizedApplication(fixtureInfrastructure());
+    const consoleOperations = app.graph.operations.filter((operation) =>
+      operation.id.startsWith("console."),
+    );
+    expect(consoleOperations.map((operation) => operation.id)).toEqual(
+      expect.arrayContaining([
+        "console.panels",
+        "console.jobs.overview",
+        "console.jobs.retry",
+        "console.cron.trigger",
+        "console.webhooks.receipts",
+        "console.webhooks.replay",
+        "console.realtime.channels",
+        "console.outbox.overview",
+      ]),
+    );
+    for (const operation of consoleOperations) {
+      expect(operation.access).toEqual({
+        kind: "permissions",
+        mode: "all",
+        permissions: [CONSOLE_OPERATE_PERMISSION],
+      });
+    }
+    const executor = createExecutor(app);
+    for (const operation of consoleOperations) {
+      await expect(
+        executor.run(operation.id as never, {} as never, { actor: operator }),
+      ).resolves.toMatchObject({ ok: false, status: 403 });
+    }
+    await expect(executor.run("console.panels", {}, { actor: sre })).resolves.toMatchObject({
+      ok: true,
+      data: { panels: expect.arrayContaining([expect.objectContaining({ id: "jobs" })]) },
+    });
+  });
+
+  it("lets an SRE retry a dead-lettered delivery and replay a stored receipt without SQL", async () => {
+    const infrastructure = fixtureInfrastructure();
+    const app = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(app);
+    const jobs = infrastructure.jobs as ReturnType<typeof createInMemoryJobBackend>;
+    await startJobRuntime(app, { backend: jobs, mode: "api" });
+    // A tenant the application never enrolled: the declared TENANT_ACCESS_DENIED
+    // failure is final, so the run dead-letters on its first attempt.
+    await jobs.enqueue("reports.deliver", { tenantId: "gamma", period: "2026-10-22" });
+    await jobs.drain();
+
+    const overview = await executor.run("console.jobs.overview", {}, { actor: sre });
+    expect(overview).toMatchObject({
+      ok: true,
+      data: {
+        jobs: expect.arrayContaining([
+          expect.objectContaining({ jobId: "reports.deliver", failed: 1 }),
+        ]),
+      },
+    });
+    const failed = await executor.run(
+      "console.jobs.runs",
+      { query: { status: "failed" } },
+      { actor: sre },
+    );
+    if (!failed.ok) throw new Error("unreachable");
+    expect(failed.data.runs).toMatchObject([
+      { jobId: "reports.deliver", lastError: expect.stringContaining("TENANT_ACCESS_DENIED") },
+    ]);
+    await expect(
+      executor.run(
+        "console.jobs.retry",
+        { body: { runId: failed.data.runs[0]?.runId ?? "" } },
+        { actor: sre },
+      ),
+    ).resolves.toMatchObject({ ok: true, data: { run: { status: "waiting", attempts: 1 } } });
+    await jobs.drain();
+    expect(jobs.runs()[0]).toMatchObject({ status: "failed", attempts: 2 });
+
+    await infrastructure.webhookEvents.record(
+      {},
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        webhookId: "payments.stripe-webhook",
+        provider: "stripe",
+        requestId: "req-console",
+        receivedAt: new Date("2026-10-22T10:00:00.000Z"),
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode('{"id":"evt_console"}'),
+      },
+    );
+    const receipts = await executor.run(
+      "console.webhooks.receipts",
+      { query: { webhookId: "payments.stripe-webhook" } },
+      { actor: sre },
+    );
+    expect(receipts).toMatchObject({
+      ok: true,
+      data: {
+        webhooks: expect.arrayContaining([
+          expect.objectContaining({ id: "payments.stripe-webhook", mode: "enqueue" }),
+          expect.objectContaining({ id: "messaging.inbound-sms", mode: "inline" }),
+        ]),
+        receipts: [{ eventId: "44444444-4444-4444-8444-444444444444", bytes: 20 }],
+      },
+    });
+    await expect(
+      executor.run(
+        "console.webhooks.replay",
+        { params: { eventId: "44444444-4444-4444-8444-444444444444" } },
+        { actor: sre },
+      ),
+    ).resolves.toMatchObject({ ok: true, data: { queued: true } });
+    expect(infrastructure.paymentsOutbox.records()).toMatchObject([
+      { intentId: "process-webhook", status: "pending" },
+    ]);
+    await expect(
+      executor.run(
+        "console.webhooks.replay",
+        { params: { eventId: "44444444-4444-4444-8444-444444444444" } },
+        { actor: operator },
+      ),
+    ).resolves.toMatchObject({ ok: false, status: 403 });
+
+    await expect(
+      executor.run("console.outbox.overview", {}, { actor: sre }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        outboxes: [
+          expect.objectContaining({ outboxId: "payments.outbox", pending: 1 }),
+          expect.objectContaining({ outboxId: "reports.outbox" }),
+        ],
+      },
+    });
+    await expect(
+      executor.run("console.realtime.channels", {}, { actor: sre }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        channels: expect.arrayContaining([
+          expect.objectContaining({ channelId: "portfolio.activity", presence: true }),
+        ]),
+      },
+    });
   });
 });

@@ -9,16 +9,20 @@ import type {
   UnitOfWorkDependencyToken,
   WebhookEventStore,
 } from "@sixthsummit/ship-core";
-import { defineModule, defineOperation } from "@sixthsummit/ship-core";
+import { defineModule, defineOperation, type ShipModule } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
 import { z } from "zod";
-import { defineConsoleCronOperations } from "./cron.js";
+import { type ConsoleCronOperations, defineConsoleCronOperations } from "./cron.js";
 import { InvalidConsoleDefinitionError } from "./errors.js";
-import { defineConsoleJobOperations } from "./jobs.js";
-import { defineConsoleOutboxOperations } from "./outbox.js";
+import { type ConsoleJobOperations, defineConsoleJobOperations } from "./jobs.js";
+import { type ConsoleOutboxOperations, defineConsoleOutboxOperations } from "./outbox.js";
 import { CONSOLE_OPERATE_PERMISSION, consoleAccess } from "./permission.js";
-import { defineConsoleRealtimeOperations } from "./realtime.js";
-import { type ConsoleWebhookObserver, defineConsoleWebhookOperations } from "./webhooks.js";
+import { type ConsoleRealtimeOperations, defineConsoleRealtimeOperations } from "./realtime.js";
+import {
+  type ConsoleWebhookObserver,
+  type ConsoleWebhookOperations,
+  defineConsoleWebhookOperations,
+} from "./webhooks.js";
 
 const MODULE_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/u;
 const BASE_PATH_PATTERN = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/u;
@@ -32,10 +36,12 @@ export const DEFAULT_CONSOLE_BASE_PATH = "/console";
  * `<consoleId>.<extensionId>.` and gated by exactly the console permission,
  * so an extension can never widen what the console mount exposes.
  */
-export interface ConsoleExtension {
+export interface ConsoleExtension<
+  TOperations extends readonly AnyOperation[] = readonly AnyOperation[],
+> {
   readonly id: string;
   readonly title: string;
-  readonly operations: readonly AnyOperation[];
+  readonly operations: TOperations;
   readonly providers?: readonly AnyProvider[];
 }
 
@@ -51,9 +57,9 @@ export interface ConsoleRealtimePanel {
   readonly channels: readonly AnyChannel[];
 }
 
-export interface ConsoleModuleOptions {
+export interface ConsoleModuleOptions<TId extends string = string> {
   /** Module id and operation id prefix. Defaults to `console`. */
-  readonly id?: string;
+  readonly id?: TId;
   /** HTTP path every console route is mounted under. Defaults to `/console`. */
   readonly basePath?: string;
   /**
@@ -77,6 +83,58 @@ export interface ConsolePanelDescriptor {
   readonly operations: readonly string[];
 }
 
+type ConsoleIdOf<TOptions extends ConsoleModuleOptions> = TOptions extends {
+  readonly id: infer TId extends string;
+}
+  ? TId
+  : typeof DEFAULT_CONSOLE_MODULE_ID;
+
+type ExtensionOperationsOf<TOptions extends ConsoleModuleOptions> = TOptions extends {
+  readonly extensions: readonly (infer TExtension)[];
+}
+  ? TExtension extends { readonly operations: readonly (infer TOperation)[] }
+    ? TOperation
+    : never
+  : never;
+
+/** The precise operation union a console mounts, so the application contract keeps literal ids. */
+export type ConsoleOperationOf<TOptions extends ConsoleModuleOptions> =
+  | ReturnType<typeof definePanelsOperation<ConsoleIdOf<TOptions>>>
+  | (TOptions extends { readonly jobs: true }
+      ?
+          | ConsoleJobOperations<ConsoleIdOf<TOptions>>["operations"][number]
+          | ConsoleCronOperations<ConsoleIdOf<TOptions>>["operations"][number]
+      : never)
+  | (TOptions extends { readonly webhooks: object }
+      ? ConsoleWebhookOperations<ConsoleIdOf<TOptions>>["operations"][number]
+      : never)
+  | (TOptions extends { readonly realtime: object }
+      ? ConsoleRealtimeOperations<ConsoleIdOf<TOptions>>["operations"][number]
+      : never)
+  | (TOptions extends { readonly outboxes: readonly AnyOutbox[] }
+      ? ConsoleOutboxOperations<ConsoleIdOf<TOptions>>["operations"][number]
+      : never)
+  | ExtensionOperationsOf<TOptions>;
+
+export type ConsoleModule<TOptions extends ConsoleModuleOptions = ConsoleModuleOptions> =
+  ShipModule<
+    ConsoleIdOf<TOptions>,
+    readonly ConsoleOperationOf<TOptions>[],
+    readonly AnyProvider[],
+    readonly string[],
+    readonly [],
+    readonly []
+  > & {
+    readonly basePath: string;
+    readonly panels: readonly ConsolePanelDescriptor[];
+    readonly describe: ReturnType<typeof definePanelsOperation<ConsoleIdOf<TOptions>>>;
+    readonly jobs?: ConsoleJobOperations<ConsoleIdOf<TOptions>>;
+    readonly cron?: ConsoleCronOperations<ConsoleIdOf<TOptions>>;
+    readonly webhooks?: ConsoleWebhookOperations<ConsoleIdOf<TOptions>>;
+    readonly realtime?: ConsoleRealtimeOperations<ConsoleIdOf<TOptions>>;
+    readonly outbox?: ConsoleOutboxOperations<ConsoleIdOf<TOptions>>;
+  };
+
 const panelsOutput = z.object({
   id: z.string(),
   basePath: z.string(),
@@ -90,9 +148,11 @@ const panelsOutput = z.object({
  * direct execution, HTTP and the generated client share one access policy
  * and one audit trail.
  */
-export function defineConsoleModule(options: ConsoleModuleOptions) {
+export function defineConsoleModule<const TOptions extends ConsoleModuleOptions>(
+  options: TOptions,
+): ConsoleModule<TOptions> {
   assertOptions(options);
-  const id = options.id ?? DEFAULT_CONSOLE_MODULE_ID;
+  const id = (options.id ?? DEFAULT_CONSOLE_MODULE_ID) as ConsoleIdOf<TOptions>;
   const basePath = options.basePath ?? DEFAULT_CONSOLE_BASE_PATH;
   const clock = options.clock ?? (() => new Date());
   const panel = { prefix: id, basePath, clock };
@@ -171,7 +231,34 @@ export function defineConsoleModule(options: ConsoleModuleOptions) {
       Object.freeze({ ...item, operations: Object.freeze([...item.operations]) }),
     ),
   );
-  const describe = defineOperation({
+  const describe = definePanelsOperation(id, basePath, descriptors);
+
+  const module = defineModule({
+    id,
+    operations: [describe, ...operations] as readonly ConsoleOperationOf<TOptions>[],
+    providers,
+    imports: [...options.imports],
+    exports: [],
+  });
+  return Object.freeze({
+    ...module,
+    basePath,
+    panels: descriptors,
+    describe,
+    jobs,
+    cron,
+    webhooks,
+    realtime,
+    outbox,
+  }) as unknown as ConsoleModule<TOptions>;
+}
+
+function definePanelsOperation<const TId extends string>(
+  id: TId,
+  basePath: string,
+  descriptors: readonly ConsolePanelDescriptor[],
+) {
+  return defineOperation({
     id: `${id}.panels` as const,
     transport: http.get(basePath),
     input: {},
@@ -188,28 +275,7 @@ export function defineConsoleModule(options: ConsoleModuleOptions) {
       panels: descriptors.map((item) => ({ ...item, operations: [...item.operations] })),
     }),
   });
-
-  const module = defineModule({
-    id,
-    operations: [describe, ...operations],
-    providers,
-    imports: [...options.imports],
-    exports: [],
-  });
-  return Object.freeze({
-    ...module,
-    basePath,
-    panels: descriptors,
-    describe,
-    jobs,
-    cron,
-    webhooks,
-    realtime,
-    outbox,
-  });
 }
-
-export type ConsoleModule = ReturnType<typeof defineConsoleModule>;
 
 function assertOptions(options: unknown): asserts options is ConsoleModuleOptions {
   if (typeof options !== "object" || options === null) {

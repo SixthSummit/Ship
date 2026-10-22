@@ -100,7 +100,8 @@ export function isConsoleWebhookObserver(value: unknown): value is ConsoleWebhoo
   );
 }
 
-export interface ConsoleWebhooksOptions extends ConsolePanelOptions {
+export interface ConsoleWebhooksOptions<TPrefix extends string = string>
+  extends ConsolePanelOptions<TPrefix> {
   /** Declared webhooks to show; enqueue-mode ones gain receipt listing and replay. */
   readonly webhooks: readonly AnyWebhook[];
   /** The durable raw-event store the enqueue-mode webhooks record into. */
@@ -149,7 +150,9 @@ const receiptOutput = z.object({ receipt: receiptDetailSchema });
  * recent verification outcomes, and replay (the kernel's own replay
  * operation, gated by `console.operate` instead of `ship.webhooks:replay`).
  */
-export function defineConsoleWebhookOperations(options: ConsoleWebhooksOptions) {
+export function defineConsoleWebhookOperations<const TPrefix extends string = string>(
+  options: ConsoleWebhooksOptions<TPrefix>,
+) {
   const { prefix, basePath } = options;
   const enqueue = options.webhooks.filter(
     (webhook): webhook is AnyWebhook & { readonly receive: AnyWebhookEnqueueReceive } =>
@@ -304,4 +307,6 @@ export function defineConsoleWebhookOperations(options: ConsoleWebhooksOptions) 
   });
 }
 
-export type ConsoleWebhookOperations = ReturnType<typeof defineConsoleWebhookOperations>;
+export type ConsoleWebhookOperations<TPrefix extends string = string> = ReturnType<
+  typeof defineConsoleWebhookOperations<TPrefix>
+>;

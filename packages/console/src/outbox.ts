@@ -13,7 +13,8 @@ import type { ConsolePanelOptions } from "./jobs.js";
 import { consoleAccess } from "./permission.js";
 import { DEFAULT_LIST_LIMIT, limitQuery, outboxRecordViewSchema, recordView } from "./views.js";
 
-export interface ConsoleOutboxOptions extends ConsolePanelOptions {
+export interface ConsoleOutboxOptions<TPrefix extends string = string>
+  extends ConsolePanelOptions<TPrefix> {
   /** Outboxes whose backend tokens are exported by an imported module. */
   readonly outboxes: readonly AnyOutbox[];
 }
@@ -49,7 +50,9 @@ const recordOutput = z.object({ outboxId: z.string(), record: outboxRecordViewSc
  * record inspection by status where the backend lists records, and retry or
  * discard of dead-lettered records.
  */
-export function defineConsoleOutboxOperations(options: ConsoleOutboxOptions) {
+export function defineConsoleOutboxOperations<const TPrefix extends string = string>(
+  options: ConsoleOutboxOptions<TPrefix>,
+) {
   const { prefix, basePath, clock } = options;
   const outboxes = [...options.outboxes].sort((left, right) => left.id.localeCompare(right.id));
   for (const outbox of outboxes) {
@@ -182,4 +185,6 @@ export function defineConsoleOutboxOperations(options: ConsoleOutboxOptions) {
   });
 }
 
-export type ConsoleOutboxOperations = ReturnType<typeof defineConsoleOutboxOperations>;
+export type ConsoleOutboxOperations<TPrefix extends string = string> = ReturnType<
+  typeof defineConsoleOutboxOperations<TPrefix>
+>;

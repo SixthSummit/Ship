@@ -197,6 +197,50 @@ describe("createInMemoryJobBackend", () => {
     ]);
   });
 
+  it("exposes introspection: runs newest first, schedules, pause and resume", async () => {
+    const time = clockAt();
+    const backend = createInMemoryJobBackend({ clock: time.clock });
+    expect(backend.introspection.declarations()).toEqual([]);
+    backend.attach(binding(async () => ({ ok: true, data: undefined })));
+    expect(backend.introspection.declarations().map((job) => job.id)).toContain("conf.ok");
+    const first = await backend.enqueue("conf.ok", { a: 1 });
+    time.advance(1_000);
+    const second = await backend.enqueue("conf.ok", { a: 2 }, { delayMs: 60_000 });
+    if (!first.accepted || !second.accepted) throw new Error("unreachable");
+    expect(
+      (await backend.introspection.listRuns({ limit: 10 })).map((run) => [run.runId, run.status]),
+    ).toEqual([
+      [second.runId, "delayed"],
+      [first.runId, "waiting"],
+    ]);
+    expect(await backend.introspection.listRuns({ status: "delayed", limit: 10 })).toMatchObject([
+      { runId: second.runId },
+    ]);
+    expect(await backend.introspection.listRuns({ jobId: "conf.other", limit: 10 })).toEqual([]);
+    expect(await backend.introspection.listRuns({ limit: 1 })).toHaveLength(1);
+    expect(await backend.introspection.getRun(first.runId)).toMatchObject({ input: { a: 1 } });
+    expect(await backend.introspection.getRun("missing")).toBeUndefined();
+
+    await backend.schedule("conf.ok", { kind: "interval", everyMs: 60_000 });
+    expect(await backend.introspection.listSchedules()).toEqual([
+      {
+        jobId: "conf.ok",
+        trigger: { kind: "interval", everyMs: 60_000 },
+        nextAt: expect.any(Date),
+      },
+    ]);
+
+    await backend.introspection.pause?.("conf.ok");
+    expect(await backend.introspection.listPaused()).toEqual(["conf.ok"]);
+    expect(await backend.drain()).toEqual({ executed: 0, completed: 0, failed: 0 });
+    await backend.introspection.resume?.("conf.ok");
+    expect(await backend.introspection.listPaused()).toEqual([]);
+    expect((await backend.drain()).executed).toBeGreaterThan(0);
+    await expect(backend.introspection.pause?.("conf.unknown")).rejects.toThrow(/knows no job/u);
+    backend.reset();
+    expect(await backend.introspection.listPaused()).toEqual([]);
+  });
+
   it("starts and stops a polling worker", async () => {
     const backend = createInMemoryJobBackend({ pollMs: 1 });
     const seen: string[] = [];

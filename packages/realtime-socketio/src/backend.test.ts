@@ -196,6 +196,48 @@ describe("createSocketIoRealtimeBackend across gateways", () => {
     ).toEqual({ ok: false, reason: "unavailable" });
   });
 
+  it("exposes per-channel subscriber counts and the last publish through introspection", async () => {
+    const hub = createMemoryRedisHub();
+    const backend = createSocketIoRealtimeBackend({
+      redis: hub.transport(),
+      channels: [conformanceChannels.feed, conformanceChannels.room],
+      tenantScopes: conformanceTenantScopes,
+      gatewayId: "g1",
+      heartbeat: { intervalMs: 60_000, ttlMs: 120_000 },
+    });
+    await backend.start();
+    expect(await backend.introspection?.channels()).toEqual([
+      { channelId: "conformance.feed", subscribers: 0, scopes: 0 },
+      { channelId: "conformance.room", subscribers: 0, scopes: 0 },
+    ]);
+    await backend.subscribe(
+      {
+        channelId: "conformance.feed",
+        scopeKey: "alice",
+        actor: alice,
+        connectionId: "c1",
+        requestId,
+      },
+      () => undefined,
+    );
+    await backend.subscribe(
+      { channelId: "conformance.feed", scopeKey: "bob", actor: bob, connectionId: "c2", requestId },
+      () => undefined,
+    );
+    await backend.publish(conformanceChannels.feed, "alice", { n: 1 });
+    expect(await backend.introspection?.channels()).toMatchObject([
+      {
+        channelId: "conformance.feed",
+        subscribers: 2,
+        scopes: 2,
+        lastPublishedAt: expect.any(Date),
+        lastScopeKey: "alice",
+      },
+      { channelId: "conformance.room", subscribers: 0, scopes: 0 },
+    ]);
+    await backend.close();
+  });
+
   it("fails presence operations closed when Redis misbehaves", async () => {
     const hub = createMemoryRedisHub();
     const base = hub.transport();

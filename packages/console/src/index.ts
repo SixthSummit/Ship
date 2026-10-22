@@ -18,6 +18,7 @@ export {
   type ConsoleExtension,
   type ConsoleModule,
   type ConsoleModuleOptions,
+  type ConsoleOperationOf,
   type ConsolePanelDescriptor,
   type ConsoleRealtimePanel,
   type ConsoleWebhooksPanel,

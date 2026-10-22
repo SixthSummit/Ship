@@ -1,5 +1,8 @@
 import {
   shipIdempotencyTable,
+  shipJobControlTable,
+  shipJobRunsTable,
+  shipJobStateTable,
   shipOutboxTable,
   shipWebhookEventsTable,
 } from "@sixthsummit/ship-drizzle";
@@ -34,6 +37,10 @@ export const reportRequests = pgTable("report_requests", {
 export const reportsOutboxTable = shipOutboxTable();
 export const idempotencyKeys = shipIdempotencyTable();
 export const webhookEventsTable = shipWebhookEventsTable();
+/** The PostgreSQL job backend's run ledger, schedule state and (opt-in) console pause control. */
+export const jobRuns = shipJobRunsTable();
+export const jobState = shipJobStateTable();
+export const jobControl = shipJobControlTable();
 
 export const portfolioSchema = {
   projects,
@@ -42,4 +49,7 @@ export const portfolioSchema = {
   reportsOutboxTable,
   idempotencyKeys,
   webhookEventsTable,
+  jobRuns,
+  jobState,
+  jobControl,
 };

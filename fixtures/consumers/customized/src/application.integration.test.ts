@@ -1,7 +1,13 @@
 import { createHttpOperationClient } from "@sixthsummit/ship-contract";
 import type { ApplicationContractOf } from "@sixthsummit/ship-contract/application";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
-import { createExecutor, systemActor, webhookSecret } from "@sixthsummit/ship-core";
+import {
+  createExecutor,
+  createExecutor as createRuntimeExecutor,
+  startJobRuntime,
+  systemActor,
+  webhookSecret,
+} from "@sixthsummit/ship-core";
 import { createInMemoryRealtimeBackend } from "@sixthsummit/ship-testing";
 import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import {
@@ -21,6 +27,7 @@ import { createCustomizedHttpApplication } from "./http.js";
 import {
   createCacheInvalidationOutbox,
   createIdempotencyStore,
+  createJobBackend,
   createPaymentsOutbox,
   createPortfolioUnitOfWork,
   createRealtimePublicationOutbox,
@@ -50,6 +57,9 @@ const sessions: SessionDirectory = {
     }
     if (token === "operator-token") {
       return { actorId: "operator", role: "operator", tenants: [] };
+    }
+    if (token === "sre-token") {
+      return { actorId: "sre", role: "sre", tenants: [] };
     }
     return undefined;
   },
@@ -544,6 +554,130 @@ describe("customized packed application", () => {
     expect(response.headers.get("content-type")).toBeNull();
     expect(response.headers.get("x-request-id")).toBeTruthy();
     await expect(response.text()).resolves.toBe("");
+  });
+
+  it("retries a dead-lettered PostgreSQL job run and replays a receipt from the console over HTTP", async () => {
+    const jobs = createJobBackend(database.db, { pollIntervalMs: 25 });
+    const { application, http } = createCustomizedHttpApplication(
+      { ...infrastructure(), jobs, locks: jobs.lockProvider },
+      sessions,
+    );
+    const runtime = await startJobRuntime(application, { backend: jobs, mode: "worker" });
+    try {
+      // "gamma" is not an enrolled tenant: the declared failure is final and dead-letters at once.
+      const accepted = await jobs.enqueue("reports.deliver", {
+        tenantId: "gamma",
+        period: "2026-10-22",
+      });
+      if (!accepted.accepted) throw new Error("rejected");
+      const failedRuns = () =>
+        http.request("/console/jobs/runs?status=failed&jobId=reports.deliver", {
+          headers: { authorization: "ShipSession sre-token" },
+        });
+      const deadline = Date.now() + 15_000;
+      let listed: { runs: { runId: string; attempts: number }[] } = { runs: [] };
+      while (listed.runs.length === 0 && Date.now() < deadline) {
+        listed = (await (await failedRuns()).json()) as typeof listed;
+        if (listed.runs.length === 0) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(listed.runs).toMatchObject([{ runId: accepted.runId, attempts: 1 }]);
+
+      // The operator role (replay + read) is refused; only the SRE role holds console.operate.
+      const refused = await http.request("/console/jobs/retry", {
+        method: "POST",
+        headers: {
+          authorization: "ShipSession operator-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ runId: accepted.runId }),
+      });
+      expect(refused.status).toBe(403);
+      const retried = await http.request("/console/jobs/retry", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ runId: accepted.runId }),
+      });
+      expect(retried.status).toBe(200);
+      await expect(retried.json()).resolves.toMatchObject({ run: { status: "waiting" } });
+      let again: { runs: { attempts: number }[] } = { runs: [] };
+      const retryDeadline = Date.now() + 15_000;
+      while ((again.runs[0]?.attempts ?? 0) < 2 && Date.now() < retryDeadline) {
+        again = (await (await failedRuns()).json()) as typeof again;
+        if ((again.runs[0]?.attempts ?? 0) < 2)
+          await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(again.runs[0]?.attempts).toBe(2);
+
+      // Durable pause through the control table, then resume.
+      const paused = await http.request("/console/jobs/pause", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ jobId: "reports.deliver" }),
+      });
+      expect(paused.status).toBe(200);
+      const overview = await http.request("/console/jobs", {
+        headers: { authorization: "ShipSession sre-token" },
+      });
+      await expect(overview.json()).resolves.toMatchObject({
+        capabilities: { adapter: "drizzle", pause: true },
+        jobs: expect.arrayContaining([
+          expect.objectContaining({ jobId: "reports.deliver", paused: true, failed: 1 }),
+        ]),
+      });
+      await http.request("/console/jobs/resume", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ jobId: "reports.deliver" }),
+      });
+
+      // A stored Stripe receipt is listed with its spawned record and replayed by the SRE.
+      const body = '{"id":"evt_console_1","type":"invoice.paid","data":{"object":{"amount":5}}}';
+      const signature = await stripeSignatureHeader({ secret: stripeSecret, rawBody: body });
+      const delivered = await http.request("/webhooks/stripe", {
+        method: "POST",
+        headers: { "content-type": "application/json", "stripe-signature": signature },
+        body,
+      });
+      const { eventId } = (await delivered.json()) as { eventId: string };
+      const executor = createRuntimeExecutor(application);
+      await executor.run("payments.outbox.dispatch", {}, { actor: systemActor({ id: "worker" }) });
+      const receipts = await http.request(
+        "/console/webhooks/receipts?webhookId=payments.stripe-webhook&limit=10",
+        { headers: { authorization: "ShipSession sre-token" } },
+      );
+      expect(receipts.status).toBe(200);
+      await expect(receipts.json()).resolves.toMatchObject({
+        capabilities: { list: true, dispatch: true },
+        receipts: [
+          {
+            eventId,
+            providerEventId: "evt_console_1",
+            verification: "verified",
+            dispatch: { outboxId: "payments.outbox", status: "completed" },
+          },
+        ],
+      });
+      const replayed = await http.request(`/console/webhooks/receipts/${eventId}/replay`, {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token" },
+      });
+      expect(replayed.status).toBe(200);
+      await expect(replayed.json()).resolves.toMatchObject({ eventId, queued: true });
+      const forbidden = await http.request(`/console/webhooks/receipts/${eventId}/replay`, {
+        method: "POST",
+        headers: { authorization: "ShipSession operator-token" },
+      });
+      expect(forbidden.status).toBe(403);
+      const records = await http.request(
+        "/console/outbox/records?outboxId=payments.outbox&status=pending",
+        { headers: { authorization: "ShipSession sre-token" } },
+      );
+      await expect(records.json()).resolves.toMatchObject({
+        records: [{ intentId: "process-webhook", status: "pending" }],
+      });
+    } finally {
+      await runtime.stop();
+    }
   });
 
   it("runs the enqueued delivery job against PostgreSQL: one request row and one intent per period", async () => {

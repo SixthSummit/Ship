@@ -11,7 +11,8 @@ import { z } from "zod";
 import type { ConsolePanelOptions } from "./jobs.js";
 import { consoleAccess } from "./permission.js";
 
-export interface ConsoleRealtimeOptions extends ConsolePanelOptions {
+export interface ConsoleRealtimeOptions<TPrefix extends string = string>
+  extends ConsolePanelOptions<TPrefix> {
   /** The backend this process publishes through (a gateway or a publish-only backend). */
   readonly backend: RealtimePublishBackend;
   /** Channels to list; typically every channel the application declares. */
@@ -44,7 +45,9 @@ const channelsOutput = z.object({
  * counts this backend instance observes and when it last accepted a
  * publication, next to the backend's own health.
  */
-export function defineConsoleRealtimeOperations(options: ConsoleRealtimeOptions) {
+export function defineConsoleRealtimeOperations<const TPrefix extends string = string>(
+  options: ConsoleRealtimeOptions<TPrefix>,
+) {
   const { prefix, basePath } = options;
   if (!isRealtimePublishBackend(options.backend)) {
     throw new TypeError("console realtime panel requires a RealtimePublishBackend");
@@ -111,4 +114,6 @@ export function defineConsoleRealtimeOperations(options: ConsoleRealtimeOptions)
   });
 }
 
-export type ConsoleRealtimeOperations = ReturnType<typeof defineConsoleRealtimeOperations>;
+export type ConsoleRealtimeOperations<TPrefix extends string = string> = ReturnType<
+  typeof defineConsoleRealtimeOperations<TPrefix>
+>;

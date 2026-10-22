@@ -17,8 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage && pnpm test:query-generator:coverage",
-    "lint": "eslint src/ operations/src/ ship-api/src/ hono-v4/src/ legacy-rest/src/ auth/src/ firebase-auth/src/ download/src/ upload/src/ stream/src/ socket/src/ realtime/src/ push/src/ forms/src/ testing/src/ query/src/",
-    "type-check": "tsc --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.ship-api.json && tsc -p tsconfig.hono-v4.json && tsc -p tsconfig.legacy-rest.json && tsc -p tsconfig.auth.json && tsc -p tsconfig.transports.json && tsc -p tsconfig.realtime.json && tsc -p tsconfig.query.json && tsc -p tsconfig.push.json",
+    "lint": "eslint src/ operations/src/ ship-api/src/ hono-v4/src/ legacy-rest/src/ auth/src/ firebase-auth/src/ download/src/ upload/src/ stream/src/ socket/src/ realtime/src/ push/src/ console/src/ forms/src/ testing/src/ query/src/",
+    "type-check": "tsc --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.ship-api.json && tsc -p tsconfig.hono-v4.json && tsc -p tsconfig.legacy-rest.json && tsc -p tsconfig.auth.json && tsc -p tsconfig.transports.json && tsc -p tsconfig.realtime.json && tsc -p tsconfig.query.json && tsc -p tsconfig.push.json && tsc -p tsconfig.console.json",
     "test:query-generator:coverage": "vitest run --config vitest.query-generator.config.ts --coverage"
   },
   "keywords": [
@@ -105,6 +105,10 @@
     "./push": {
       "types": "./lib/push/index.d.ts",
       "default": "./lib/fesm2022/sixthsummit-ship-angular-push.mjs"
+    },
+    "./console": {
+      "types": "./lib/console/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-console.mjs"
     }
   },
   "files": [
