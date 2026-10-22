@@ -71,6 +71,7 @@ function fixtureNotifier(send = vi.fn(async () => undefined)): ReportNotifier {
 }
 
 type FixtureInfrastructure = CustomizedInfrastructure & {
+  readonly jobs: ReturnType<typeof createInMemoryJobBackend>;
   readonly realtime: ReturnType<typeof createInMemoryRealtimeBackend>;
   readonly outbox: ReturnType<typeof createInMemoryOutbox>;
   readonly cacheOutbox: ReturnType<typeof createInMemoryOutbox>;

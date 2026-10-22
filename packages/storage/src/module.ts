@@ -62,11 +62,14 @@ export class StorageModuleError extends TypeError {
   }
 }
 
-export interface StorageModuleTransports {
+export interface StorageModuleTransports<
+  TCreateIntent extends OperationTransport | undefined = OperationTransport | undefined,
+  TComplete extends OperationTransport | undefined = OperationTransport | undefined,
+> {
   /** Transport for `ship-storage.create-intent`; `storageHttpTransports()` from `./hono` builds the HTTP one. */
-  readonly createIntent?: OperationTransport;
+  readonly createIntent?: TCreateIntent;
   /** Transport for `ship-storage.complete`; its path must carry an `intentId` parameter. */
-  readonly complete?: OperationTransport;
+  readonly complete?: TComplete;
 }
 
 export interface StorageSweepOptions {
@@ -97,7 +100,10 @@ export interface StoragePurgeDispatcherOptions {
   readonly roundsPerSecond?: number;
 }
 
-export interface StorageModuleOptions {
+export interface StorageModuleOptions<
+  TCreateIntent extends OperationTransport | undefined = OperationTransport | undefined,
+  TComplete extends OperationTransport | undefined = OperationTransport | undefined,
+> {
   /** Every attachment the application declares, each owned by its own module. */
   readonly attachments: readonly AnyAttachment[];
   readonly adapter: StorageAdapter;
@@ -106,7 +112,8 @@ export interface StorageModuleOptions {
   readonly outbox: OutboxBackend;
   /** Access policy of the intent and completion operations; defaults to `authenticatedAccess()`. */
   readonly access?: OperationAccess;
-  readonly transports?: StorageModuleTransports;
+  /** Typed so the client contract sees the mounted HTTP operations. */
+  readonly transports?: StorageModuleTransports<TCreateIntent, TComplete>;
   readonly sweep?: StorageSweepOptions;
   /** Required when any attachment declares variants. */
   readonly variants?: StorageVariantOptions;
@@ -223,7 +230,10 @@ export const uploadRejected = operationError({
  * application must bind a `LockProvider` and a `JobBackend` as it does for
  * any declared job.
  */
-export function defineStorageModule(options: StorageModuleOptions) {
+export function defineStorageModule<
+  const TCreateIntent extends OperationTransport | undefined = undefined,
+  const TComplete extends OperationTransport | undefined = undefined,
+>(options: StorageModuleOptions<TCreateIntent, TComplete>) {
   assertOptions(options);
   const clock = options.clock ?? (() => new Date());
   const randomUUID = options.randomUUID ?? (() => globalThis.crypto.randomUUID());
@@ -295,7 +305,7 @@ export function defineStorageModule(options: StorageModuleOptions) {
 
   const createIntent = defineOperation({
     id: STORAGE_CREATE_INTENT_OPERATION_ID,
-    ...(options.transports?.createIntent ? { transport: options.transports.createIntent } : {}),
+    transport: options.transports?.createIntent as TCreateIntent,
     input: { body: createIntentBodySchema },
     output: { 201: createIntentOutputSchema },
     successStatus: 201,
@@ -343,7 +353,7 @@ export function defineStorageModule(options: StorageModuleOptions) {
 
   const complete = defineOperation({
     id: STORAGE_COMPLETE_OPERATION_ID,
-    ...(options.transports?.complete ? { transport: options.transports.complete } : {}),
+    transport: options.transports?.complete as TComplete,
     input: { params: completeParamsSchema },
     output: { 200: completeOutputSchema },
     successStatus: 200,

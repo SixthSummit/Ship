@@ -44,15 +44,17 @@ export type AttachmentVariants = Readonly<Record<string, AttachmentVariant>>;
 export interface AttachmentDefinition<
   TId extends string = string,
   TVariants extends AttachmentVariants = AttachmentVariants,
+  TCardinality extends AttachmentCardinality = AttachmentCardinality,
+  TVisibility extends AttachmentVisibility = AttachmentVisibility,
 > {
   /** Namespaced by the owning module, `<moduleId>.<field>`, like an operation id. */
   readonly id: TId;
-  readonly cardinality: AttachmentCardinality;
+  readonly cardinality: TCardinality;
   /** Accepted media types; `image/*` style wildcards are allowed. */
   readonly contentTypes: readonly string[];
   /** Upper bound on one object; the intent refuses a larger declared size and completion re-checks it. */
   readonly maxBytes: number;
-  readonly visibility: AttachmentVisibility;
+  readonly visibility: TVisibility;
   /** For `many`: how many objects one owner may hold. Defaults to {@link MAX_ATTACHMENT_COUNT}. */
   readonly maxCount?: number;
   /** Image derivatives; only valid when every accepted content type is an image type. */
@@ -64,7 +66,9 @@ export interface AttachmentDefinition<
 export interface Attachment<
   TId extends string = string,
   TVariants extends AttachmentVariants = AttachmentVariants,
-> extends AttachmentDefinition<TId, TVariants> {
+  TCardinality extends AttachmentCardinality = AttachmentCardinality,
+  TVisibility extends AttachmentVisibility = AttachmentVisibility,
+> extends AttachmentDefinition<TId, TVariants, TCardinality, TVisibility> {
   readonly kind: "ship.attachment";
   readonly maxCount: number;
   readonly variants: TVariants;
@@ -74,7 +78,9 @@ export interface Attachment<
    * objects of this attachment. The storage module provides it; the executor
    * hands the handler a transaction-scoped view.
    */
-  readonly binding: AttachmentDependencyToken<Attachment<TId, TVariants>>;
+  readonly binding: AttachmentDependencyToken<
+    Attachment<TId, TVariants, TCardinality, TVisibility>
+  >;
 }
 
 export interface AnyAttachment {
@@ -147,7 +153,11 @@ export class InvalidAttachmentDefinitionError extends Error {
 export function defineAttachment<
   const TId extends string,
   const TVariants extends AttachmentVariants = Readonly<Record<never, never>>,
->(definition: AttachmentDefinition<TId, TVariants>): Attachment<TId, TVariants> {
+  const TCardinality extends AttachmentCardinality = AttachmentCardinality,
+  const TVisibility extends AttachmentVisibility = AttachmentVisibility,
+>(
+  definition: AttachmentDefinition<TId, TVariants, TCardinality, TVisibility>,
+): Attachment<TId, TVariants, TCardinality, TVisibility> {
   assertAttachmentDefinition(definition);
   const variants = Object.freeze(
     Object.fromEntries(
@@ -169,14 +179,19 @@ export function defineAttachment<
     variants,
     intentTtlMs: definition.intentTtlMs ?? DEFAULT_ATTACHMENT_INTENT_TTL_MS,
   } as {
-    -readonly [TKey in keyof Attachment<TId, TVariants>]: Attachment<TId, TVariants>[TKey];
+    -readonly [TKey in keyof Attachment<TId, TVariants, TCardinality, TVisibility>]: Attachment<
+      TId,
+      TVariants,
+      TCardinality,
+      TVisibility
+    >[TKey];
   };
   attachment.binding = Object.freeze({
     kind: "ship.dependency" as const,
     id: `${definition.id}${BINDING_SUFFIX}`,
     scope: "attachment" as const,
     attachmentId: definition.id,
-  }) as AttachmentDependencyToken<Attachment<TId, TVariants>>;
+  }) as AttachmentDependencyToken<Attachment<TId, TVariants, TCardinality, TVisibility>>;
   const frozen = Object.freeze(attachment);
   bindingAttachments.set(attachment.binding, frozen as unknown as AnyAttachment);
   return frozen;
