@@ -27,8 +27,13 @@ export {
   JOB_METRICS,
 } from "./job-metrics.js";
 export { nextOccurrence } from "./job-schedule.js";
-export type { JobStoredFailure, ShipJobRunsTable, ShipJobStateTable } from "./job-store.js";
-export { shipJobRunsTable, shipJobStateTable } from "./job-store.js";
+export type {
+  JobStoredFailure,
+  ShipJobControlTable,
+  ShipJobRunsTable,
+  ShipJobStateTable,
+} from "./job-store.js";
+export { shipJobControlTable, shipJobRunsTable, shipJobStateTable } from "./job-store.js";
 export type { DrizzleOutbox, DrizzleOutboxDefinition, ShipOutboxTable } from "./outbox.js";
 export { createDrizzleOutbox, shipOutboxTable } from "./outbox.js";
 export type {

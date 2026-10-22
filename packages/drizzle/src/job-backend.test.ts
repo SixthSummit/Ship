@@ -50,6 +50,7 @@ function memoryStore() {
     { trigger: JobScheduleTrigger | JobIntervalTrigger; nextAt: Date }
   >();
   const marks = new Map<string, { lastRunAt?: Date; lastSuccessAt?: Date }>();
+  const paused = new Set<string>();
   let tokens = 0;
   const snapshot = (row: Row): JobRun => Object.freeze({ ...row, history: [...row.history] });
   const owned = (runId: string, token: string) =>
@@ -199,6 +200,34 @@ function memoryStore() {
         .filter((row) => row.status === "failed")
         .slice(0, limit)
         .map(snapshot),
+    listRuns: async (query, now) =>
+      rows
+        .filter(
+          (row) =>
+            (query.jobId === undefined || row.jobId === query.jobId) &&
+            (query.status === undefined ||
+              (query.status === "delayed"
+                ? row.status === "waiting" && row.availableAt > now
+                : query.status === "waiting"
+                  ? row.status === "waiting" && row.availableAt <= now
+                  : row.status === query.status)),
+        )
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .slice(0, query.limit)
+        .map(snapshot),
+    getRun: async (runId) => {
+      const row = rows.find((item) => item.runId === runId);
+      return row ? snapshot(row) : undefined;
+    },
+    listSchedules: async () =>
+      [...schedules]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([jobId, entry]) => ({ jobId, trigger: entry.trigger, nextAt: entry.nextAt })),
+    listPaused: async () => [...paused].sort(),
+    setPaused: async (jobId, value) => {
+      if (value) paused.add(jobId);
+      else paused.delete(jobId);
+    },
     retry: async (runId, now) => {
       const row = rows.find((item) => item.runId === runId && item.status === "failed");
       if (!row) return undefined;
