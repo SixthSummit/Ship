@@ -29,6 +29,7 @@ const PACKAGE_DIRECTORIES = new Map([
   ["@sixthsummit/ship-realtime-socketio", "realtime-socketio"],
   ["@sixthsummit/ship-webhooks", "webhooks"],
   ["@sixthsummit/ship-jobs-bullmq", "jobs-bullmq"],
+  ["@sixthsummit/ship-schema-lint", "schema-lint"],
 ]);
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
