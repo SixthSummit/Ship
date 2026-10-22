@@ -43,14 +43,22 @@ const CLAIMS_PER_SIZE = 30;
 const WARMUP_CLAIMS = 5;
 /**
  * The bound: the large-backlog p95 may not exceed five times the small one,
- * with a 25 ms floor so a sub-millisecond small baseline does not turn timer
- * jitter into a failure. A claim of 25 rows through the partial index reads
- * the same ~25 index entries whatever the backlog, so anything that grows
- * with the backlog (a sort of every due row) fails this by two orders of
- * magnitude, which is what the baseline observed before the fix.
+ * with a 50 ms floor so a fast small baseline does not turn timer jitter into
+ * a failure. A claim of 25 rows through the partial index reads the same ~25
+ * index entries whatever the backlog, so anything that grows with the backlog
+ * (a sort of every due row) fails this by two orders of magnitude, which is
+ * what the baseline observed before the fix.
+ *
+ * The floor was 25 ms. On GitHub-hosted runners the small phase can finish
+ * with a p95 near 5 ms, which makes the ratio bound ~28 ms, while single
+ * claims in either phase spike to 80-130 ms under runner contention; a p95
+ * over 30 samples then lands just above the bound with identical query plans
+ * (observed 2026-10-22: small p95 5.59 ms, large p95 29.84 ms, bound 27.93 ms;
+ * the prior three dev runs passed with bounds of 53-104 ms). 50 ms still fails
+ * the hundreds-of-milliseconds regression this test exists to catch.
  */
 const RATIO_BOUND = 5;
-const FLOOR_MS = 25;
+const FLOOR_MS = 50;
 
 describe("Drizzle outbox claim under a large backlog", () => {
   let context: PostgresTestDb<Schema>;
