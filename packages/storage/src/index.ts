@@ -19,10 +19,10 @@ export type {
 } from "@sixthsummit/ship-core";
 export { defineAttachment, STORAGE_MODULE_ID } from "@sixthsummit/ship-core";
 export {
+  AttachmentCapabilityError,
   type AttachmentCapabilityErrorCode,
   type AttachmentCapabilityOptions,
   type AttachmentVariantRuntime,
-  AttachmentCapabilityError,
   createAttachmentCapability,
 } from "./capability.js";
 export {
@@ -50,13 +50,13 @@ export {
   intentForbidden,
   intentNotFound,
   type StorageModule,
+  StorageModuleError,
   type StorageModuleErrorCode,
   type StorageModuleOptions,
   type StorageModuleTransports,
   type StoragePurgeDispatcherOptions,
   type StorageSweepOptions,
   type StorageVariantOptions,
-  StorageModuleError,
   uploadMissing,
   uploadRejected,
 } from "./module.js";

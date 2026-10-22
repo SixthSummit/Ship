@@ -1,6 +1,5 @@
 import type {
   AttachmentAttachInput,
-  AttachmentCompletionInput,
   AttachmentDetachInput,
   AttachmentIntent,
   AttachmentIntentInput,
@@ -43,7 +42,9 @@ export function shipStorageIntentsTable(name = "ship_storage_intents") {
     },
     (table) => [
       // The sweep's scan: only pending rows, in expiry order.
-      index(`${name}_expiry_idx`).on(table.expiresAt).where(sql`status = 'pending'`),
+      index(`${name}_expiry_idx`)
+        .on(table.expiresAt)
+        .where(sql`status = 'pending'`),
     ],
   );
 }
@@ -76,7 +77,9 @@ export function shipStorageObjectsTable(name = "ship_storage_objects") {
         .on(table.attachmentId, table.ownerId)
         .where(sql`status = 'attached'`),
       // The sweep's second scan: uploads never attached, oldest first.
-      index(`${name}_stale_idx`).on(table.createdAt).where(sql`status = 'uploaded'`),
+      index(`${name}_stale_idx`)
+        .on(table.createdAt)
+        .where(sql`status = 'uploaded'`),
     ],
   );
 }
@@ -335,10 +338,7 @@ export function createDrizzleAttachmentLedger<TSchema extends Record<string, unk
         .where(and(eq(purges.objectId, objectId), isNull(purges.purgedAt)))
         .returning({ objectId: purges.objectId });
       if (rows.length === 0) return false;
-      await transaction
-        .update(objects)
-        .set({ status: "purged" })
-        .where(eq(objects.id, objectId));
+      await transaction.update(objects).set({ status: "purged" }).where(eq(objects.id, objectId));
       return true;
     });
 

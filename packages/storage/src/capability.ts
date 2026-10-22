@@ -198,7 +198,11 @@ export function createAttachmentCapability(
         if (!object || object.attachmentId !== attachment.id) return undefined;
         return urlFor(object.key, urlOptions?.expiresInMs);
       },
-      variant: async (objectId, name, urlOptions): Promise<AttachmentVariantResolution | undefined> => {
+      variant: async (
+        objectId,
+        name,
+        urlOptions,
+      ): Promise<AttachmentVariantResolution | undefined> => {
         if (!variantNames.has(name)) {
           throw new AttachmentCapabilityError(
             "SHIP_ATTACHMENT_VARIANT_UNKNOWN",
@@ -208,7 +212,9 @@ export function createAttachmentCapability(
         }
         const runtime = options.variants as AttachmentVariantRuntime;
         const cached = runtime.cache
-          ? ((await runtime.cache.get(cacheKey(objectId, name))) as AttachmentVariantObject | undefined)
+          ? ((await runtime.cache.get(cacheKey(objectId, name))) as
+              | AttachmentVariantObject
+              | undefined)
           : undefined;
         if (cached) {
           return Object.freeze({
@@ -220,7 +226,9 @@ export function createAttachmentCapability(
         if (!object || object.attachmentId !== attachment.id) return undefined;
         const rendered = object.variants[name];
         if (rendered) {
-          await runtime.cache?.set(cacheKey(objectId, name), rendered, { ttlMs: runtime.cacheTtlMs });
+          await runtime.cache?.set(cacheKey(objectId, name), rendered, {
+            ttlMs: runtime.cacheTtlMs,
+          });
           return Object.freeze({
             status: "ready" as const,
             url: await urlFor(rendered.key, urlOptions?.expiresInMs),

@@ -6,7 +6,7 @@ import type {
   StorageSignUploadRequest,
 } from "@sixthsummit/ship-core";
 
-const KEY_PATTERN = /^[^\u0000-\u001f\u007f]{1,1024}$/u;
+const MAX_KEY_LENGTH = 1024;
 const UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
 const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const MAX_PRESIGN_SECONDS = 7 * 24 * 60 * 60;
@@ -109,7 +109,9 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
       ["X-Amz-Date", amzDate],
       ["X-Amz-Expires", String(expiresIn)],
       ["X-Amz-SignedHeaders", headerNames.join(";")],
-      ...(creds.sessionToken ? [["X-Amz-Security-Token", creds.sessionToken] as [string, string]] : []),
+      ...(creds.sessionToken
+        ? [["X-Amz-Security-Token", creds.sessionToken] as [string, string]]
+        : []),
     ];
     const canonicalQuery = canonicalQueryString(query);
     const canonicalRequest = [
@@ -120,7 +122,14 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
       headerNames.join(";"),
       UNSIGNED_PAYLOAD,
     ].join("\n");
-    const signature = await sign(creds.secretAccessKey, dateStamp, region, amzDate, scope, canonicalRequest);
+    const signature = await sign(
+      creds.secretAccessKey,
+      dateStamp,
+      region,
+      amzDate,
+      scope,
+      canonicalRequest,
+    );
     return `${endpoint.protocol}//${host}${objectPath(key)}?${canonicalQuery}&X-Amz-Signature=${signature}`;
   };
 
@@ -151,7 +160,14 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
       headerNames.join(";"),
       payloadHash,
     ].join("\n");
-    const signature = await sign(creds.secretAccessKey, dateStamp, region, amzDate, scope, canonicalRequest);
+    const signature = await sign(
+      creds.secretAccessKey,
+      dateStamp,
+      region,
+      amzDate,
+      scope,
+      canonicalRequest,
+    );
     const { host: _host, ...sendHeaders } = headers;
     return fetchImpl(objectUrl(key), {
       method,
@@ -177,7 +193,9 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
   };
 
   const unexpected = (action: string, response: Response): Error =>
-    new Error(`s3 ${action} failed with ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`);
+    new Error(
+      `s3 ${action} failed with ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+    );
 
   const adapter: S3StorageAdapter = {
     kind: "ship.storage-adapter",
@@ -189,7 +207,12 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
       assertKey(signRequest.key);
       const headers = Object.freeze({ "content-type": signRequest.contentType });
       const url = await presign("PUT", signRequest.key, signRequest.expiresAt, headers);
-      return Object.freeze({ url, method: "PUT" as const, headers, expiresAt: signRequest.expiresAt });
+      return Object.freeze({
+        url,
+        method: "PUT" as const,
+        headers,
+        expiresAt: signRequest.expiresAt,
+      });
     },
     head: async (key) => {
       assertKey(key);
@@ -245,7 +268,10 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
           ? { available: true, detail: `${host} reachable` }
           : { available: false, detail: `bucket answered ${response.status}` };
       } catch (error) {
-        return { available: false, detail: error instanceof Error ? error.message : "request failed" };
+        return {
+          available: false,
+          detail: error instanceof Error ? error.message : "request failed",
+        };
       }
     },
   };
@@ -287,7 +313,11 @@ async function hmac(key: Uint8Array, message: string): Promise<Uint8Array> {
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  return hex(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer)));
+  return hex(
+    new Uint8Array(
+      await globalThis.crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer),
+    ),
+  );
 }
 
 function hex(bytes: Uint8Array): string {
@@ -315,15 +345,20 @@ function uriEncode(value: string): string {
 }
 
 function encodeKey(key: string): string {
-  return key.split("/").map((segment) => uriEncode(segment)).join("/");
+  return key
+    .split("/")
+    .map((segment) => uriEncode(segment))
+    .join("/");
 }
 
 function lowercase(headers: Readonly<Record<string, string>>): Record<string, string> {
-  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]),
+  );
 }
 
 function assertKey(key: string): void {
-  if (typeof key !== "string" || !KEY_PATTERN.test(key) || key.startsWith("/")) {
+  if (!isPrintableKey(key) || key.startsWith("/")) {
     throw new S3StorageError(
       "SHIP_STORAGE_S3_KEY_INVALID",
       `storage key must be 1 to 1024 printable characters without a leading slash; received ${JSON.stringify(key)}`,
@@ -333,15 +368,22 @@ function assertKey(key: string): void {
 
 function assertOptions(options: S3StorageAdapterOptions): void {
   if (typeof options?.bucket !== "string" || !/^[a-z0-9][a-z0-9.-]{1,62}$/u.test(options.bucket)) {
-    throw new S3StorageError("SHIP_STORAGE_S3_OPTIONS_INVALID", "bucket must be a valid bucket name");
+    throw new S3StorageError(
+      "SHIP_STORAGE_S3_OPTIONS_INVALID",
+      "bucket must be a valid bucket name",
+    );
   }
   if (typeof options.region !== "string" || options.region.length === 0) {
-    throw new S3StorageError("SHIP_STORAGE_S3_OPTIONS_INVALID", "region is required (use auto for R2)");
+    throw new S3StorageError(
+      "SHIP_STORAGE_S3_OPTIONS_INVALID",
+      "region is required (use auto for R2)",
+    );
   }
   const credentials = options.credentials;
   if (
     typeof credentials !== "function" &&
-    (typeof credentials?.accessKeyId !== "string" || typeof credentials?.secretAccessKey !== "string")
+    (typeof credentials?.accessKeyId !== "string" ||
+      typeof credentials?.secretAccessKey !== "string")
   ) {
     throw new S3StorageError(
       "SHIP_STORAGE_S3_OPTIONS_INVALID",
@@ -361,4 +403,14 @@ function assertOptions(options: S3StorageAdapterOptions): void {
       );
     }
   }
+}
+
+/** 1 to 1024 characters, none of them a C0 control character or DEL. */
+function isPrintableKey(key: string): boolean {
+  if (typeof key !== "string" || key.length === 0 || key.length > MAX_KEY_LENGTH) return false;
+  for (let index = 0; index < key.length; index += 1) {
+    const code = key.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return false;
+  }
+  return true;
 }

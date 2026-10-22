@@ -247,11 +247,7 @@ export function createInMemoryAttachmentLedger(): InMemoryAttachmentLedger {
       ),
     attach: async (_scope, input: AttachmentAttachInput) => {
       const object = objects.get(input.objectId);
-      if (
-        !object ||
-        object.attachmentId !== input.attachmentId ||
-        object.status !== "uploaded"
-      ) {
+      if (!object || object.attachmentId !== input.attachmentId || object.status !== "uploaded") {
         return undefined;
       }
       const attached = Object.freeze({
@@ -493,12 +489,14 @@ export function storageAdapterConformance(
       const second = await adapter.signDownload("public/x.png", {
         expiresAt: new Date(Date.now() + 120_000),
       });
+      const publicOnce = adapter.publicUrl("public/x.png");
+      const publicAgain = adapter.publicUrl("public/x.png");
       expect(
         "signs download urls and exposes stable public urls",
         first.length > 0 &&
           first !== second &&
-          adapter.publicUrl("public/x.png") === adapter.publicUrl("public/x.png") &&
-          adapter.publicUrl("public/x.png").includes("public/x.png"),
+          publicOnce === publicAgain &&
+          publicOnce.includes("public/x.png"),
         "expected distinct signed urls and a stable public url",
       );
     }),

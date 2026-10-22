@@ -1,13 +1,13 @@
 import type { OperationAccess } from "./access.js";
 import { isOperationAccess } from "./access.js";
-import type { AnyAttachment } from "./attachment.js";
-import { isAttachment } from "./attachment.js";
 import type {
   OperationActor,
   OperationIdentity,
   ProviderOperationActor,
   SystemOperationActor,
 } from "./actor.js";
+import type { AnyAttachment } from "./attachment.js";
+import { isAttachment } from "./attachment.js";
 import type { CacheInvalidation, CacheInvalidationDeclaration, OperationCache } from "./cache.js";
 import { isCacheInvalidationList, isOperationCache, normalizeCacheInvalidations } from "./cache.js";
 import type {

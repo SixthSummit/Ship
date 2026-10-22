@@ -87,7 +87,10 @@ export interface AnyAttachment {
   readonly maxCount: number;
   readonly variants: AttachmentVariants;
   readonly intentTtlMs: number;
-  readonly binding: DependencyToken & { readonly scope: "attachment"; readonly attachmentId: string };
+  readonly binding: DependencyToken & {
+    readonly scope: "attachment";
+    readonly attachmentId: string;
+  };
 }
 
 export type AttachmentVariantName<TAttachment> = TAttachment extends {
@@ -161,7 +164,8 @@ export function defineAttachment<
     contentTypes: Object.freeze(definition.contentTypes.map((type) => type.toLowerCase())),
     maxBytes: definition.maxBytes,
     visibility: definition.visibility,
-    maxCount: definition.cardinality === "single" ? 1 : (definition.maxCount ?? MAX_ATTACHMENT_COUNT),
+    maxCount:
+      definition.cardinality === "single" ? 1 : (definition.maxCount ?? MAX_ATTACHMENT_COUNT),
     variants,
     intentTtlMs: definition.intentTtlMs ?? DEFAULT_ATTACHMENT_INTENT_TTL_MS,
   } as {
@@ -213,9 +217,7 @@ export function attachmentAcceptsContentType(
   const candidate = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
   if (!CONTENT_TYPE_PATTERN.test(candidate) || candidate.endsWith("/*")) return false;
   return attachment.contentTypes.some((accepted) =>
-    accepted.endsWith("/*")
-      ? candidate.startsWith(accepted.slice(0, -1))
-      : accepted === candidate,
+    accepted.endsWith("/*") ? candidate.startsWith(accepted.slice(0, -1)) : accepted === candidate,
   );
 }
 
@@ -537,7 +539,9 @@ export interface StorageAdapter {
   readonly provider: string;
   signUpload(request: StorageSignUploadRequest): Promise<StorageSignedUpload>;
   head(key: string): Promise<StorageObjectMeta | undefined>;
-  get(key: string): Promise<{ readonly body: Uint8Array; readonly meta: StorageObjectMeta } | undefined>;
+  get(
+    key: string,
+  ): Promise<{ readonly body: Uint8Array; readonly meta: StorageObjectMeta } | undefined>;
   put(
     key: string,
     body: Uint8Array,
@@ -624,9 +628,15 @@ export interface AttachmentLedger {
   readObject(objectId: string): Promise<AttachmentObject | undefined>;
   listObjects(attachmentId: string, ownerId: string): Promise<readonly AttachmentObject[]>;
   /** Returns undefined when the object is not an unattached upload of this attachment. */
-  attach(scope: object | undefined, input: AttachmentAttachInput): Promise<AttachmentObject | undefined>;
+  attach(
+    scope: object | undefined,
+    input: AttachmentAttachInput,
+  ): Promise<AttachmentObject | undefined>;
   /** Marks matching attached objects `purging`, records a purge row per object, returns them. */
-  detach(scope: object | undefined, input: AttachmentDetachInput): Promise<readonly AttachmentObject[]>;
+  detach(
+    scope: object | undefined,
+    input: AttachmentDetachInput,
+  ): Promise<readonly AttachmentObject[]>;
   /** Uploaded objects never attached before `cutoff`: marks them `purging` with a purge row and returns them. */
   claimStaleObjects(cutoff: Date, limit: number): Promise<readonly AttachmentObject[]>;
   recordVariant(objectId: string, name: string, variant: AttachmentVariantObject): Promise<void>;

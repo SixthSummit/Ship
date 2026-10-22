@@ -111,7 +111,8 @@ describe("createS3StorageAdapter", () => {
       if (request.method === "GET") {
         return new Response("png", { status: 200, headers: { "content-type": "image/png" } });
       }
-      if (request.method === "PUT") return new Response(null, { status: 200, headers: { etag: '"x"' } });
+      if (request.method === "PUT")
+        return new Response(null, { status: 200, headers: { etag: '"x"' } });
       if (request.method === "DELETE") return new Response(null, { status: 404 });
       return new Response(null, { status: 500 });
     });
@@ -125,7 +126,12 @@ describe("createS3StorageAdapter", () => {
     });
     expect(await adapter.head("missing")).toBeUndefined();
     const head = await adapter.head("present");
-    expect(head).toMatchObject({ key: "present", size: 3, contentType: "image/png", etag: '"abc"' });
+    expect(head).toMatchObject({
+      key: "present",
+      size: 3,
+      contentType: "image/png",
+      etag: '"abc"',
+    });
     const got = await adapter.get("present");
     expect(new TextDecoder().decode(got?.body)).toBe("png");
     expect(got?.meta.size).toBe(3);
@@ -145,11 +151,20 @@ describe("createS3StorageAdapter", () => {
     );
     expect(putCall?.headers["x-amz-content-sha256"]).toMatch(/^[a-f0-9]{64}$/u);
     expect(putCall?.headers.host).toBeUndefined();
-    expect(calls.map((call) => call.method)).toEqual(["HEAD", "HEAD", "GET", "PUT", "DELETE", "HEAD"]);
+    expect(calls.map((call) => call.method)).toEqual([
+      "HEAD",
+      "HEAD",
+      "GET",
+      "PUT",
+      "DELETE",
+      "HEAD",
+    ]);
   });
 
   it("surfaces unexpected provider statuses", async () => {
-    const { fetchImpl } = fakeFetch(() => new Response("denied", { status: 403, statusText: "Forbidden" }));
+    const { fetchImpl } = fakeFetch(
+      () => new Response("denied", { status: 403, statusText: "Forbidden" }),
+    );
     const adapter = createS3StorageAdapter({
       bucket: "vault",
       region: "auto",

@@ -43,7 +43,10 @@ const FORMAT_CONTENT_TYPES = Object.freeze({
 });
 
 /** The content type a variant renders to: its declared format, else the source type. */
-export function variantContentType(variant: AttachmentVariant, source: ImageTransformSource): string {
+export function variantContentType(
+  variant: AttachmentVariant,
+  source: ImageTransformSource,
+): string {
   return variant.format ? FORMAT_CONTENT_TYPES[variant.format] : source.contentType;
 }
 
@@ -60,7 +63,9 @@ export function variantExtension(contentType: string): string {
  * than depended on: `createSharpImageProcessor((await import("sharp")).default)`.
  */
 export interface SharpLike {
-  (input: Uint8Array): {
+  (
+    input: Uint8Array,
+  ): {
     resize(options: {
       readonly width?: number;
       readonly height?: number;

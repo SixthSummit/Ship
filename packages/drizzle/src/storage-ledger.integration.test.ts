@@ -143,9 +143,9 @@ describe("createDrizzleAttachmentLedger", () => {
         attachedAt: at,
       });
     });
-    expect((await ledger.listObjects("gallery.photo", "project-1")).map((item) => item.id)).toEqual([
-      OBJECT_A,
-    ]);
+    expect((await ledger.listObjects("gallery.photo", "project-1")).map((item) => item.id)).toEqual(
+      [OBJECT_A],
+    );
     expect(
       await ledger.attach(undefined, {
         attachmentId: "gallery.photo",

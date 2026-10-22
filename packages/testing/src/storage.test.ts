@@ -144,7 +144,9 @@ describe("createInMemoryAttachmentLedger", () => {
     const later = new Date(at.getTime() + 5_000);
     expect((await ledger.claimExpiredIntents(later, 10)).map((item) => item.id)).toEqual(["a"]);
     expect(await ledger.claimExpiredIntents(later, 10)).toEqual([]);
-    expect((await ledger.claimStaleObjects(later, 10)).map((item) => item.id)).toEqual(["object-b"]);
+    expect((await ledger.claimStaleObjects(later, 10)).map((item) => item.id)).toEqual([
+      "object-b",
+    ]);
     expect(await ledger.claimStaleObjects(later, 10)).toEqual([]);
     expect((await ledger.health()).detail).toBe("1 purges owed");
   });

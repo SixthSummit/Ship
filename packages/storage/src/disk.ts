@@ -192,7 +192,10 @@ export function createDiskStorageAdapter(options: DiskStorageAdapterOptions): Di
       const meta = await readMeta(key);
       if (!meta) return undefined;
       const body = await readFile(pathFor(key));
-      return { body: new Uint8Array(body.buffer, body.byteOffset, body.byteLength), meta: toMeta(key, meta) };
+      return {
+        body: new Uint8Array(body.buffer, body.byteOffset, body.byteLength),
+        meta: toMeta(key, meta),
+      };
     },
     put,
     delete: async (key) => {
@@ -264,7 +267,9 @@ export function createDiskStorageHandler(
           "content-type": stored.meta.contentType ?? "application/octet-stream",
           "content-length": String(stored.meta.size),
           ...(stored.meta.etag ? { etag: stored.meta.etag } : {}),
-          "cache-control": url.pathname.includes("/public/") ? "public, max-age=31536000" : "private, no-store",
+          "cache-control": url.pathname.includes("/public/")
+            ? "public, max-age=31536000"
+            : "private, no-store",
         },
       });
     }
@@ -286,7 +291,10 @@ function refuse(reason: "signature" | "expired" | "key" | "route"): Response {
 }
 
 function encodeKey(key: string): string {
-  return key.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+  return key
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
 }
 
 function assertKey(key: string): void {
@@ -306,7 +314,10 @@ function assertOptions(options: DiskStorageAdapterOptions): void {
   try {
     base = new URL(options.baseUrl);
   } catch {
-    throw new DiskStorageError("SHIP_STORAGE_DISK_OPTIONS_INVALID", "baseUrl must be an absolute URL");
+    throw new DiskStorageError(
+      "SHIP_STORAGE_DISK_OPTIONS_INVALID",
+      "baseUrl must be an absolute URL",
+    );
   }
   if (base.search || base.hash || (base.protocol !== "http:" && base.protocol !== "https:")) {
     throw new DiskStorageError(

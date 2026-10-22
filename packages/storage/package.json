@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-storage",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Declared managed storage for Ship applications: attachment capability module, signed upload intents, variants, durable purge, and GCS / S3 / R2 / local-disk adapters",
   "type": "module",
   "main": "./lib/index.js",

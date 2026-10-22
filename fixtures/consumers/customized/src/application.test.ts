@@ -12,13 +12,16 @@ import {
   type UnitOfWork,
   webhookSecret,
 } from "@sixthsummit/ship-core";
+import { defineStoragePurgeOutbox, STORAGE_PURGE_OUTBOX_ID } from "@sixthsummit/ship-storage";
 import {
   collectPublishes,
+  createInMemoryAttachmentLedger,
   createInMemoryIdempotencyStore,
   createInMemoryJobBackend,
   createInMemoryLockProvider,
   createInMemoryOutbox,
   createInMemoryRealtimeBackend,
+  createInMemoryStorageAdapter,
   createInMemoryWebhookEventStore,
   drainOutbox,
   drainRealtimePublications,
@@ -75,6 +78,9 @@ type FixtureInfrastructure = CustomizedInfrastructure & {
   readonly paymentsOutbox: ReturnType<typeof createInMemoryOutbox>;
   readonly realtimeOutbox: ReturnType<typeof createInMemoryOutbox>;
   readonly webhookEvents: ReturnType<typeof createInMemoryWebhookEventStore>;
+  readonly storage: ReturnType<typeof createInMemoryStorageAdapter>;
+  readonly attachmentLedger: ReturnType<typeof createInMemoryAttachmentLedger>;
+  readonly purgeOutbox: ReturnType<typeof createInMemoryOutbox>;
 };
 
 function fixtureInfrastructure(
@@ -96,6 +102,9 @@ function fixtureInfrastructure(
     webhookSecrets: { stripe: webhookSecret("whsec_fixture"), twilio: webhookSecret("auth-token") },
     jobs: createInMemoryJobBackend(),
     locks: createInMemoryLockProvider(),
+    storage: createInMemoryStorageAdapter(),
+    attachmentLedger: createInMemoryAttachmentLedger(),
+    purgeOutbox: createInMemoryOutbox(defineStoragePurgeOutbox()),
     scheduledTenants: ["acme", "beta"],
     ...overrides,
   } as FixtureInfrastructure;
@@ -1030,5 +1039,186 @@ describe("customized legacy bridge", () => {
         actorId: "ana",
       }),
     ).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("managed storage", () => {
+  const editor = operationActor({
+    id: "editor",
+    permissions: ["portfolio:read", "portfolio:write", "tenant:acme"],
+  });
+  const projectId = "33333333-3333-4333-8333-333333333333";
+
+  async function uploadPhoto(
+    executor: ReturnType<typeof createExecutor>,
+    storage: ReturnType<typeof createInMemoryStorageAdapter>,
+    bytes = new TextEncoder().encode("png-bytes"),
+  ) {
+    const intent = await executor.run(
+      "ship-storage.create-intent",
+      { body: { attachment: "portfolio.photo", contentType: "image/png", size: bytes.byteLength } },
+      { actor: editor },
+    );
+    if (!intent.ok) throw new Error(`intent failed: ${intent.error.code}`);
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await executor.run(
+      "ship-storage.complete",
+      { params: { intentId: intent.data.intentId } },
+      { actor: editor },
+    );
+    if (!complete.ok) throw new Error(`completion failed: ${complete.error.code}`);
+    return complete.data;
+  }
+
+  it("projects the attachment policy into the graph and the client contract without provider detail", () => {
+    const application = createCustomizedApplication(fixtureInfrastructure());
+    expect(application.graph.attachments).toEqual([
+      expect.objectContaining({
+        id: "portfolio.photo",
+        moduleId: "portfolio",
+        cardinality: "many",
+        maxBytes: 5_000_000,
+        visibility: "private",
+        maxCount: 12,
+        variants: ["thumb"],
+        providerId: "portfolio.photo.attachment",
+        operations: ["portfolio.attach-photo", "portfolio.photos", "portfolio.remove-photo"],
+      }),
+    ]);
+    const contract = projectClientContract(application);
+    expect(contract.attachments).toEqual({
+      "portfolio.photo": {
+        cardinality: "many",
+        contentTypes: ["image/jpeg", "image/png", "image/webp"],
+        maxBytes: 5_000_000,
+        visibility: "private",
+        maxCount: 12,
+        variants: ["thumb"],
+      },
+    });
+    expect(JSON.stringify(contract)).not.toContain("memory");
+    expect(
+      contract.operations.find((operation) => operation.id === "ship-storage.create-intent")
+        ?.transport?.binding,
+    ).toBe("POST /storage/intents");
+  });
+
+  it("uploads through a signed intent, attaches to a project, lists with a pending thumbnail and purges on removal", async () => {
+    const infrastructure = fixtureInfrastructure();
+    const application = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(application);
+    const { objectId } = await uploadPhoto(executor, infrastructure.storage);
+
+    const attached = await executor.run(
+      "portfolio.attach-photo",
+      { params: { tenantId: "acme", projectId }, body: { objectId } },
+      { actor: editor },
+    );
+    expect(attached).toMatchObject({ ok: true, data: { objectId, count: 1 } });
+    const again = await executor.run(
+      "portfolio.attach-photo",
+      { params: { tenantId: "acme", projectId }, body: { objectId } },
+      { actor: editor },
+    );
+    expect(again).toMatchObject({ ok: false, error: { code: "PHOTO_UNAVAILABLE" } });
+    const crossTenant = await executor.run(
+      "portfolio.photos",
+      { params: { tenantId: "beta", projectId } },
+      { actor: editor },
+    );
+    expect(crossTenant).toMatchObject({ ok: false, error: { code: "TENANT_ACCESS_DENIED" } });
+
+    const listed = await executor.run(
+      "portfolio.photos",
+      { params: { tenantId: "acme", projectId } },
+      { actor: editor },
+    );
+    expect(listed).toMatchObject({
+      ok: true,
+      data: {
+        photos: [
+          {
+            objectId,
+            contentType: "image/png",
+            size: 9,
+            url: expect.stringContaining("portfolio.photo/"),
+            thumb: null,
+          },
+        ],
+      },
+    });
+    const variantRun = infrastructure.jobs
+      .runs()
+      .find((run) => run.jobId === "ship-storage.generate-variant");
+    expect(variantRun?.input).toEqual({ objectId, variant: "thumb" });
+    await expect(
+      runJobOnce(application, "ship-storage.generate-variant", variantRun?.input, { executor }),
+    ).resolves.toMatchObject({ ok: true, data: { rendered: true } });
+    const withThumb = await executor.run(
+      "portfolio.photos",
+      { params: { tenantId: "acme", projectId } },
+      { actor: editor },
+    );
+    expect(withThumb).toMatchObject({
+      ok: true,
+      data: { photos: [{ thumb: expect.stringContaining("variants/thumb.webp") }] },
+    });
+
+    const removed = await executor.run(
+      "portfolio.remove-photo",
+      { params: { tenantId: "acme", projectId, objectId } },
+      { actor: editor },
+    );
+    expect(removed).toMatchObject({ ok: true, data: { removed: true } });
+    expect(infrastructure.purgeOutbox.records()).toMatchObject([
+      { intentId: "purge-object", payload: { objectId }, status: "pending" },
+    ]);
+    expect(infrastructure.storage.keys()).toHaveLength(2);
+    await expect(drainOutbox(executor, STORAGE_PURGE_OUTBOX_ID)).resolves.toMatchObject({
+      completed: 1,
+    });
+    expect(infrastructure.storage.keys()).toEqual([]);
+    expect((await infrastructure.attachmentLedger.readPurge(objectId))?.purgedAt).toBeDefined();
+    expect(
+      await executor.run(
+        "portfolio.photos",
+        { params: { tenantId: "acme", projectId } },
+        { actor: editor },
+      ),
+    ).toMatchObject({ ok: true, data: { photos: [] } });
+  });
+
+  it("abandons an intent that never completes and removes its stray bytes on sweep", async () => {
+    let now = new Date("2026-10-22T10:00:00.000Z");
+    const infrastructure = fixtureInfrastructure({ clock: () => now });
+    const application = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(application);
+    const intent = await executor.run(
+      "ship-storage.create-intent",
+      { body: { attachment: "portfolio.photo", contentType: "image/jpeg", size: 3 } },
+      { actor: editor },
+    );
+    if (!intent.ok) throw new Error("intent failed");
+    expect(
+      await infrastructure.storage.upload(
+        intent.data.upload.url,
+        new TextEncoder().encode("jpg"),
+        intent.data.upload.headers,
+      ),
+    ).toBe(200);
+    now = new Date(now.getTime() + 16 * 60_000);
+    await expect(
+      runJobOnce(application, "ship-storage.sweep", {}, { executor }),
+    ).resolves.toMatchObject({ ok: true, data: { abandoned: 1 } });
+    expect(infrastructure.storage.keys()).toEqual([]);
+    expect(
+      await executor.run(
+        "ship-storage.complete",
+        { params: { intentId: intent.data.intentId } },
+        { actor: editor },
+      ),
+    ).toMatchObject({ ok: false, error: { code: "INTENT_EXPIRED" } });
   });
 });

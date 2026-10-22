@@ -1,17 +1,17 @@
 import {
   type AnyAttachment,
   type AnyProvider,
-  attachmentAcceptsContentType,
   type AttachmentLedger,
+  attachmentAcceptsContentType,
   authenticatedAccess,
   type CacheBackend,
   createJobEnqueuer,
+  type DependencyToken,
   defineJob,
   defineModule,
   defineOperation,
   defineOutboxCleanup,
   defineOutboxDispatcher,
-  type DependencyToken,
   integerSchema,
   isAttachment,
   isAttachmentLedger,
@@ -19,15 +19,15 @@ import {
   type JobBackend,
   type JobIntervalTrigger,
   type JobScheduleTrigger,
-  objectSchema,
   type OperationAccess,
-  operationError,
-  operationFailure,
   type OperationTransport,
-  optionalSchema,
   type OutboxBackend,
   type OutboxBackoff,
   type OutboxRetention,
+  objectSchema,
+  operationError,
+  operationFailure,
+  optionalSchema,
   recordSchema,
   STORAGE_MODULE_ID,
   type StorageAdapter,
@@ -284,8 +284,10 @@ export function defineStorageModule(options: StorageModuleOptions) {
 
   const variantRuntime = options.variants
     ? {
-        enqueue: createJobEnqueuer<typeof variantInputSchema>(generateVariant, options.variants.jobs)
-          .enqueue,
+        enqueue: createJobEnqueuer<typeof variantInputSchema>(
+          generateVariant,
+          options.variants.jobs,
+        ).enqueue,
         ...(options.variants.cache ? { cache: options.variants.cache } : {}),
         cacheTtlMs: options.variants.cacheTtlMs ?? DEFAULT_VARIANT_CACHE_TTL_MS,
       }
@@ -367,7 +369,10 @@ export function defineStorageModule(options: StorageModuleOptions) {
       const attachment = attachmentsById.get(intent.attachmentId);
       const stored = await services.adapter.head(intent.key);
       if (!stored) throw operationFailure(uploadMissing);
-      const contentType = (stored.contentType ?? intent.contentType).toLowerCase().split(";")[0]!.trim();
+      const contentType = (stored.contentType ?? intent.contentType)
+        .toLowerCase()
+        .split(";")[0]!
+        .trim();
       if (
         !attachment ||
         stored.size > attachment.maxBytes ||
@@ -468,7 +473,9 @@ export function defineStorageModule(options: StorageModuleOptions) {
           purgeOutbox,
           purgeBackend: options.outbox,
           ...(variantRuntime ? { variants: variantRuntime } : {}),
-          ...(options.signedUrlTtlMs !== undefined ? { signedUrlTtlMs: options.signedUrlTtlMs } : {}),
+          ...(options.signedUrlTtlMs !== undefined
+            ? { signedUrlTtlMs: options.signedUrlTtlMs }
+            : {}),
           clock,
         }),
       ),

@@ -47,6 +47,19 @@ export { defineRepositoryProjections } from "./projections.js";
 export type { DrizzleRepositoryErrorCode } from "./repository-error.js";
 export { DrizzleRepositoryError } from "./repository-error.js";
 export type {
+  DrizzleAttachmentLedger,
+  DrizzleAttachmentLedgerDefinition,
+  ShipStorageIntentsTable,
+  ShipStorageObjectsTable,
+  ShipStoragePurgesTable,
+} from "./storage-ledger.js";
+export {
+  createDrizzleAttachmentLedger,
+  shipStorageIntentsTable,
+  shipStorageObjectsTable,
+  shipStoragePurgesTable,
+} from "./storage-ledger.js";
+export type {
   PrivilegedTenantRepositoryContext,
   PrivilegedTenantRepositoryDefinition,
   PrivilegedTenantRepositoryFactory,
@@ -75,16 +88,3 @@ export type {
   ShipWebhookEventsTable,
 } from "./webhook-events.js";
 export { createDrizzleWebhookEventStore, shipWebhookEventsTable } from "./webhook-events.js";
-export type {
-  DrizzleAttachmentLedger,
-  DrizzleAttachmentLedgerDefinition,
-  ShipStorageIntentsTable,
-  ShipStorageObjectsTable,
-  ShipStoragePurgesTable,
-} from "./storage-ledger.js";
-export {
-  createDrizzleAttachmentLedger,
-  shipStorageIntentsTable,
-  shipStorageObjectsTable,
-  shipStoragePurgesTable,
-} from "./storage-ledger.js";

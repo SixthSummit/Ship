@@ -1,4 +1,5 @@
 import type {
+  AttachmentLedger,
   IdempotencyStore,
   OutboxBackend,
   UnitOfWork,
@@ -6,6 +7,7 @@ import type {
 } from "@sixthsummit/ship-core";
 import { cacheInvalidationOutbox, defineRealtimePublicationOutbox } from "@sixthsummit/ship-core";
 import {
+  createDrizzleAttachmentLedger,
   createDrizzleIdempotencyStore,
   createDrizzleOutbox,
   createDrizzleUnitOfWork,
@@ -15,6 +17,7 @@ import {
   type TenantRepositoryFactory,
   tenantPredicate,
 } from "@sixthsummit/ship-drizzle";
+import { defineStoragePurgeOutbox } from "@sixthsummit/ship-storage";
 // This file is the consumer-owned data-access boundary; raw operators do not escape it.
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
@@ -27,6 +30,9 @@ import {
   projects,
   reportRequests,
   reportsOutboxTable,
+  storageIntents,
+  storageObjects,
+  storagePurges,
   webhookEventsTable,
   workItems,
 } from "./schema.js";
@@ -109,6 +115,31 @@ export function createWebhookEventStore(
     table: webhookEventsTable,
     outboxTable: reportsOutboxTable,
     idempotencyTable: idempotencyKeys,
+  });
+}
+
+/**
+ * Object purge intents share the outbox table too; the purge ledger rows live
+ * in the three storage tables included in the migrations.
+ */
+export function createStoragePurgeOutbox(
+  database: NodePgDatabase<typeof portfolioSchema>,
+): OutboxBackend {
+  return createDrizzleOutbox({
+    outbox: defineStoragePurgeOutbox(),
+    database,
+    table: reportsOutboxTable,
+  });
+}
+
+export function createAttachmentLedger(
+  database: NodePgDatabase<typeof portfolioSchema>,
+): AttachmentLedger {
+  return createDrizzleAttachmentLedger({
+    database,
+    intents: storageIntents,
+    objects: storageObjects,
+    purges: storagePurges,
   });
 }
 

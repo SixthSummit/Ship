@@ -46,7 +46,12 @@ application exercises:
   dispatcher with the framework runner instead of the jobs capability;
 - plain Zod channel payloads whose JSON Schema the client manifest derives,
   and presence paging plus `actorOnline` on the project activity channel; and
+- a declared managed attachment (`portfolio.photo`: many images, 5 MB, private,
+  a `thumb` variant) with `portfolio.attach-photo`, `portfolio.remove-photo` and
+  `portfolio.photos` over the `@sixthsummit/ship-storage` module: signed upload
+  intents, completion fencing, the orphan sweep, a lazily rendered variant, and a
+  purge intent that commits with the detachment and is dispatched durably; and
 - constructor injection that selects the notification, outbox, webhook event,
-  job backend, lock, and idempotency adapters at composition time and keeps
-  unit tests network-free through the in-memory backends from
+  job backend, lock, storage, ledger and idempotency adapters at composition
+  time and keeps unit tests network-free through the in-memory backends from
   `@sixthsummit/ship-testing`.

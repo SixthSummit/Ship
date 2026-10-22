@@ -6,9 +6,11 @@ import type {
   StorageSignUploadRequest,
 } from "@sixthsummit/ship-core";
 
-const KEY_PATTERN = /^[^\u0000-\u001f\u007f]{1,1024}$/u;
+const MAX_KEY_LENGTH = 1024;
 
-export type GcsStorageErrorCode = "SHIP_STORAGE_GCS_OPTIONS_INVALID" | "SHIP_STORAGE_GCS_KEY_INVALID";
+export type GcsStorageErrorCode =
+  | "SHIP_STORAGE_GCS_OPTIONS_INVALID"
+  | "SHIP_STORAGE_GCS_KEY_INVALID";
 
 export class GcsStorageError extends TypeError {
   readonly code: GcsStorageErrorCode;
@@ -45,7 +47,10 @@ export interface GcsFileLike {
   download(): Promise<readonly [Uint8Array]>;
   save(
     data: Uint8Array,
-    options: { readonly contentType: string; readonly metadata?: { readonly cacheControl?: string } },
+    options: {
+      readonly contentType: string;
+      readonly metadata?: { readonly cacheControl?: string };
+    },
   ): Promise<void>;
   delete(options?: { readonly ignoreNotFound?: boolean }): Promise<unknown>;
   publicUrl(): string;
@@ -162,7 +167,10 @@ export function createGcsStorageAdapter(options: GcsStorageAdapterOptions): GcsS
     },
     publicUrl: (key) =>
       publicBase
-        ? `${publicBase}/${key.split("/").map((segment) => encodeURIComponent(segment)).join("/")}`
+        ? `${publicBase}/${key
+            .split("/")
+            .map((segment) => encodeURIComponent(segment))
+            .join("/")}`
         : file(key).publicUrl(),
     health: async (): Promise<StorageAdapterHealth> => {
       try {
@@ -171,7 +179,10 @@ export function createGcsStorageAdapter(options: GcsStorageAdapterOptions): GcsS
           ? { available: true, detail: `bucket ${options.bucket} reachable` }
           : { available: false, detail: `bucket ${options.bucket} does not exist` };
       } catch (error) {
-        return { available: false, detail: error instanceof Error ? error.message : "request failed" };
+        return {
+          available: false,
+          detail: error instanceof Error ? error.message : "request failed",
+        };
       }
     },
   };
@@ -187,7 +198,7 @@ function isNotFound(error: unknown): boolean {
 }
 
 function assertKey(key: string): void {
-  if (typeof key !== "string" || !KEY_PATTERN.test(key) || key.startsWith("/")) {
+  if (!isPrintableKey(key) || key.startsWith("/")) {
     throw new GcsStorageError(
       "SHIP_STORAGE_GCS_KEY_INVALID",
       `storage key must be 1 to 1024 printable characters without a leading slash; received ${JSON.stringify(key)}`,
@@ -203,7 +214,10 @@ function assertOptions(options: GcsStorageAdapterOptions): void {
     );
   }
   if (typeof options.bucket !== "string" || !/^[a-z0-9][a-z0-9._-]{1,221}$/u.test(options.bucket)) {
-    throw new GcsStorageError("SHIP_STORAGE_GCS_OPTIONS_INVALID", "bucket must be a valid bucket name");
+    throw new GcsStorageError(
+      "SHIP_STORAGE_GCS_OPTIONS_INVALID",
+      "bucket must be a valid bucket name",
+    );
   }
   if (options.publicBaseUrl !== undefined) {
     try {
@@ -216,4 +230,14 @@ function assertOptions(options: GcsStorageAdapterOptions): void {
       );
     }
   }
+}
+
+/** 1 to 1024 characters, none of them a C0 control character or DEL. */
+function isPrintableKey(key: string): boolean {
+  if (typeof key !== "string" || key.length === 0 || key.length > MAX_KEY_LENGTH) return false;
+  for (let index = 0; index < key.length; index += 1) {
+    const code = key.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return false;
+  }
+  return true;
 }

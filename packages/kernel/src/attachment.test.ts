@@ -81,7 +81,9 @@ function operation(
   return defineOperation({
     id,
     input: {},
-    output: { 200: { "~standard": { version: 1, vendor: "t", validate: (v: unknown) => ({ value: v }) } } },
+    output: {
+      200: { "~standard": { version: 1, vendor: "t", validate: (v: unknown) => ({ value: v }) } },
+    },
     successStatus: 200,
     errors: [],
     access: authenticatedAccess(),
@@ -211,7 +213,9 @@ describe("attachment declarations on modules and operations", () => {
         attachments: [{ id: "gallery.photo" }] as never,
       }),
     ).toThrow(
-      expect.objectContaining({ code: "SHIP_MODULE_ATTACHMENT_INVALID" }) as InvalidModuleDefinitionError,
+      expect.objectContaining({
+        code: "SHIP_MODULE_ATTACHMENT_INVALID",
+      }) as InvalidModuleDefinitionError,
     );
     expect(() =>
       defineModule({
@@ -476,7 +480,11 @@ describe("executor attachment scoping", () => {
     const attachment = photo();
     const executor = createExecutor(application(fakeCapability("other.photo"), attachment));
     await expect(
-      executor.run("gallery.list", {}, { actor: operationActor({ id: "editor", permissions: [] }) }),
+      executor.run(
+        "gallery.list",
+        {},
+        { actor: operationActor({ id: "editor", permissions: [] }) },
+      ),
     ).rejects.toMatchObject({ code: "SHIP_OPERATION_ATTACHMENT_CAPABILITY_INVALID" });
   });
 });

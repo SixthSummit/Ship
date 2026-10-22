@@ -1,6 +1,9 @@
 import {
   shipIdempotencyTable,
   shipOutboxTable,
+  shipStorageIntentsTable,
+  shipStorageObjectsTable,
+  shipStoragePurgesTable,
   shipWebhookEventsTable,
 } from "@sixthsummit/ship-drizzle";
 import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
@@ -34,6 +37,10 @@ export const reportRequests = pgTable("report_requests", {
 export const reportsOutboxTable = shipOutboxTable();
 export const idempotencyKeys = shipIdempotencyTable();
 export const webhookEventsTable = shipWebhookEventsTable();
+/** Managed storage bookkeeping: intents, objects and the purge ledger (ADR-0022). */
+export const storageIntents = shipStorageIntentsTable();
+export const storageObjects = shipStorageObjectsTable();
+export const storagePurges = shipStoragePurgesTable();
 
 export const portfolioSchema = {
   projects,
@@ -42,4 +49,7 @@ export const portfolioSchema = {
   reportsOutboxTable,
   idempotencyKeys,
   webhookEventsTable,
+  storageIntents,
+  storageObjects,
+  storagePurges,
 };

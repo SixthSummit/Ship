@@ -9,7 +9,9 @@ function fakeClient(objects = new Map<string, { body: Uint8Array; contentType: s
       file: (key) => ({
         getSignedUrl: async (config) => {
           signed.push({ key, ...config });
-          return [`https://storage.googleapis.com/${name}/${key}?X-Goog-Signature=sig-${signed.length}`] as const;
+          return [
+            `https://storage.googleapis.com/${name}/${key}?X-Goog-Signature=sig-${signed.length}`,
+          ] as const;
         },
         getMetadata: async () => {
           const stored = objects.get(key);
@@ -60,7 +62,13 @@ describe("createGcsStorageAdapter", () => {
     });
     await adapter.signDownload("gallery.photo/1", { expiresAt });
     expect(signed).toEqual([
-      { key: "gallery.photo/1", version: "v4", action: "write", expires: expiresAt, contentType: "image/png" },
+      {
+        key: "gallery.photo/1",
+        version: "v4",
+        action: "write",
+        expires: expiresAt,
+        contentType: "image/png",
+      },
       { key: "gallery.photo/1", version: "v4", action: "read", expires: expiresAt },
     ]);
   });
@@ -75,7 +83,9 @@ describe("createGcsStorageAdapter", () => {
     });
     expect(await adapter.head("missing")).toBeUndefined();
     expect(await adapter.get("missing")).toBeUndefined();
-    const written = await adapter.put("a/b", new TextEncoder().encode("abc"), { contentType: "text/plain" });
+    const written = await adapter.put("a/b", new TextEncoder().encode("abc"), {
+      contentType: "text/plain",
+    });
     expect(written).toMatchObject({ key: "a/b", size: 3, contentType: "text/plain" });
     expect(await adapter.head("a/b")).toEqual({
       key: "a/b",
@@ -90,7 +100,9 @@ describe("createGcsStorageAdapter", () => {
     expect(objects.size).toBe(0);
     expect(adapter.publicUrl("a/b c")).toBe("https://cdn.example.test/a/b%20c");
     expect((await adapter.health()).available).toBe(true);
-    expect((await createGcsStorageAdapter({ client, bucket: "absent" }).health()).available).toBe(false);
+    expect((await createGcsStorageAdapter({ client, bucket: "absent" }).health()).available).toBe(
+      false,
+    );
   });
 
   it("rethrows provider errors other than not-found", async () => {
@@ -124,7 +136,11 @@ describe("createGcsStorageAdapter", () => {
       GcsStorageError,
     );
     expect(() =>
-      createGcsStorageAdapter({ client: fakeClient().client, bucket: "present", publicBaseUrl: "nope" }),
+      createGcsStorageAdapter({
+        client: fakeClient().client,
+        bucket: "present",
+        publicBaseUrl: "nope",
+      }),
     ).toThrow(GcsStorageError);
     const adapter = createGcsStorageAdapter({ client: fakeClient().client, bucket: "present" });
     expect(() => adapter.publicUrl("/x")).toThrow(GcsStorageError);
