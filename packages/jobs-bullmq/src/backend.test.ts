@@ -1,3 +1,9 @@
+import {
+  AggregationTemporality,
+  InMemoryMetricExporter,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from "@opentelemetry/sdk-metrics";
 import type { JobRuntimeBinding, JobRuntimeDeclaration } from "@sixthsummit/ship-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,6 +143,7 @@ class FakeWorker {
   processor: (job: FakeJob, token?: string) => Promise<unknown>;
   opts: { concurrency?: number; settings?: { backoffStrategy?: (attempts: number) => number } };
   closed = false;
+  closeCalls = 0;
 
   constructor(name: string, processor: FakeWorker["processor"], opts: FakeWorker["opts"]) {
     this.name = name;
@@ -148,6 +155,7 @@ class FakeWorker {
     return this;
   }
   async close() {
+    this.closeCalls += 1;
     this.closed = true;
   }
 }
@@ -164,6 +172,7 @@ vi.mock("bullmq", () => ({
 }));
 
 const { createBullmqJobBackend } = await import("./backend.js");
+const { JOB_METRICS } = await import("./metrics.js");
 
 const schema = {
   "~standard": { version: 1 as const, vendor: "test", validate: (value: unknown) => ({ value }) },
@@ -310,6 +319,46 @@ describe("createBullmqJobBackend", () => {
     expect(() => backend.attach({ jobs, execute: async () => ({ ok: true, data: 1 }) })).toThrow(
       /after quit/u,
     );
+  });
+
+  it("quits once, detaches the queue observer and refuses new queues afterwards", async () => {
+    const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    const reader = new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 3_600_000 });
+    const meterProvider = new MeterProvider({ readers: [reader] });
+    const backend = attach(createBullmqJobBackend({ connection: {}, meterProvider }));
+    await backend.enqueue("reports.render", {});
+    expect(await backend.startWorkers("worker")).toBe(2);
+    const render = FakeQueue.instances.get("reports.render") as FakeQueue;
+    const counted = vi.spyOn(render, "getJobCounts");
+    const gaugePoints = async () => {
+      const { resourceMetrics } = await reader.collect();
+      return resourceMetrics.scopeMetrics.flatMap((scope) =>
+        scope.metrics
+          .filter((metric) => metric.descriptor.name === JOB_METRICS.queueDepth)
+          .flatMap((metric) => metric.dataPoints),
+      );
+    };
+    expect((await gaugePoints()).map((point) => point.value)).toEqual([0, 1]);
+    expect(counted).toHaveBeenCalledTimes(1);
+
+    const worker = FakeWorker.instances[0] as FakeWorker;
+    const [first, second] = [backend.quit(), backend.quit()];
+    expect(first).toBe(second);
+    await Promise.all([first, second]);
+    await backend.quit();
+    expect(worker.closeCalls).toBe(1);
+    expect(FakeQueue.instances.get("reports.render")?.closed).toBe(true);
+
+    // A collection after quit neither reads the closed queue nor reopens one;
+    // the cumulative reader only replays the last values it already has.
+    FakeQueue.instances.clear();
+    expect((await gaugePoints()).map((point) => point.value)).toEqual([0, 1]);
+    expect(counted).toHaveBeenCalledTimes(1);
+    expect(FakeQueue.instances.size).toBe(0);
+    expect(() => backend.queue("reports.render")).toThrow(/has quit/u);
+    await expect(backend.health(new Date())).rejects.toThrow(/has quit/u);
+    await expect(backend.startWorkers("worker")).rejects.toThrow(/after quit/u);
+    await meterProvider.shutdown();
   });
 
   it("requires attachment before workers start", async () => {

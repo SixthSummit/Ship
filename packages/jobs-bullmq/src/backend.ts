@@ -110,11 +110,17 @@ export function createBullmqJobBackend(options: BullmqJobBackendOptions): Bullmq
   let binding: JobRuntimeBinding | undefined;
   let semaphore = createSemaphore(budget.maxInFlight);
   let quitting = false;
-  let observing = false;
+  let quitted: Promise<void> | undefined;
+  let stopObserving: (() => void) | undefined;
 
   const queue = (jobId: string): Queue<BullmqJobData> => {
     const existing = queues.get(jobId);
     if (existing) return existing;
+    // After quit() every queue is closed and dropped; recreating one here would
+    // open a fresh Redis connection from late bookkeeping (a metrics
+    // collection, a health probe) against a server that is going away.
+    if (quitting)
+      throw new Error(`BullMQ job backend has quit; queue ${JSON.stringify(jobId)} is closed`);
     const created = new Queue<BullmqJobData>(jobId, { connection: options.connection, prefix });
     created.on("error", (error) => options.onError?.(error, { jobId }));
     queues.set(jobId, created);
@@ -266,6 +272,7 @@ export function createBullmqJobBackend(options: BullmqJobBackendOptions): Bullmq
       semaphore = createSemaphore(override.maxInFlight);
     }
     if (mode === "api") return 0;
+    if (quitting) throw new Error("cannot start workers after quit()");
     if (!binding)
       throw new Error("attach the backend with startJobRuntime before starting workers");
     for (const job of [...declarations.values()].sort((left, right) =>
@@ -289,31 +296,47 @@ export function createBullmqJobBackend(options: BullmqJobBackendOptions): Bullmq
       worker.on("error", (error) => options.onError?.(error, { jobId: job.id }));
       workers.set(job.id, worker);
     }
-    if (!observing) {
-      observing = true;
-      metrics.observeQueues(async () =>
-        Promise.all(
-          [...declarations.keys()].map(async (jobId) => {
-            const entry = await healthEntry(jobId, clock());
-            return {
-              jobId,
-              depth: entry.waiting + entry.delayed,
-              oldestWaitingAgeMs: entry.lagMs,
-              deadLettered: entry.failed,
-            };
-          }),
-        ),
+    if (!stopObserving) {
+      stopObserving = metrics.observeQueues(async () =>
+        quitting
+          ? []
+          : Promise.all(
+              [...declarations.keys()].map(async (jobId) => {
+                const entry = await healthEntry(jobId, clock());
+                return {
+                  jobId,
+                  depth: entry.waiting + entry.delayed,
+                  oldestWaitingAgeMs: entry.lagMs,
+                  deadLettered: entry.failed,
+                };
+              }),
+            ),
       );
     }
     return workers.size;
   };
 
-  const quit = async () => {
+  /**
+   * Stops every worker (letting active runs finish), closes every queue and
+   * detaches the metrics observer so no Redis traffic outlives the backend.
+   * Idempotent: concurrent and repeated calls share one shutdown.
+   */
+  const quit = (): Promise<void> => {
+    if (quitted) return quitted;
     quitting = true;
-    await Promise.all([...workers.values()].map((worker) => worker.close().catch(() => undefined)));
-    workers.clear();
-    await Promise.all([...queues.values()].map((item) => item.close().catch(() => undefined)));
-    queues.clear();
+    quitted = (async () => {
+      // Unregister first: a collection that starts after this point must not
+      // read from queues that are about to close.
+      stopObserving?.();
+      stopObserving = undefined;
+      await Promise.all(
+        [...workers.values()].map((worker) => worker.close().catch(() => undefined)),
+      );
+      workers.clear();
+      await Promise.all([...queues.values()].map((item) => item.close().catch(() => undefined)));
+      queues.clear();
+    })();
+    return quitted;
   };
 
   const healthEntry = async (jobId: string, now: Date): Promise<JobHealthEntry> => {

@@ -1,4 +1,11 @@
-import type { Attributes, Counter, Histogram, Meter, MeterProvider } from "@opentelemetry/api";
+import type {
+  Attributes,
+  BatchObservableCallback,
+  Counter,
+  Histogram,
+  Meter,
+  MeterProvider,
+} from "@opentelemetry/api";
 import { metrics as globalMetrics } from "@opentelemetry/api";
 
 export const METER_NAME = "@sixthsummit/ship-jobs-bullmq";
@@ -33,8 +40,12 @@ export interface JobMetrics {
   readonly meter: Meter;
   recordRun(jobId: string, key: string, outcome: JobRunOutcome, durationMs: number): void;
   recordLockWait(jobId: string, key: string, waitMs: number): void;
-  /** Registers the callback that reports queue depth, oldest-waiting age and dead-letter counts. */
-  observeQueues(observe: () => Promise<readonly JobQueueObservation[]>): void;
+  /**
+   * Registers the callback that reports queue depth, oldest-waiting age and
+   * dead-letter counts. Returns the function that unregisters it again, so a
+   * backend that quits stops being polled by the meter provider.
+   */
+  observeQueues(observe: () => Promise<readonly JobQueueObservation[]>): () => void;
 }
 
 /**
@@ -80,23 +91,23 @@ export function createJobMetrics(provider: MeterProvider = globalMetrics): JobMe
       lockWait.record(waitMs, { [JOB_ATTRIBUTES.id]: jobId, [JOB_ATTRIBUTES.key]: key });
     },
     observeQueues: (observe: () => Promise<readonly JobQueueObservation[]>) => {
-      meter.addBatchObservableCallback(
-        async (result) => {
-          let observations: readonly JobQueueObservation[];
-          try {
-            observations = await observe();
-          } catch {
-            return;
-          }
-          for (const observation of observations) {
-            const attributes: Attributes = { [JOB_ATTRIBUTES.id]: observation.jobId };
-            result.observe(queueDepth, observation.depth, attributes);
-            result.observe(oldestWaitingAge, observation.oldestWaitingAgeMs, attributes);
-            result.observe(deadLetterCount, observation.deadLettered, attributes);
-          }
-        },
-        [queueDepth, oldestWaitingAge, deadLetterCount],
-      );
+      const observables = [queueDepth, oldestWaitingAge, deadLetterCount];
+      const callback: BatchObservableCallback = async (result) => {
+        let observations: readonly JobQueueObservation[];
+        try {
+          observations = await observe();
+        } catch {
+          return;
+        }
+        for (const observation of observations) {
+          const attributes: Attributes = { [JOB_ATTRIBUTES.id]: observation.jobId };
+          result.observe(queueDepth, observation.depth, attributes);
+          result.observe(oldestWaitingAge, observation.oldestWaitingAgeMs, attributes);
+          result.observe(deadLetterCount, observation.deadLettered, attributes);
+        }
+      };
+      meter.addBatchObservableCallback(callback, observables);
+      return () => meter.removeBatchObservableCallback(callback, observables);
     },
   });
 }
