@@ -44,7 +44,7 @@ export const DEFAULT_MAIL_RETRY: JobRetry = Object.freeze({
 });
 /** A `sending` ledger claim older than this is treated as abandoned and retaken. */
 export const DEFAULT_MAIL_CLAIM_LEASE_MS = 5 * 60_000;
-export const DEFAULT_MAIL_DELIVERY_ID = "mail.deliver";
+export const DEFAULT_MAIL_DELIVERY_ID = "mail.deliver" as const;
 
 // ---------------------------------------------------------------------------
 // Job input and declared failures
@@ -269,9 +269,12 @@ function createMailSender<TMailers extends readonly AnyMailer[]>(
 // Delivery declaration
 // ---------------------------------------------------------------------------
 
-export interface MailDeliveryOptions<TMailers extends readonly AnyMailer[]> {
+export interface MailDeliveryOptions<
+  TMailers extends readonly AnyMailer[],
+  TId extends string = typeof DEFAULT_MAIL_DELIVERY_ID,
+> {
   /** Defaults to `mail.deliver`; the first segment is the module that composes the job. */
-  readonly id?: string;
+  readonly id?: TId;
   /** Every mailer that may be sent through this job. */
   readonly mailers: TMailers;
   /** Sender used by mailers that declare no `from`; required when any of them does not. */
@@ -302,11 +305,14 @@ export interface MailDeliveryOutput {
  * records the outcome. Retry, backoff, dead-lettering and management come
  * from the jobs capability unchanged.
  */
-export function defineMailDelivery<const TMailers extends readonly AnyMailer[]>(
-  options: MailDeliveryOptions<TMailers>,
-) {
+export function defineMailDelivery<
+  const TMailers extends readonly AnyMailer[],
+  const TId extends string = typeof DEFAULT_MAIL_DELIVERY_ID,
+>(options: MailDeliveryOptions<TMailers, TId>) {
   assertOptions(options);
-  const id = options.id ?? DEFAULT_MAIL_DELIVERY_ID;
+  // Literal so `operationById` keeps a literal key; a `string` id would widen the
+  // application's operation map into an index signature and erase every client id.
+  const id = (options.id ?? DEFAULT_MAIL_DELIVERY_ID) as TId;
   const clock = options.clock ?? (() => new Date());
   const leaseMs = options.claimLeaseMs ?? DEFAULT_MAIL_CLAIM_LEASE_MS;
   const mailers = new Map<string, AnyMailer>(options.mailers.map((mailer) => [mailer.id, mailer]));
@@ -439,9 +445,10 @@ export function defineMailDelivery<const TMailers extends readonly AnyMailer[]>(
   });
 }
 
-export type MailDelivery<TMailers extends readonly AnyMailer[] = readonly AnyMailer[]> = ReturnType<
-  typeof defineMailDelivery<TMailers>
->;
+export type MailDelivery<
+  TMailers extends readonly AnyMailer[] = readonly AnyMailer[],
+  TId extends string = typeof DEFAULT_MAIL_DELIVERY_ID,
+> = ReturnType<typeof defineMailDelivery<TMailers, TId>>;
 
 function duplicate(record: MailSendRecord): MailDeliveryOutput {
   return Object.freeze({

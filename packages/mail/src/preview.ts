@@ -65,10 +65,10 @@ export const mailPreviewSampleInvalid = operationError({
   details: objectSchema({ mailerId: stringSchema(), message: stringSchema() }),
 });
 
-export interface MailPreviewOptions {
+export interface MailPreviewOptions<TPrefix extends string = "mail"> {
   readonly mailers: readonly AnyMailer[];
   /** Operation id prefix and owning module id. Defaults to `mail`. */
-  readonly prefix?: string;
+  readonly prefix?: TPrefix;
   /** Defaults to `permission("ship.mail:preview")`; previews are never public. */
   readonly access?: OperationAccess;
   /** Transport declarations supplied by the adapter in use (for example `http.get(...)`). */
@@ -95,9 +95,11 @@ export class MailPreviewError extends Error {
  * declared sample through the same `renderMailMessage` production uses.
  * Compose it only where previews belong (never in production builds).
  */
-export function defineMailPreview(options: MailPreviewOptions) {
+export function defineMailPreview<const TPrefix extends string = "mail">(
+  options: MailPreviewOptions<TPrefix>,
+) {
   assertOptions(options);
-  const prefix = options.prefix ?? "mail";
+  const prefix = (options.prefix ?? "mail") as TPrefix;
   const access = options.access ?? permission(MAIL_PREVIEW_PERMISSION);
   const mailers = [...options.mailers].sort((left, right) => left.id.localeCompare(right.id));
   const byId = new Map(mailers.map((mailer) => [mailer.id, mailer]));
@@ -178,7 +180,9 @@ export function defineMailPreview(options: MailPreviewOptions) {
   });
 }
 
-export type MailPreview = ReturnType<typeof defineMailPreview>;
+export type MailPreview<TPrefix extends string = "mail"> = ReturnType<
+  typeof defineMailPreview<TPrefix>
+>;
 
 function assertOptions(options: unknown): asserts options is MailPreviewOptions {
   if (typeof options !== "object" || options === null) {

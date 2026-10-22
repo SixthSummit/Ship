@@ -1162,9 +1162,8 @@ describe("customized transactional mail", () => {
         mailers: [{ id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] }],
       },
     });
-    for (const mailer of (
-      list as { data: { mailers: { id: string; messages: { name: string }[] }[] } }
-    ).data.mailers) {
+    if (!list.ok) throw new Error("preview list unexpectedly failed");
+    for (const mailer of list.data.mailers) {
       for (const message of mailer.messages) {
         const rendered = await executor.run(
           "mail.preview-render",

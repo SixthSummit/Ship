@@ -18,6 +18,7 @@ const PACKAGE_DIRECTORIES = [
   "testing",
   "realtime-socketio",
   "push",
+  "mail",
   "webhooks",
   "jobs-bullmq",
   "mcp-server",
