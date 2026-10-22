@@ -27,11 +27,11 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.10.0",
-    "bullmq": "^5.76.3",
-    "ioredis": "^5.10.1"
+    "bullmq": "^5.76.3"
   },
   "peerDependencies": {
-    "@sixthsummit/ship-core": "workspace:^"
+    "@sixthsummit/ship-core": "workspace:^",
+    "ioredis": "^5.10.1"
   },
   "devDependencies": {
     "@opentelemetry/sdk-metrics": "^3.0.0",
@@ -40,6 +40,7 @@
     "@sixthsummit/ship-testing": "workspace:^",
     "@types/pg": "^8.15.6",
     "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.10.1",
     "pg": "^8.16.3",
     "testcontainers": "^12.1.0",
     "tsx": "^4.20.3",

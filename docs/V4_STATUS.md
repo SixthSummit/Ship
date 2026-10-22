@@ -13,6 +13,8 @@
 | Kernel | Typed operations/modules/providers, deterministic graph, direct executor, stable diagnostics and errors |
 | Access | Actor/identity split, permission policies, direct/HTTP enforcement, Firebase adapter |
 | HTTP | Hono projection, stable wire errors, JSON/text/binary responses, bounded JSON/raw/multipart requests |
+| Cross-origin policy | `createHonoAdapter({ cors })` with the compat `CorsOptions` shape and wildcard-plus-credentials guard, preflights on every projected route, `X-Request-Id` exposed by default, scaffold wiring from `CORS_ORIGINS`, golden-consumer coverage (SAPI-760) |
+| Shared runtime peers | `hono`, `drizzle-orm` and `ioredis` are peer dependencies of the adapters that return or accept their instances; scaffold and golden consumers pin Ship packages exactly with a caret `hono`; pack and consumer gates enforce one copy (SAPI-761, `docs/VERSIONING.md`) |
 | Database | Executable read/write unit of work, nested rollback policy, explicit repositories/projections, tenant capabilities |
 | Contracts | Browser-safe structural client, deterministic manifest fingerprint, codecs, OpenAPI 3.1 |
 | Tooling | Graph check/inspect/affected, contract emission, exact legacy-route migration mapping |

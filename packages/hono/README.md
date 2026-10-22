@@ -27,6 +27,47 @@ returns `413` or `415` before the operation handler for limit or media failures.
 Multipart file sanitization remains application-owned: inspect the actual bytes,
 not the caller's extension or MIME type.
 
+## Cross-origin browser clients
+
+A browser on another origin needs a CORS policy before any operation runs. The
+adapter owns it; no consumer middleware is involved:
+
+```ts
+createHonoAdapter(application, {
+  cors: { origin: env.CORS_ORIGINS, credentials: true },
+});
+```
+
+`cors` takes the same shape as `createApp({ cors })` in the compatibility
+distribution, so an application moving between the tiers passes the same
+object: `origin` (one origin, an allowlist, or a per-request resolver),
+`allowMethods`, `allowHeaders`, `exposeHeaders`, `maxAge` and `credentials`.
+The policy applies to every projected route, including streaming and webhook
+routes, their preflights, declared failures and the 404 handler.
+
+- A wildcard origin (`"*"`, `["*"]`, or `"*"` inside a list) combined with
+  `credentials: true` is refused at construction with
+  `SHIP_HONO_CORS_INVALID`. Browsers reject that pairing, and a server that
+  emits it is one lenient client away from a CSRF bypass, so it is a boot error
+  rather than a runtime surprise.
+- `X-Request-Id` and `X-Ship-Cache` are always exposed to the browser, together
+  with every header declared on an operation error (`Retry-After` on a declared
+  429, for example). Add headers your operations set through `respond()` to
+  `exposeHeaders`.
+- An explicit `allowHeaders` list always keeps `Content-Type` and
+  `X-Request-Id`; without the list, preflights reflect the browser's
+  `Access-Control-Request-Headers`.
+- Hono's middleware answers every `OPTIONS` request as a preflight, so an
+  application that declares an `http.options(...)` operation cannot also enable
+  `cors`; the adapter reports the conflict at construction.
+- `Access-Control-*` headers stay framework-owned: an operation that sets one
+  through `respond()` fails as a reserved header, as it does for `X-Request-Id`.
+
+`hono` itself is a peer dependency of this package. Declare it in the
+application with a caret range inside the range this package declares (the
+`ship-api create` scaffold does), so the app and the adapter always share one
+Hono copy and one type tree.
+
 For a migration that must retain an existing JSON error body, configure the
 adapter's optional failure projection:
 

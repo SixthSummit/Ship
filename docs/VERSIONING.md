@@ -50,6 +50,33 @@ the package's public boundary. Hono changes are owned by `ship-hono`; Drizzle
 changes are owned by `ship-drizzle`. They do not force a kernel major unless the
 kernel contract itself changes.
 
+## Shared runtimes are peer dependencies
+
+A focused package declares a third-party runtime as a **peer dependency** when
+the application also imports that runtime and the two must agree on one copy:
+the package consumes or returns instances whose types or runtime identity cross
+the public boundary. It keeps the runtime as a regular dependency when the
+package fully encapsulates it.
+
+| Runtime | Package | Declared as | Why |
+| --- | --- | --- | --- |
+| `hono` | `ship-hono` | peer | the app mounts middleware and extra routes on the same `Hono` |
+| `drizzle-orm` | `ship-drizzle`, `ship-testing` | peer | the app defines its schema and receives `NodePgDatabase` instances |
+| `ioredis` | `ship-jobs-bullmq`, `ship-realtime-socketio` | peer | the app constructs the client it passes in |
+| `socket.io` | `ship-realtime-socketio` | regular | the gateway creates the server; the app passes an `http.Server` and options |
+| `bullmq` | `ship-jobs-bullmq` | regular | queues and workers are created inside the backend |
+| Redis client | `ship-cache-redis` | none | the backend takes a structural client; no driver is imported |
+
+Each peer range is a caret range, and the package keeps the same range in its
+`devDependencies` for its own tests. The `@sixthsummit/ship-api` compatibility
+distribution keeps regular dependencies because compat consumers do not mount
+their own Hono.
+
+Consumers pin Ship packages exactly and declare the shared runtime with the
+peer's caret range, never an exact pin: the `ship-api create` scaffold writes
+that shape, the golden consumers carry it, and the packed-consumer gate fails
+when a clean install resolves more than one copy of `hono` or `drizzle-orm`.
+
 ## What is not a breaking change
 
 - internal files not reachable through a package `exports` map;

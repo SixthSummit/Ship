@@ -16,6 +16,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertConsumerPinShape, assertSingleCopies } from "./installed-copies.mjs";
 
 const PACKAGE_DIRECTORIES = new Map([
   ["@sixthsummit/ship-core", "kernel"],
@@ -30,6 +31,10 @@ const PACKAGE_DIRECTORIES = new Map([
   ["@sixthsummit/ship-webhooks", "webhooks"],
   ["@sixthsummit/ship-jobs-bullmq", "jobs-bullmq"],
 ]);
+
+// Shared runtimes the consumer imports next to the Ship adapters (docs/VERSIONING.md); each
+// must resolve to exactly one copy or the adapter's and the app's types stop lining up.
+const SHARED_RUNTIMES = ["hono", "drizzle-orm"];
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureName = process.argv[2];
@@ -46,12 +51,25 @@ const consumerDirectory = resolve(temporaryRoot, "consumer");
 try {
   await mkdir(artifactDirectory);
   await cp(sourceDirectory, consumerDirectory, { recursive: true });
+  const honoManifest = JSON.parse(
+    await readFile(resolve(repoRoot, "packages", "hono", "package.json"), "utf8"),
+  );
+  assertConsumerPinShape(
+    sourceManifest,
+    honoManifest.peerDependencies.hono,
+    `fixtures/consumers/${fixtureName}/package.json`,
+  );
   const localPackageNames = findLocalPackages(sourceManifest);
   const artifacts = await packPackages(localPackageNames);
   await configureConsumer(sourceManifest, artifacts);
 
   run("pnpm", ["install", "--prefer-offline", "--ignore-scripts"], consumerDirectory);
   await verifyInstalledPackages(artifacts);
+  await assertSingleCopies(
+    consumerDirectory,
+    SHARED_RUNTIMES.filter((name) => sourceManifest.dependencies?.[name]),
+    "pnpm",
+  );
 
   const gates = ["check", "type-check", "test", "build", "test:integration"];
   const timings = {};

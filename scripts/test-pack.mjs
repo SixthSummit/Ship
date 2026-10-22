@@ -2,9 +2,10 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { assertConsumerPinShape, assertSingleCopies } from "./installed-copies.mjs";
 
 const PACKAGE_DIRECTORIES = [
   "kernel",
@@ -29,9 +30,15 @@ const ASSET_SOURCE_ROOTS = new Map([
   ["@sixthsummit/ship-cli", ["templates/"]],
 ]);
 // Packages whose types, runtime guards and process-wide registries must exist exactly once per
-// app. Every other packed package must take them as peers; only the compatibility distribution
+// app: the Ship singletons and the shared runtimes consumers import themselves (docs/VERSIONING.md).
+// Every other packed package must take them as peers; only the compatibility distribution
 // (which an app may install on its own) keeps them as regular dependencies.
-const SINGLETON_PACKAGES = ["@sixthsummit/ship-core", "@sixthsummit/ship-hono"];
+const SINGLETON_PACKAGES = [
+  "@sixthsummit/ship-core",
+  "@sixthsummit/ship-hono",
+  "hono",
+  "drizzle-orm",
+];
 const SINGLETON_REGULAR_DEPENDENTS = new Set(["@sixthsummit/ship-api"]);
 const FORBIDDEN_FILE_PATTERN =
   /(?:^|\/)(?:__tests__)(?:\/|$)|\.(?:test|integration\.test|parity\.test|typecheck)\.[^.\/]+(?:\.|$)|(?:^|\/)\.tsbuildinfo$/u;
@@ -175,41 +182,7 @@ async function verifySingleFrameworkCopy(artifacts) {
     npmConsumerDirectory,
   );
   run("npm", ["ls", "--all", ...SINGLETON_PACKAGES], npmConsumerDirectory, true);
-  for (const name of SINGLETON_PACKAGES) {
-    const copies = await findInstalledCopies(resolve(npmConsumerDirectory, "node_modules"), name);
-    if (copies.length !== 1) {
-      throw new Error(
-        `npm installed ${copies.length} copies of ${name}; expected exactly one:\n  ${copies.join("\n  ")}`,
-      );
-    }
-  }
-}
-
-async function findInstalledCopies(nodeModules, packageName) {
-  let entries;
-  try {
-    entries = await readdir(nodeModules, { withFileTypes: true });
-  } catch (error) {
-    if (error?.code === "ENOENT") return [];
-    throw error;
-  }
-  const copies = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const packageDirectories = entry.name.startsWith("@")
-      ? (await readdir(resolve(nodeModules, entry.name), { withFileTypes: true }))
-          .filter((scoped) => scoped.isDirectory())
-          .map((scoped) => [
-            `${entry.name}/${scoped.name}`,
-            resolve(nodeModules, entry.name, scoped.name),
-          ])
-      : [[entry.name, resolve(nodeModules, entry.name)]];
-    for (const [name, directory] of packageDirectories) {
-      if (name === packageName) copies.push(directory);
-      copies.push(...(await findInstalledCopies(resolve(directory, "node_modules"), packageName)));
-    }
-  }
-  return copies;
+  await assertSingleCopies(npmConsumerDirectory, SINGLETON_PACKAGES, "npm");
 }
 
 function verifyArchiveSurface(pack, manifest) {
@@ -424,11 +397,18 @@ async function verifyGeneratedApplication(cliPath, artifacts) {
       throw new Error(`scaffold release manifest is stale for ${packageName}@${version}`);
     }
   }
+  const honoPeerRange = artifacts.get("@sixthsummit/ship-hono")?.manifest.peerDependencies?.hono;
+  if (releaseManifest.dependencies.hono !== honoPeerRange) {
+    throw new Error(
+      `scaffold release manifest writes hono ${releaseManifest.dependencies.hono}; ship-hono's peer range is ${honoPeerRange}`,
+    );
+  }
 
   run(process.execPath, [cliPath, "create", "generated-api", "--skip-install"], consumerDirectory);
   const generatedDirectory = resolve(consumerDirectory, "generated-api");
   const generatedManifestPath = resolve(generatedDirectory, "package.json");
   const generatedManifest = JSON.parse(await readFile(generatedManifestPath, "utf8"));
+  assertConsumerPinShape(generatedManifest, honoPeerRange, "scaffolded package.json");
   const localPackages = Object.fromEntries(
     [...artifacts.entries()].map(([name, { pack }]) => [name, `file:${pack.filename}`]),
   );
@@ -448,6 +428,8 @@ async function verifyGeneratedApplication(cliPath, artifacts) {
   await writeFile(generatedManifestPath, `${JSON.stringify(generatedManifest, null, 2)}\n`);
 
   run("pnpm", ["install", "--prefer-offline", "--ignore-scripts"], generatedDirectory);
+  // The scaffold's own caret `hono` and ship-hono's peer must resolve to one copy.
+  await assertSingleCopies(generatedDirectory, ["hono"], "pnpm");
   run("pnpm", ["run", "verify"], generatedDirectory);
 }
 
