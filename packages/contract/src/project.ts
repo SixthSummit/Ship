@@ -4,11 +4,13 @@ import type {
   AnyChannel,
   AnyModule,
   AnyOperation,
+  AttachmentGraphNode,
   CompiledApplication,
   OperationGraphNode,
 } from "@sixthsummit/ship-core";
 import type {
   ClientContract,
+  ClientContractAttachment,
   ClientContractChannel,
   ClientContractOperation,
   ClientContractStreamResponse,
@@ -19,6 +21,7 @@ import { projectContractSchema, stableJson } from "./schema.js";
 export type {
   ClientContract,
   ClientContractAccess,
+  ClientContractAttachment,
   ClientContractCache,
   ClientContractChannel,
   ClientContractChannelScope,
@@ -54,11 +57,15 @@ export function projectClientContract<
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((channel) => [channel.id, projectChannel(channel)]),
   );
+  const attachments = Object.fromEntries(
+    application.graph.attachments.map((node) => [node.id, projectAttachment(node)]),
+  );
   const unsigned = stableJson({
     schemaVersion: 1,
     appId: application.id,
     operations,
     channels,
+    attachments,
   });
   const fingerprint = `sha256:${createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
   return deepFreeze({ ...unsigned, fingerprint }) as unknown as ClientContract;
@@ -142,6 +149,7 @@ function projectOperation(
       : {}),
     ...(node.invalidates ? { invalidates: [...node.invalidates] } : {}),
     publishes: operation.publishes.map((channel) => channel.id).sort(),
+    ...(node.attachments ? { attachments: [...node.attachments] } : {}),
     ...(operation.transport
       ? {
           transport: {
@@ -206,6 +214,18 @@ function projectChannel(channel: AnyChannel): ClientContractChannel {
       io: "output",
     }),
     presence: channel.presence,
+  });
+}
+
+/** The upload policy only: never the provider, the key layout or the ledger binding. */
+function projectAttachment(node: AttachmentGraphNode): ClientContractAttachment {
+  return deepFreeze({
+    cardinality: node.cardinality,
+    contentTypes: [...node.contentTypes],
+    maxBytes: node.maxBytes,
+    visibility: node.visibility,
+    maxCount: node.maxCount,
+    variants: [...node.variants],
   });
 }
 

@@ -20,6 +20,7 @@ const PACKAGE_DIRECTORIES = [
   "push",
   "webhooks",
   "jobs-bullmq",
+  "storage",
   "mcp-server",
   "claude-plugin",
   "core",

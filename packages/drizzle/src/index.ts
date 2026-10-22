@@ -75,3 +75,16 @@ export type {
   ShipWebhookEventsTable,
 } from "./webhook-events.js";
 export { createDrizzleWebhookEventStore, shipWebhookEventsTable } from "./webhook-events.js";
+export type {
+  DrizzleAttachmentLedger,
+  DrizzleAttachmentLedgerDefinition,
+  ShipStorageIntentsTable,
+  ShipStorageObjectsTable,
+  ShipStoragePurgesTable,
+} from "./storage-ledger.js";
+export {
+  createDrizzleAttachmentLedger,
+  shipStorageIntentsTable,
+  shipStorageObjectsTable,
+  shipStoragePurgesTable,
+} from "./storage-ledger.js";
