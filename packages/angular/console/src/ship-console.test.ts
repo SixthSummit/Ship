@@ -180,4 +180,83 @@ describe('ShipConsole', () => {
     });
     expect(await notModified.loadOutboxes()).toBeUndefined();
   });
+  it('merges mutation results into the panel state it already holds', async () => {
+    const run = {
+      runId: 'r1',
+      jobId: 'a',
+      status: 'failed',
+      attempts: 1,
+      history: [],
+      createdAt: 'x',
+      availableAt: 'x',
+    };
+    const record = {
+      id: 'rec',
+      intentId: 'i',
+      status: 'dead-lettered',
+      attempts: 1,
+      availableAt: 'x',
+      createdAt: 'x',
+    };
+    const { client, calls } = fakeClient(operation => {
+      switch (operation) {
+        case 'console.jobs.run':
+          return ok({ run });
+        case 'console.jobs.retry':
+          return ok({ run: { ...run, status: 'waiting' } });
+        case 'console.jobs.discard':
+          return ok({ run: { ...run, status: 'discarded' } });
+        case 'console.jobs.resume':
+          return ok({ jobId: 'a', paused: false });
+        case 'console.jobs.retry-all':
+          return ok({ retried: 0, runIds: [] });
+        case 'console.outbox.records':
+          return ok({ outboxId: 'other', records: [record] });
+        case 'console.outbox.discard':
+          return ok({ outboxId: 'o', record: { ...record, status: 'discarded' } });
+        case 'console.webhooks.receipts':
+          return ok({
+            webhooks: [],
+            capabilities: { list: true, dispatch: true, observed: false },
+            receipts: [],
+            observed: [],
+          });
+        default:
+          return ok({});
+      }
+    });
+    const console = new ShipConsole({ client });
+    // Resume before any overview or schedule was loaded leaves nothing to mark.
+    expect(await console.resume('a')).toBe(false);
+    expect(console.jobs()).toBeUndefined();
+    // A loaded run detail is replaced by the mutation result.
+    await console.loadRun('r1');
+    await console.retry('r1');
+    expect(console.run()?.status).toBe('waiting');
+    expect(await console.discard('r1', 'stale')).toMatchObject({ status: 'discarded' });
+    expect(console.run()?.status).toBe('discarded');
+    // Default arguments omit optional fields entirely.
+    await console.retryAll();
+    expect(calls.at(-1)).toEqual({ operation: 'console.jobs.retry-all', input: { body: {} } });
+    await console.loadRuns();
+    expect(calls.at(-1)).toEqual({ operation: 'console.jobs.runs', input: { query: {} } });
+    await console.loadReceipts();
+    expect(calls.at(-1)).toEqual({ operation: 'console.webhooks.receipts', input: { query: {} } });
+    await console.loadOutboxRecords('other', 'dead-lettered', 5);
+    expect(calls.at(-1)).toEqual({
+      operation: 'console.outbox.records',
+      input: { query: { outboxId: 'other', status: 'dead-lettered', limit: 5 } },
+    });
+    // A record mutation for another outbox leaves the loaded listing alone.
+    await console.discardRecord('o', 'rec', 'bounced');
+    expect(console.outboxRecords()?.records[0]?.status).toBe('dead-lettered');
+  });
+
+  it('reports a failed detail load as undefined', async () => {
+    const { client } = fakeClient(() => failed(404, 'JOB_RUN_NOT_FOUND'));
+    const console = new ShipConsole({ client });
+    expect(await console.loadRun('missing')).toBeUndefined();
+    expect(console.run()).toBeUndefined();
+    expect(console.failure()?.code).toBe('JOB_RUN_NOT_FOUND');
+  });
 });

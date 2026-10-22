@@ -47,6 +47,10 @@ describe('ShipConsoleJobsPanelComponent', () => {
           return { ok: true, status: 200, data: runs };
         case 'console.jobs.retry':
           return { ok: true, status: 200, data: { run: { ...runs.runs[0], status: 'waiting' } } };
+        case 'console.jobs.discard':
+          return { ok: true, status: 200, data: { run: { ...runs.runs[0], status: 'discarded' } } };
+        case 'console.jobs.retry-all':
+          return { ok: true, status: 200, data: { retried: 1, runIds: ['reports.render/1'] } };
         default:
           return { ok: true, status: 200, data: {} };
       }
@@ -83,5 +87,59 @@ describe('ShipConsoleJobsPanelComponent', () => {
     pause?.click();
     await fixture.whenStable();
     expect(call).toHaveBeenCalledWith('console.jobs.pause', { body: { jobId: 'reports.render' } });
+    const runsFor = [...element.querySelectorAll('button')].find(
+      b => b.textContent?.trim() === 'Runs'
+    );
+    runsFor?.click();
+    await fixture.whenStable();
+    await fixture.whenStable();
+    expect(call).toHaveBeenLastCalledWith('console.jobs.runs', {
+      query: { jobId: 'reports.render', status: 'failed', limit: 50 },
+    });
+    expect(element.textContent).toContain('for reports.render');
+    const allJobs = [...element.querySelectorAll('button')].find(
+      b => b.textContent?.trim() === 'All jobs'
+    );
+    allJobs?.click();
+    await fixture.whenStable();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.jobId()).toBeUndefined();
+
+    const status = element.querySelector('select') as HTMLSelectElement;
+    status.value = 'completed';
+    status.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    await fixture.whenStable();
+    expect(call).toHaveBeenLastCalledWith('console.jobs.runs', {
+      query: { status: 'completed', limit: 50 },
+    });
+    status.value = 'nope';
+    status.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    expect(fixture.componentInstance.status()).toBe('completed');
+
+    const retryAll = [...element.querySelectorAll('button')].find(
+      b => b.textContent?.trim() === 'Retry all'
+    );
+    retryAll?.click();
+    await fixture.whenStable();
+    await fixture.whenStable();
+    expect(call).toHaveBeenCalledWith('console.jobs.retry-all', {
+      body: { jobId: 'reports.render' },
+    });
+
+    await fixture.componentInstance.showRuns('reports.render');
+    fixture.componentInstance.status.set('failed');
+    await fixture.componentInstance.reload();
+    await fixture.whenStable();
+    const discard = [...element.querySelectorAll('button')].find(
+      b => b.textContent?.trim() === 'Discard'
+    );
+    discard?.click();
+    await fixture.whenStable();
+    await fixture.whenStable();
+    expect(call).toHaveBeenCalledWith('console.jobs.discard', {
+      body: { runId: 'reports.render/1', reason: 'discarded from console' },
+    });
   });
 });
