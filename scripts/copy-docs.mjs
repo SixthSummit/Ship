@@ -112,6 +112,7 @@ const ALLOW_LIST = [
   { src: "docs/v4/features/websockets.md", target: "features/websockets.md" },
   { src: "docs/v4/features/llm-helpers.md", target: "features/llm-helpers.md" },
   { src: "docs/v4/features/mail.md", target: "features/mail.md" },
+  { src: "docs/v4/features/auth-credentials.md", target: "features/auth-credentials.md" },
 ];
 
 /**
