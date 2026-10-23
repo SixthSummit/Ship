@@ -40,6 +40,7 @@ import {
   createWebhookEventStore,
 } from "./repository.js";
 import {
+  documents,
   idempotencyKeys,
   mailSendsTable,
   portfolioSchema,
@@ -914,5 +915,169 @@ describe("customized managed storage against PostgreSQL", () => {
     });
     expect(late).toMatchObject({ ok: false, status: 410, error: { code: "INTENT_EXPIRED" } });
     clock.offsetMs = 0;
+  });
+});
+
+describe("customized rich text documents against PostgreSQL", () => {
+  let database: PostgresTestDb<typeof portfolioSchema>;
+  const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
+  const documentId = "66666666-6666-4666-8666-666666666666";
+
+  beforeAll(async () => {
+    database = await setupPostgresTestDb(portfolioSchema);
+  });
+
+  afterAll(async () => {
+    await database.cleanup();
+  });
+
+  function build() {
+    const infrastructure = {
+      unitOfWork: createPortfolioUnitOfWork(database.db),
+      notifier: { adapter: "recording", send: vi.fn(async () => undefined) } as ReportNotifier,
+      outbox: createReportsOutbox(database.db),
+      idempotency: createIdempotencyStore(database.db),
+      cache: createInMemoryCacheBackend(),
+      cacheOutbox: createCacheInvalidationOutbox(database.db),
+      realtime: createInMemoryRealtimeBackend({ channels: publishedChannels }),
+      realtimeOutbox: createRealtimePublicationOutbox(database.db),
+      paymentSink: {
+        adapter: "recording",
+        record: vi.fn(async () => undefined),
+      } as PaymentEventSink,
+      paymentsOutbox: createPaymentsOutbox(database.db),
+      webhookEvents: createWebhookEventStore(database.db),
+      webhookSecrets: { stripe: webhookSecret("whsec_x"), twilio: webhookSecret("twilio") },
+      clock: clock.now,
+      jobs: createInMemoryJobBackend(),
+      locks: createInMemoryLockProvider(),
+      storage,
+      attachmentLedger: createAttachmentLedger(database.db),
+      purgeOutbox: createStoragePurgeOutbox(database.db),
+      unattachedGraceMs: 60_000,
+      mailProvider: logMailProvider(),
+      mailLedger: createMailLedger(database.db),
+      scheduledTenants: ["acme"],
+    };
+    const { application, http } = createCustomizedHttpApplication(infrastructure, sessions);
+    const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
+      projectClientContract(application),
+      {
+        baseUrl: "https://golden.example.test",
+        headers: { authorization: "ShipSession publisher-token" },
+        fetch: async (input, init) => http.request(input, init),
+      },
+    );
+    return { application, http, client };
+  }
+
+  it("keeps an embedded image exactly as long as the owning document", async () => {
+    const { application, client } = build();
+    const bytes = new TextEncoder().encode("png-bytes");
+    const intent = await client.call("ship-storage.create-intent", {
+      body: {
+        attachment: "portfolio.document-image",
+        contentType: "image/png",
+        size: bytes.byteLength,
+      },
+    });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    if (!complete.ok) throw new Error("completion failed");
+    const objectId = complete.data.objectId;
+
+    const document = {
+      schemaVersion: 1,
+      type: "doc" as const,
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Dear " },
+            { type: "mergeField", attrs: { key: "client.name" } },
+          ],
+        },
+        { type: "attachment", attrs: { objectId, alt: "Site plan" } },
+      ],
+    };
+    const saved = await client.call("portfolio.save-document", {
+      params: { tenantId: "acme", documentId },
+      body: { title: "Engagement letter", document },
+    });
+    expect(saved).toMatchObject({
+      ok: true,
+      status: 200,
+      data: { text: "Dear {{client.name}}\nSite plan", attached: [objectId], detached: [] },
+    });
+    // The row holds the document model and the text projection; the object is attached to it.
+    expect(await database.db.select().from(documents)).toMatchObject([
+      {
+        id: documentId,
+        tenantId: "acme",
+        body: document,
+        bodyText: "Dear {{client.name}}\nSite plan",
+      },
+    ]);
+    expect(await database.db.select().from(storageObjects)).toContainEqual(
+      expect.objectContaining({
+        id: objectId,
+        status: "attached",
+        ownerId: `acme/document/${documentId}`,
+      }),
+    );
+    const read = await client.call("portfolio.document", {
+      params: { tenantId: "acme", documentId },
+    });
+    expect(read).toMatchObject({ ok: true, data: { attachments: [objectId] } });
+    if (!read.ok) throw new Error("read failed");
+    expect(read.data.html).toContain('<figure class="ship-attachment"><img src="');
+    expect(read.data.html).toContain('data-key="client.name"');
+
+    // A save that fails validation changes nothing: the row and the attachment stay.
+    const refused = await client.call("portfolio.save-document", {
+      params: { tenantId: "acme", documentId },
+      body: {
+        title: "Engagement letter",
+        document: { ...document, content: [{ type: "iframe" }] },
+      },
+    });
+    expect(refused).toMatchObject({ ok: false, status: 400, error: { code: "VALIDATION_ERROR" } });
+    expect(await database.db.select().from(storagePurges)).toEqual([]);
+
+    // Deleting the document commits the row deletion and the purge intent together.
+    const deleted = await client.call("portfolio.delete-document", {
+      params: { tenantId: "acme", documentId },
+    });
+    expect(deleted).toMatchObject({ ok: true, data: { deleted: true, purging: [objectId] } });
+    expect(await database.db.select().from(documents)).toEqual([]);
+    expect(await database.db.select().from(storageObjects)).toContainEqual(
+      expect.objectContaining({ id: objectId, status: "purging" }),
+    );
+    expect(await database.db.select().from(storagePurges)).toMatchObject([
+      { objectId, purgedAt: null },
+    ]);
+    expect(storage.keys()).toContain(intent.data.objectKey);
+    const executor = createExecutor(application);
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { completed: 1 } });
+    expect(storage.keys()).not.toContain(intent.data.objectKey);
+    expect((await database.db.select().from(storagePurges))[0]?.purgedAt).not.toBeNull();
+    // The deleted document renders nothing and the object cannot be reused.
+    expect(
+      await client.call("portfolio.document", { params: { tenantId: "acme", documentId } }),
+    ).toMatchObject({ ok: false, status: 404, error: { code: "DOCUMENT_NOT_FOUND" } });
+    expect(
+      await client.call("portfolio.save-document", {
+        params: { tenantId: "acme", documentId },
+        body: { title: "Again", document },
+      }),
+    ).toMatchObject({ ok: false, status: 422, error: { code: "DOCUMENT_INVALID" } });
   });
 });

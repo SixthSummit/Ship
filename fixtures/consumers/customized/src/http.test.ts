@@ -45,6 +45,9 @@ function infrastructure(): CustomizedInfrastructure {
           forTenant: (_scope: TenantScope<string>) => ({
             summarize: async () => [],
             recordReportRequest: async () => ({ id: "11111111-1111-4111-8111-111111111111" }),
+            upsertDocument: async () => undefined,
+            readDocument: async () => undefined,
+            deleteDocument: async () => false,
           }),
         },
       }),

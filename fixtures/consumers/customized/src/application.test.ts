@@ -9,6 +9,7 @@ import {
   operationActor,
   providerActor,
   REALTIME_PUBLICATION_OUTBOX_ID,
+  type RichTextDocument,
   startJobRuntime,
   systemActor,
   type TenantScope,
@@ -70,7 +71,13 @@ function fixtureUnitOfWork(
         portfolio: {
           kind: "ship.drizzle.tenant-repository",
           id: "portfolio.projects",
-          forTenant: (_scope: TenantScope<string>) => ({ summarize, recordReportRequest }),
+          forTenant: (_scope: TenantScope<string>) => ({
+            summarize,
+            recordReportRequest,
+            upsertDocument: async () => undefined,
+            readDocument: async () => undefined,
+            deleteDocument: async () => false,
+          }),
         },
       }),
   };
@@ -1527,5 +1534,364 @@ describe("customized transactional mail", () => {
       }
     }
     expect(reportsMailer.messageNames).toEqual(["digestReady"]);
+  });
+});
+
+describe("rich text documents", () => {
+  const editor = operationActor({
+    id: "editor",
+    permissions: ["portfolio:read", "portfolio:write", "tenant:acme"],
+  });
+  const documentId = "44444444-4444-4444-8444-444444444444";
+  const params = { tenantId: "acme", documentId };
+
+  function paragraph(text: string) {
+    return { type: "paragraph", content: [{ type: "text", text }] };
+  }
+
+  async function uploadImage(
+    executor: ReturnType<typeof createExecutor<ReturnType<typeof createCustomizedApplication>>>,
+    storage: ReturnType<typeof createInMemoryStorageAdapter>,
+    bytes = new TextEncoder().encode("png-bytes"),
+  ) {
+    const intent = await executor.run(
+      "ship-storage.create-intent",
+      {
+        body: {
+          attachment: "portfolio.document-image",
+          contentType: "image/png",
+          size: bytes.byteLength,
+        },
+      },
+      { actor: editor },
+    );
+    if (!intent.ok) throw new Error(`intent failed: ${intent.error.code}`);
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await executor.run(
+      "ship-storage.complete",
+      { params: { intentId: intent.data.intentId } },
+      { actor: editor },
+    );
+    if (!complete.ok) throw new Error(`completion failed: ${complete.error.code}`);
+    return complete.data.objectId;
+  }
+
+  /** A unit of work whose document table is a map, so the field's reconciliation is observable without PostgreSQL. */
+  function documentUnitOfWork(): UnitOfWork<PortfolioCapabilities> & {
+    readonly rows: Map<string, { title: string; body: unknown; bodyText: string }>;
+  } {
+    const rows = new Map<string, { title: string; body: unknown; bodyText: string }>();
+    return {
+      kind: "ship.unit-of-work",
+      id: "database.portfolio",
+      rows,
+      run: async (_mode, work) =>
+        work({
+          portfolio: {
+            kind: "ship.drizzle.tenant-repository",
+            id: "portfolio.projects",
+            forTenant: (scope: TenantScope<string>) => ({
+              summarize: async () => [],
+              recordReportRequest: async () => ({ id: documentId }),
+              upsertDocument: async (document) => {
+                rows.set(`${scope.tenantId}/${document.id}`, {
+                  title: document.title,
+                  body: document.body,
+                  bodyText: document.bodyText,
+                });
+              },
+              readDocument: async (id) => {
+                const row = rows.get(`${scope.tenantId}/${id}`);
+                return row ? { id, ...row, body: row.body as never } : undefined;
+              },
+              deleteDocument: async (id) => rows.delete(`${scope.tenantId}/${id}`),
+            }),
+          },
+        }),
+    };
+  }
+
+  it("projects the field, its attachment and the extension specs into the graph and the contract", () => {
+    const application = createCustomizedApplication(fixtureInfrastructure());
+    expect(application.graph.richText).toEqual([
+      {
+        id: "portfolio.document-body",
+        moduleId: "portfolio",
+        schemaVersion: 1,
+        attachmentId: "portfolio.document-image",
+        extensions: [
+          {
+            name: "merge-field",
+            nodes: {
+              mergeField: {
+                group: "inline",
+                atom: true,
+                attrs: { key: { type: "string", required: true, maxLength: 64 } },
+              },
+            },
+            marks: {},
+          },
+        ],
+        maxBytes: 256 * 1024,
+        maxDepth: 32,
+        onInvalid: "reject",
+        providerId: "portfolio.document-body.rich-text",
+        operations: ["portfolio.delete-document", "portfolio.document", "portfolio.save-document"],
+      },
+    ]);
+    const contract = projectClientContract(application);
+    expect(contract.richText).toEqual({
+      "portfolio.document-body": {
+        schemaVersion: 1,
+        attachment: "portfolio.document-image",
+        maxBytes: 256 * 1024,
+        maxDepth: 32,
+        extensions: [
+          {
+            name: "merge-field",
+            nodes: {
+              mergeField: {
+                group: "inline",
+                atom: true,
+                attrs: { key: { type: "string", required: true, maxLength: 64 } },
+              },
+            },
+            marks: {},
+          },
+        ],
+      },
+    });
+    expect(contract.attachments?.["portfolio.document-image"]).toMatchObject({
+      cardinality: "many",
+      maxCount: 50,
+    });
+    expect(JSON.stringify(contract)).not.toContain("renderHtml");
+    expect(
+      contract.operations.find((operation) => operation.id === "portfolio.save-document")?.richText,
+    ).toEqual(["portfolio.document-body"]);
+  });
+
+  it("refuses markup outside the allowlist at the input boundary and in the capability", async () => {
+    const infrastructure = fixtureInfrastructure({ unitOfWork: documentUnitOfWork() });
+    const application = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(application);
+    const refused = await executor.run(
+      "portfolio.save-document",
+      {
+        params,
+        body: {
+          title: "Letter",
+          document: {
+            schemaVersion: 1,
+            type: "doc",
+            content: [
+              { type: "script", content: [{ type: "text", text: "alert(1)" }] },
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "x",
+                    marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      { actor: editor },
+    );
+    expect(refused).toMatchObject({
+      ok: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        details: {
+          issues: expect.arrayContaining([
+            expect.objectContaining({ path: ["body", "document", "content", 0, "type"] }),
+            expect.objectContaining({
+              path: ["body", "document", "content", 1, "content", 0, "marks", 0, "attrs"],
+            }),
+          ]),
+        },
+      },
+    });
+    const unknownImage = await executor.run(
+      "portfolio.save-document",
+      {
+        params,
+        body: {
+          title: "Letter",
+          document: {
+            schemaVersion: 1,
+            type: "doc",
+            content: [{ type: "attachment", attrs: { objectId: "not-an-upload" } }],
+          },
+        },
+      },
+      { actor: editor },
+    );
+    expect(unknownImage).toMatchObject({
+      ok: false,
+      error: {
+        code: "DOCUMENT_INVALID",
+        details: {
+          issues: [
+            expect.objectContaining({
+              code: "SHIP_RICH_TEXT_ATTACHMENT_UNAVAILABLE",
+              path: ["content", 0, "attrs", "objectId"],
+            }),
+          ],
+        },
+      },
+    });
+  });
+
+  it("stores the document model with its text projection and renders HTML with render-time signed URLs", async () => {
+    const unitOfWork = documentUnitOfWork();
+    const infrastructure = fixtureInfrastructure({ unitOfWork });
+    const application = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(application);
+    const objectId = await uploadImage(executor, infrastructure.storage);
+    const document: RichTextDocument = {
+      schemaVersion: 1,
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Engagement" }] },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Dear " },
+            { type: "mergeField", attrs: { key: "client.name" } },
+            { type: "text", text: ", see " },
+            {
+              type: "text",
+              text: "the terms",
+              marks: [
+                { type: "bold" },
+                { type: "link", attrs: { href: "https://law.example/terms" } },
+              ],
+            },
+            { type: "text", text: " <below>" },
+          ],
+        },
+        { type: "attachment", attrs: { objectId, alt: "Signed plan" } },
+      ],
+    };
+    const saved = await executor.run(
+      "portfolio.save-document",
+      { params, body: { title: "Engagement letter", document } },
+      { actor: editor },
+    );
+    expect(saved).toMatchObject({
+      ok: true,
+      data: {
+        documentId,
+        text: "Engagement\nDear {{client.name}}, see the terms <below>\nSigned plan",
+        attached: [objectId],
+        detached: [],
+      },
+    });
+    expect(unitOfWork.rows.get(`acme/${documentId}`)).toEqual({
+      title: "Engagement letter",
+      body: document,
+      bodyText: "Engagement\nDear {{client.name}}, see the terms <below>\nSigned plan",
+    });
+    expect(JSON.stringify(unitOfWork.rows.get(`acme/${documentId}`)?.body)).not.toContain("<h2>");
+    expect(await infrastructure.attachmentLedger.readObject(undefined, objectId)).toMatchObject({
+      status: "attached",
+      ownerId: `acme/document/${documentId}`,
+    });
+
+    const read = await executor.run("portfolio.document", { params }, { actor: editor });
+    expect(read).toMatchObject({ ok: true, data: { documentId, attachments: [objectId] } });
+    if (!read.ok) throw new Error("read failed");
+    expect(read.data.html).toMatch(
+      new RegExp(
+        '^<h2>Engagement</h2><p>Dear <span class="merge-field" data-key="client.name">{{client.name}}</span>, see ' +
+          '<a href="https://law.example/terms" rel="noopener noreferrer"><strong>the terms</strong></a> &lt;below&gt;</p>' +
+          '<figure class="ship-attachment"><img src="[^"]*portfolio\\.document-image/[^"]*" alt="Signed plan"></figure>$',
+        "u",
+      ),
+    );
+    expect(JSON.stringify(document)).not.toContain(read.data.html.match(/src="([^"]*)"/u)?.[1]);
+    expect(
+      await executor.run(
+        "portfolio.document",
+        { params: { ...params, tenantId: "beta" } },
+        { actor: editor },
+      ),
+    ).toMatchObject({ ok: false, error: { code: "TENANT_ACCESS_DENIED" } });
+  });
+
+  it("purges an embedded image when the document drops it and when the document is deleted", async () => {
+    const unitOfWork = documentUnitOfWork();
+    const infrastructure = fixtureInfrastructure({ unitOfWork });
+    const application = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(application);
+    const first = await uploadImage(executor, infrastructure.storage);
+    const second = await uploadImage(
+      executor,
+      infrastructure.storage,
+      new TextEncoder().encode("2"),
+    );
+    const withBoth: RichTextDocument = {
+      schemaVersion: 1,
+      type: "doc",
+      content: [
+        paragraph("v1"),
+        { type: "attachment", attrs: { objectId: first } },
+        { type: "attachment", attrs: { objectId: second } },
+      ],
+    };
+    await expect(
+      executor.run(
+        "portfolio.save-document",
+        { params, body: { title: "Plan", document: withBoth } },
+        { actor: editor },
+      ),
+    ).resolves.toMatchObject({ ok: true, data: { attached: [first, second], detached: [] } });
+
+    // Dropping one image from the document detaches it: a purge intent is recorded.
+    const withSecond: RichTextDocument = {
+      ...withBoth,
+      content: [paragraph("v2"), { type: "attachment", attrs: { objectId: second } }],
+    };
+    await expect(
+      executor.run(
+        "portfolio.save-document",
+        { params, body: { title: "Plan", document: withSecond } },
+        { actor: editor },
+      ),
+    ).resolves.toMatchObject({ ok: true, data: { attached: [], detached: [first] } });
+    expect(infrastructure.purgeOutbox.records()).toMatchObject([
+      { intentId: "purge-object", payload: { objectId: first }, status: "pending" },
+    ]);
+    // An image that belongs to another document cannot be referenced.
+    const stolen = await executor.run(
+      "portfolio.save-document",
+      {
+        params: { tenantId: "acme", documentId: "55555555-5555-4555-8555-555555555555" },
+        body: { title: "Other", document: withSecond },
+      },
+      { actor: editor },
+    );
+    expect(stolen).toMatchObject({ ok: false, error: { code: "DOCUMENT_INVALID" } });
+
+    // Deleting the document detaches what is left; the bytes go when the purge outbox drains.
+    const deleted = await executor.run("portfolio.delete-document", { params }, { actor: editor });
+    expect(deleted).toMatchObject({ ok: true, data: { deleted: true, purging: [second] } });
+    expect(unitOfWork.rows.has(`acme/${documentId}`)).toBe(false);
+    expect(infrastructure.storage.keys()).toHaveLength(2);
+    await expect(drainOutbox(executor, STORAGE_PURGE_OUTBOX_ID)).resolves.toMatchObject({
+      completed: 2,
+    });
+    expect(infrastructure.storage.keys()).toEqual([]);
+    expect((await infrastructure.attachmentLedger.readPurge(second))?.purgedAt).toBeDefined();
+    expect(
+      await executor.run("portfolio.delete-document", { params }, { actor: editor }),
+    ).toMatchObject({ ok: true, data: { deleted: false, purging: [] } });
   });
 });

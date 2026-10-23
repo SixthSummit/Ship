@@ -24,6 +24,7 @@
     "@sixthsummit/ship-drizzle": "1.2.1",
     "@sixthsummit/ship-hono": "1.2.1",
     "@sixthsummit/ship-mail": "0.1.0",
+    "@sixthsummit/ship-rich-text": "0.0.0",
     "@sixthsummit/ship-storage": "0.0.0",
     "@sixthsummit/ship-webhooks": "0.2.0",
     "drizzle-orm": "^0.45.2",

@@ -4,20 +4,20 @@ import {
   channelPublisherProvider,
   defineApp,
   defineAttachment,
-  defineRichText,
-  defineRichTextExtension,
   defineChannel,
   defineModule,
   defineOperation,
   defineOutbox,
   defineOutboxDispatcher,
+  defineRichText,
+  defineRichTextExtension,
   effectDependency,
   idempotencyStoreDependency,
   outboxIntent,
   publicAccess,
   type RealtimePublishBackend,
-  type RuntimeSchema,
   type RichTextCapability,
+  type RuntimeSchema,
   STORAGE_MODULE_ID,
   valueProvider,
 } from "@sixthsummit/ship-core";
@@ -757,14 +757,25 @@ describe("projectClientContract rich text", () => {
     });
     expect(contract.operations[0]?.richText).toEqual(["documents.body"]);
     const serialized = JSON.stringify(contract);
-    for (const forbidden of ["SERVER_ONLY", "renderHtml", "documents.body.rich-text", "onInvalid"]) {
+    for (const forbidden of [
+      "SERVER_ONLY",
+      "renderHtml",
+      "documents.body.rich-text",
+      "onInvalid",
+    ]) {
       expect(serialized).not.toContain(forbidden);
     }
     const withoutRichText = projectClientContract(
       defineApp({
         id: "contract-rich-text",
         modules: [
-          defineModule({ id: "documents", operations: [], providers: [], imports: [], exports: [] }),
+          defineModule({
+            id: "documents",
+            operations: [],
+            providers: [],
+            imports: [],
+            exports: [],
+          }),
         ],
       }),
     );
