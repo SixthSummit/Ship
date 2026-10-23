@@ -18,6 +18,8 @@ import {
 } from "@sixthsummit/ship-core";
 import { type Context, Hono } from "hono";
 import { type HonoAuthenticationOptions, isHonoCredentialAdapter } from "./auth.js";
+import { assertCorsOptions, createCorsMiddleware, type HonoCorsOptions } from "./cors.js";
+import { HonoAdapterError } from "./diagnostics.js";
 import { executeStreamOperation } from "./stream.js";
 import {
   type HttpMultipartBodyPolicy,
@@ -49,32 +51,8 @@ const RESERVED_RESPONSE_HEADERS = new Set([
   "x-ship-cache",
 ]);
 
-export type HonoAdapterDiagnosticCode =
-  | "SHIP_HONO_TRANSPORT_INVALID"
-  | "SHIP_HONO_INPUT_LOCATION_UNSUPPORTED"
-  | "SHIP_HONO_PATH_PARAMS_MISMATCH"
-  | "SHIP_HONO_REQUEST_BODY_MISMATCH"
-  | "SHIP_HONO_AUTH_INVALID"
-  | "SHIP_HONO_OPTIONS_INVALID"
-  | "SHIP_HONO_WEBHOOK_BASE_URL_REQUIRED";
-
-export class HonoAdapterError extends Error {
-  readonly code: HonoAdapterDiagnosticCode;
-  readonly operationId?: string;
-  readonly inputLocation?: string;
-
-  constructor(
-    code: HonoAdapterDiagnosticCode,
-    message: string,
-    options: { readonly operationId?: string; readonly inputLocation?: string } = {},
-  ) {
-    super(message);
-    this.name = "HonoAdapterError";
-    this.code = code;
-    this.operationId = options.operationId;
-    this.inputLocation = options.inputLocation;
-  }
-}
+export type { HonoAdapterDiagnosticCode } from "./diagnostics.js";
+export { HonoAdapterError } from "./diagnostics.js";
 
 export interface ShipHttpErrorEnvelope {
   readonly success: false;
@@ -130,6 +108,13 @@ export interface CreateHonoAdapterOptions<TCredential = unknown> {
   ) => void | Promise<void>;
   /** Required when the application declares inbound webhooks. */
   readonly webhooks?: HonoWebhookOptions;
+  /**
+   * Cross-origin policy applied to every projected route, including streaming
+   * and webhook routes, and to their preflights. Omit it and the adapter emits
+   * no `Access-Control-*` headers. The adapter refuses a wildcard origin
+   * combined with `credentials: true` at construction.
+   */
+  readonly cors?: HonoCorsOptions;
 }
 
 export interface HonoUnexpectedErrorContext {
@@ -165,6 +150,9 @@ export function createHonoAdapter<
   const executor: ApplicationExecutor<CompiledApplication<string, readonly AnyModule[]>> =
     createExecutor(application);
   const app = new Hono();
+  // Registered ahead of every route so preflights never reach the 404 handler
+  // and operation, streaming and webhook responses all carry the policy.
+  if (options.cors !== undefined) app.use("*", createCorsMiddleware(options.cors, routes));
 
   const webhookRoutes = routes.filter(
     (operation) => describeWebhookOperation(operation)?.role === "receive",
@@ -385,6 +373,7 @@ function assertAdapterOptions<TCredential>(options: CreateHonoAdapterOptions<TCr
   if (options.onUnexpectedError !== undefined && typeof options.onUnexpectedError !== "function") {
     throw new HonoAdapterError("SHIP_HONO_OPTIONS_INVALID", "onUnexpectedError must be a function");
   }
+  if (options.cors !== undefined) assertCorsOptions(options.cors);
   if (
     options.projectFailureBody !== undefined &&
     typeof options.projectFailureBody !== "function"
@@ -1011,7 +1000,9 @@ function responseHeaders(
   const headers = new Headers({ "x-request-id": requestId });
   if (contentType !== undefined) headers.set("content-type", contentType);
   for (const [name, value] of Object.entries(operationHeaders ?? {})) {
-    if (RESERVED_RESPONSE_HEADERS.has(name.toLowerCase())) {
+    const lower = name.toLowerCase();
+    // CORS headers are the adapter's: an operation cannot widen the policy.
+    if (RESERVED_RESPONSE_HEADERS.has(lower) || lower.startsWith("access-control-")) {
       throw new TypeError(
         `operation may not override reserved response header ${JSON.stringify(name)}`,
       );

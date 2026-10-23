@@ -25,16 +25,15 @@
     "test": "vitest run --root ../.. packages/hono/src",
     "test:coverage": "vitest run --root ../.. packages/hono/src --coverage"
   },
-  "dependencies": {
-    "hono": "^4.13.13"
-  },
   "peerDependencies": {
-    "@sixthsummit/ship-core": "workspace:^"
+    "@sixthsummit/ship-core": "workspace:^",
+    "hono": "^4.13.13"
   },
   "devDependencies": {
     "@sixthsummit/ship-core": "workspace:*",
     "@sixthsummit/ship-testing": "workspace:^",
     "@sixthsummit/ship-webhooks": "workspace:^",
+    "hono": "^4.13.13",
     "zod": "^4.3.6"
   },
   "engines": {

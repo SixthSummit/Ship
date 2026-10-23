@@ -562,9 +562,6 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.10.0
         version: 1.10.0
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
     devDependencies:
       '@opentelemetry/sdk-metrics':
         specifier: ^3.0.0
@@ -581,6 +578,9 @@ importers:
       '@types/pg':
         specifier: ^8.15.6
         version: 8.15.6
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -592,10 +592,6 @@ importers:
         version: 4.5.4
 
   packages/hono:
-    dependencies:
-      hono:
-        specifier: 4.13.13
-        version: 4.13.13
     devDependencies:
       '@sixthsummit/ship-core':
         specifier: workspace:*
@@ -606,6 +602,9 @@ importers:
       '@sixthsummit/ship-webhooks':
         specifier: workspace:^
         version: link:../webhooks
+      hono:
+        specifier: 4.13.13
+        version: 4.13.13
       zod:
         specifier: ^4.3.6
         version: 4.5.4
@@ -618,9 +617,6 @@ importers:
       bullmq:
         specifier: ^5.76.3
         version: 5.81.4
-      ioredis:
-        specifier: ^5.10.1
-        version: 5.11.1
     devDependencies:
       '@opentelemetry/sdk-metrics':
         specifier: ^3.0.0
@@ -640,6 +636,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.11.1
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -744,9 +743,6 @@ importers:
       '@sixthsummit/ship-observability-otel':
         specifier: workspace:^
         version: link:../observability-otel
-      ioredis:
-        specifier: ^5.11.1
-        version: 5.11.1
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3
@@ -769,6 +765,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
+      ioredis:
+        specifier: ^5.11.1
+        version: 5.11.1
       socket.io-client:
         specifier: ^4.8.3
         version: 4.8.3
@@ -839,9 +838,6 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -855,6 +851,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
       ws:
         specifier: ^8.20.0
         version: 8.21.3

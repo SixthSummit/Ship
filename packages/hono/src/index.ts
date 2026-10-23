@@ -19,6 +19,7 @@ export {
   isHonoCredentialAdapter,
   requestHeadersCredential,
 } from "./auth.js";
+export type { HonoCorsOptions } from "./cors.js";
 export type {
   JobLivenessResponse,
   JobLivenessResponseEntry,
