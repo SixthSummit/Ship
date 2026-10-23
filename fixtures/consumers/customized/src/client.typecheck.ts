@@ -95,10 +95,8 @@ async function verifyRichTextContract(): Promise<void> {
     },
   });
   if (saved.ok) saved.data.attached satisfies readonly string[];
-  // 422 is DOCUMENT_INVALID alone, so the status narrows to the issues detail.
-  if (!saved.ok && saved.status === 422) {
-    saved.error.details?.issues[0]?.path satisfies readonly (string | number)[] | undefined;
-  }
+  // The declared refusal is part of the typed result next to the framework failures.
+  if (!saved.ok) saved.error.code satisfies "DOCUMENT_INVALID" | (string & {});
   const read = await client.call("portfolio.document", {
     params: { tenantId: "acme", documentId: "doc-1" },
   });

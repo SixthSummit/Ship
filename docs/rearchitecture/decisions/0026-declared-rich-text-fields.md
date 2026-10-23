@@ -139,7 +139,8 @@ fourteen individual extension packages: measured with esbuild against the
 same ProseMirror, the configured StarterKit bundle is 389.1 KB raw /
 123.0 KB gzip / 105.4 KB brotli and the individual-package bundle 383.6 KB /
 121.7 KB / 104.5 KB, a 1.3 KB gzip difference for eleven fewer peer
-dependencies. The entrypoint's own code adds 5 KB raw to the package; the
+dependencies. The entrypoint's own code is 22.2 KB raw / 6.3 KB gzip / 5.5 KB
+brotli in the packed FESM bundle (`angular/.bundle-baseline.json`); the
 TipTap and ProseMirror bytes are the consumer's, paid only by applications
 that import `/rich-text`.
 
