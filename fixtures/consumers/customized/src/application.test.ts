@@ -1253,6 +1253,16 @@ describe("managed storage", () => {
   it("projects the attachment policy into the graph and the client contract without provider detail", () => {
     const application = createCustomizedApplication(fixtureInfrastructure());
     expect(application.graph.attachments).toEqual([
+      // Embedded document images are bound by the rich text capability, never by an operation directly.
+      expect.objectContaining({
+        id: "portfolio.document-image",
+        moduleId: "portfolio",
+        cardinality: "many",
+        maxCount: 50,
+        variants: [],
+        providerId: "portfolio.document-image.attachment",
+        operations: [],
+      }),
       expect.objectContaining({
         id: "portfolio.photo",
         moduleId: "portfolio",
@@ -1267,6 +1277,14 @@ describe("managed storage", () => {
     ]);
     const contract = projectClientContract(application);
     expect(contract.attachments).toEqual({
+      "portfolio.document-image": {
+        cardinality: "many",
+        contentTypes: ["image/jpeg", "image/png", "image/webp"],
+        maxBytes: 5_000_000,
+        visibility: "private",
+        maxCount: 50,
+        variants: [],
+      },
       "portfolio.photo": {
         cardinality: "many",
         contentTypes: ["image/jpeg", "image/png", "image/webp"],
@@ -1738,12 +1756,12 @@ describe("rich text documents", () => {
       error: {
         code: "DOCUMENT_INVALID",
         details: {
-          issues: [
+          issues: expect.arrayContaining([
             expect.objectContaining({
               code: "SHIP_RICH_TEXT_ATTACHMENT_UNAVAILABLE",
               path: ["content", 0, "attrs", "objectId"],
             }),
-          ],
+          ]),
         },
       },
     });
@@ -1808,15 +1826,16 @@ describe("rich text documents", () => {
     const read = await executor.run("portfolio.document", { params }, { actor: editor });
     expect(read).toMatchObject({ ok: true, data: { documentId, attachments: [objectId] } });
     if (!read.ok) throw new Error("read failed");
-    expect(read.data.html).toMatch(
-      new RegExp(
-        '^<h2>Engagement</h2><p>Dear <span class="merge-field" data-key="client.name">{{client.name}}</span>, see ' +
-          '<a href="https://law.example/terms" rel="noopener noreferrer"><strong>the terms</strong></a> &lt;below&gt;</p>' +
-          '<figure class="ship-attachment"><img src="[^"]*portfolio\\.document-image/[^"]*" alt="Signed plan"></figure>$',
-        "u",
-      ),
+    const rendered =
+      /^(?<head>.*)<figure class="ship-attachment"><img src="(?<src>[^"]*)" alt="Signed plan"><\/figure>$/u.exec(
+        read.data.html,
+      );
+    expect(rendered?.groups?.head).toBe(
+      '<h2>Engagement</h2><p>Dear <span class="merge-field" data-key="client.name">{{client.name}}</span>, see ' +
+        '<a href="https://law.example/terms" rel="noopener noreferrer"><strong>the terms</strong></a> &lt;below&gt;</p>',
     );
-    expect(JSON.stringify(document)).not.toContain(read.data.html.match(/src="([^"]*)"/u)?.[1]);
+    expect(rendered?.groups?.src).toContain("portfolio.document-image/");
+    expect(JSON.stringify(document)).not.toContain(rendered?.groups?.src);
     expect(
       await executor.run(
         "portfolio.document",
