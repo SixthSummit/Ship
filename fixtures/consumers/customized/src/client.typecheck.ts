@@ -63,7 +63,11 @@ async function verifyCredentialAuthContract(): Promise<void> {
     body: { email: "ada@example.test", password: "correct horse battery staple" },
   });
   if (signIn.ok) {
-    if (signIn.data.status === "signed-in") signIn.data.session.token satisfies string;
+    if (signIn.data.status === "signed-in") {
+      // The token is present for bearer sessions only; a cookie session carries none.
+      signIn.data.session.token satisfies string | undefined;
+      signIn.data.session.transport satisfies "bearer" | "cookie";
+    }
     if (signIn.data.status === "mfa-required") signIn.data.challenge.token satisfies string;
     if (signIn.data.status === "mfa-enrolment-required") {
       signIn.data.session.mfaState satisfies "none" | "pending-enrolment" | "verified";
