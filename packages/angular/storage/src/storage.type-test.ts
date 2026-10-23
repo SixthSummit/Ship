@@ -41,8 +41,8 @@ interface WithoutStorage {
   readonly 'gallery.attach': AppContract['gallery.attach'];
 }
 declare const bare: OperationClient<WithoutStorage>;
-// @ts-expect-error a contract without the storage module's operations cannot drive an attachment upload
 void createAttachmentUpload(
+  // @ts-expect-error a contract without the storage module's operations cannot drive an attachment upload
   bare,
   { attachment: 'gallery.photo', policy: { contentTypes: [], maxBytes: 1 } },
   {
