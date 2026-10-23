@@ -1,0 +1,83 @@
+{
+  "name": "@sixthsummit/ship-auth-credentials",
+  "version": "0.1.0",
+  "description": "First-party credential authentication for Ship applications: password accounts, email verification, TOTP MFA with recovery codes, active sessions with revocation, lockout and an auth audit log as declared operations and a kernel actor provider",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./drizzle": {
+      "types": "./lib/drizzle.d.ts",
+      "import": "./lib/drizzle.js",
+      "default": "./lib/drizzle.js"
+    },
+    "./console": {
+      "types": "./lib/console.d.ts",
+      "import": "./lib/console.js",
+      "default": "./lib/console.js"
+    },
+    "./conformance": {
+      "types": "./lib/conformance.d.ts",
+      "import": "./lib/conformance.js",
+      "default": "./lib/conformance.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/auth-credentials/src --exclude '**/*.integration.test.ts'",
+    "test:coverage": "vitest run --root ../.. packages/auth-credentials/src --exclude '**/*.integration.test.ts' --coverage"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-console": "workspace:^",
+    "@sixthsummit/ship-core": "workspace:^",
+    "@sixthsummit/ship-hono": "workspace:^",
+    "@sixthsummit/ship-mail": "workspace:^",
+    "drizzle-orm": "^0.45.2",
+    "zod": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@sixthsummit/ship-console": {
+      "optional": true
+    },
+    "drizzle-orm": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-console": "workspace:*",
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-hono": "workspace:*",
+    "@sixthsummit/ship-mail": "workspace:*",
+    "@sixthsummit/ship-testing": "workspace:^",
+    "@types/pg": "^8.15.6",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.16.3",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/auth-credentials"
+  }
+}
