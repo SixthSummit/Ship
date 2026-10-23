@@ -152,7 +152,8 @@ describe("customized portfolio HTTP application", () => {
       credentials: customizedCredentialAdapter(),
       actors: customizedActorResolver({ directory: sessions, store: credentialStore }),
     };
-    expect(() => createHonoAdapter(application, { auth })).toThrow(
+    const webhooks = { publicBaseUrl: "https://golden.example.test" };
+    expect(() => createHonoAdapter(application, { auth, webhooks })).toThrow(
       expect.objectContaining({
         code: "SHIP_HONO_OPTIONS_INVALID",
         message: expect.stringContaining("credentialSessionCsrfPolicy"),
@@ -161,6 +162,7 @@ describe("customized portfolio HTTP application", () => {
     expect(() =>
       createHonoAdapter(application, {
         auth,
+        webhooks,
         preValidationPolicies: { "*": credentialSessionCsrf([...DEFAULT_CORS_ORIGINS]) },
       }),
     ).not.toThrow();

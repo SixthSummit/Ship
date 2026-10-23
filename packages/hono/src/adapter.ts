@@ -107,8 +107,20 @@ export type HonoPreValidationPolicy = (
  */
 export const GLOBAL_PRE_VALIDATION_POLICY = "*";
 
-const POLICY_IDS = new WeakMap<HonoPreValidationPolicy, readonly string[]>();
+// A global symbol, not a module-level map, so a policy named by one copy of
+// this package is recognised by another (a consumer that ends up with two
+// ship-hono installs still gets the construction-time check).
+const POLICY_IDS = Symbol.for("sixthsummit.ship-hono.pre-validation-policy-ids");
 const POLICY_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/u;
+
+function readPolicyIds(policy: HonoPreValidationPolicy): readonly string[] {
+  const ids = Reflect.get(policy, POLICY_IDS);
+  return Array.isArray(ids) && ids.every((id) => typeof id === "string") ? ids : [];
+}
+
+function writePolicyIds(policy: HonoPreValidationPolicy, ids: readonly string[]): void {
+  Object.defineProperty(policy, POLICY_IDS, { value: Object.freeze([...ids]), enumerable: false });
+}
 
 /**
  * Names a pre-validation policy so a credential adapter's
@@ -129,7 +141,7 @@ export function definePreValidationPolicy(
     throw new TypeError("pre-validation policy must be a function");
   }
   const named: HonoPreValidationPolicy = (context) => policy(context);
-  POLICY_IDS.set(named, Object.freeze([...new Set([...preValidationPolicyIds(policy), id])]));
+  writePolicyIds(named, [...new Set([...readPolicyIds(policy), id])]);
   return named;
 }
 
@@ -137,7 +149,7 @@ export function definePreValidationPolicy(
 export function preValidationPolicyIds(
   policy: HonoPreValidationPolicy | readonly HonoPreValidationPolicy[] | undefined,
 ): readonly string[] {
-  return [...new Set(policyList(policy).flatMap((member) => POLICY_IDS.get(member) ?? []))];
+  return [...new Set(policyList(policy).flatMap(readPolicyIds))];
 }
 
 function policyList(
