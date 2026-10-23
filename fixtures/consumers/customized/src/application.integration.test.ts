@@ -891,15 +891,45 @@ describe("customized credential auth against PostgreSQL", () => {
     });
     expect(recovered.body).toMatchObject({ status: "signed-in", recoveryCodesRemaining: 9 });
 
-    // Revoke-all from one session invalidates every bearer on the next request.
+    // A browser signs in over the session cookie beside the bearer sessions.
+    clock.offsetMs += 60_000;
+    const cookieChallenge = await post("/auth/sign-in", { email: "ada@example.test", password });
+    const cookieSignIn = await http.request("/auth/totp/verify", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://portfolio.golden.test",
+      },
+      body: JSON.stringify({
+        challenge: cookieChallenge.body.challenge.token,
+        code: totpCode(enrol.body.secret, totpStep(clock.now())),
+        transport: "cookie",
+      }),
+    });
+    expect(cookieSignIn.status).toBe(200);
+    const cookieBody = await cookieSignIn.json();
+    expect(cookieBody.session).toMatchObject({ transport: "cookie", mfaState: "verified" });
+    const cookieHeader = cookieSignIn.headers
+      .getSetCookie()
+      .map((line) => line.split(";")[0])
+      .join("; ");
+    expect(cookieHeader).toMatch(/^ship_session=ship_s_[^;]+; ship_csrf=/u);
+    const meViaCookie = await http.request("/auth/me", { headers: { cookie: cookieHeader } });
+    expect(meViaCookie.status).toBe(200);
+    expect((await meViaCookie.json()).session.id).toBe(cookieBody.session.id);
+
+    // Revoke-all from one session invalidates every bearer and the cookie on the next request.
     expect((await post("/auth/sessions/revoke-all", {}, verified.body.session.token)).body).toEqual(
-      { revoked: 3 },
+      { revoked: 4 },
     );
     for (const bearer of [token, verified.body.session.token, recovered.body.session.token]) {
       expect(
         (await http.request("/auth/me", { headers: { authorization: `Bearer ${bearer}` } })).status,
       ).toBe(401);
     }
+    expect((await http.request("/auth/me", { headers: { cookie: cookieHeader } })).status).toBe(
+      401,
+    );
 
     // The audit rows are PostgreSQL rows and the console panel reads them behind console.operate.
     const rows = await database.db.select().from(authAuditEvents);

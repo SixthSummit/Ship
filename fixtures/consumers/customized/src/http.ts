@@ -1,14 +1,16 @@
 import {
   createInMemoryCredentialStore,
+  createRequestClientRegistry,
   credentialAuthRateLimitPolicies,
 } from "@sixthsummit/ship-auth-credentials";
-import { createHonoAdapter } from "@sixthsummit/ship-hono";
+import { assertCorsOptions, createHonoAdapter, type HonoCorsOptions } from "@sixthsummit/ship-hono";
 import { type CustomizedInfrastructure, createCustomizedApplication } from "./application.js";
 import {
   customizedActorResolver,
   customizedCredentialAdapter,
   type SessionDirectory,
 } from "./auth.js";
+import { credentialSessionCsrf } from "./credential-auth.js";
 
 /** Browser origins allowed to call the API with session cookies. */
 export const DEFAULT_CORS_ORIGINS = ["https://portfolio.golden.test"] as const;
@@ -23,9 +25,17 @@ export function createCustomizedHttpApplication(
     readonly authAttemptsPerMinute?: number;
   } = {},
 ) {
-  // The in-memory default must be one instance for the module and the resolver.
+  // The in-memory default must be one instance for the module and the resolver,
+  // and the client registry one instance for the module and the adapter.
   const credentialStore = infrastructure.credentialStore ?? createInMemoryCredentialStore();
-  const composed = { ...infrastructure, credentialStore };
+  const authClients = infrastructure.authClients ?? createRequestClientRegistry();
+  const composed = { ...infrastructure, credentialStore, authClients };
+  const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS;
+  // The CORS allowlist doubles as the CSRF policy's trusted origins, so the
+  // SAPI-760 guard judges it first: a wildcard with credentials is a CORS
+  // misconfiguration, reported as one.
+  const cors: HonoCorsOptions = { origin: corsOrigins, credentials: true };
+  assertCorsOptions(cors);
   const application = createCustomizedApplication(composed);
   return {
     application,
@@ -35,22 +45,27 @@ export function createCustomizedHttpApplication(
         actors: customizedActorResolver({
           directory: sessions,
           store: credentialStore,
-          ...(composed.authClients ? { clients: composed.authClients } : {}),
+          clients: authClients,
           ...(composed.clock ? { clock: composed.clock } : {}),
         }),
       },
-      // Rate limiting is the SAPI-476 pre-validation policy keyed by client ip;
-      // the account lockout policy guards the credential itself.
-      preValidationPolicies: credentialAuthRateLimitPolicies({
-        max: options.authAttemptsPerMinute ?? 20,
-        windowMs: 60_000,
-        ...(composed.clock ? { clock: composed.clock } : {}),
-      }),
+      preValidationPolicies: {
+        // The CSRF guard for cookie sessions runs on every operation after
+        // actor resolution; its trusted origins are the CORS allowlist.
+        "*": credentialSessionCsrf(corsOrigins),
+        // Rate limiting is the SAPI-476 pre-validation policy keyed by client ip;
+        // the account lockout policy guards the credential itself.
+        ...credentialAuthRateLimitPolicies({
+          max: options.authAttemptsPerMinute ?? 20,
+          windowMs: 60_000,
+          ...(composed.clock ? { clock: composed.clock } : {}),
+        }),
+      },
       // Providers sign the public URL; verification never trusts the incoming Host.
       webhooks: { publicBaseUrl: options.publicBaseUrl ?? "https://golden.example.test" },
       // One policy covers operation, streaming and webhook routes and their
       // preflights; declared error headers (Retry-After) are exposed automatically.
-      cors: { origin: options.corsOrigins ?? DEFAULT_CORS_ORIGINS, credentials: true },
+      cors,
     }),
   };
 }

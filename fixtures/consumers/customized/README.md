@@ -85,7 +85,10 @@ application exercises:
   over the seven package-owned tables (migration `0004_credential_auth`); the
   `sre` role must enrol in TOTP before its session reaches the console, and the
   console's auth-audit panel (extension seam) lists the audit rows an SRE
-  reads; and
+  reads; sessions run in both transports (SAPI-762): the browser signs in over
+  the `httpOnly` session cookie guarded by `credentialSessionCsrfPolicy()` under
+  the adapter's `"*"` pre-validation key with the CORS allowlist as the trusted
+  origins, native clients keep the bearer; and
 - constructor injection that selects the notification, outbox, webhook event,
   job backend, lock, storage, ledger and idempotency adapters at composition
   time and keeps unit tests network-free through the in-memory backends from

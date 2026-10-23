@@ -22,13 +22,23 @@ export const accountViewSchema = z.object({
 
 export type CredentialAccountView = z.infer<typeof accountViewSchema>;
 
+export const sessionTransportSchema = z.enum(["bearer", "cookie"]);
+
 export const sessionTokenSchema = z.object({
-  /** The bearer the client presents as `Authorization: Bearer <token>`. */
-  token: z.string(),
+  /**
+   * How the session travels. `bearer` carries `token` for the client to
+   * present as `Authorization: Bearer <token>`; `cookie` carries no token
+   * because the response installed it as an `httpOnly` cookie.
+   */
+  transport: sessionTransportSchema,
+  /** Present for `bearer` sessions only. */
+  token: z.string().optional(),
   id: z.string(),
   expiresAt: isoDate,
   mfaState: z.enum(["none", "pending-enrolment", "verified"]),
 });
+
+export type CredentialSessionTokenView = z.infer<typeof sessionTokenSchema>;
 
 export const sessionViewSchema = z.object({
   id: z.string(),

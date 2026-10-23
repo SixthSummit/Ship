@@ -2,6 +2,7 @@ import type { AnyMailer, DependencyToken } from "@sixthsummit/ship-core";
 import { defineModule, isMailer, valueProvider } from "@sixthsummit/ship-core";
 import type { MailSender } from "@sixthsummit/ship-mail";
 import type { RequestClientRegistry } from "./client.js";
+import { type CredentialSessionOptions, resolveSessionPolicy } from "./cookie.js";
 import { argon2idPasswordHasher, type PasswordHasher } from "./crypto/password.js";
 import { createSecretBox, type SecretKeyRing } from "./crypto/secretbox.js";
 import { InvalidCredentialAuthDefinitionError } from "./errors.js";
@@ -43,6 +44,15 @@ export interface CredentialAuthModuleOptions<
   /** Keys that seal TOTP secrets at rest. */
   readonly secrets: SecretKeyRing;
   readonly policies?: CredentialAuthPolicyOptions;
+  /**
+   * Session transport: bearer tokens in the body (the default), an
+   * `httpOnly` session cookie, or both. Cookie mode requires `clients`,
+   * shared with `credentialAuthentication()`, so an operation on the current
+   * session knows which transport authenticated the request, and the
+   * `credentialSessionCsrfPolicy()` registered under the adapter's `"*"`
+   * pre-validation key.
+   */
+  readonly sessions?: CredentialSessionOptions;
   /** Defaults to argon2id from `node:crypto` (`argon2idPasswordHasher()`). */
   readonly hasher?: PasswordHasher;
   /** Roles stamped on every registered account. Defaults to `[]`. */
@@ -66,6 +76,14 @@ export function defineCredentialAuthModule<
   const basePath = options.basePath ?? DEFAULT_CREDENTIAL_AUTH_BASE_PATH;
   const hasher = options.hasher ?? argon2idPasswordHasher();
   const appName = options.mailer.messages.verifyEmail.sample?.appName ?? id;
+  const sessions = resolveSessionPolicy(options.sessions);
+  if (sessions.cookie && options.clients === undefined) {
+    throw new InvalidCredentialAuthDefinitionError(
+      "SHIP_AUTH_OPTIONS_INVALID",
+      'credential auth sessions.transport "cookie" or "both" requires clients (createRequestClientRegistry(), shared with credentialAuthentication()) so sign-out, revoke and MFA confirmation know whether the request authenticated through the cookie',
+      { field: "clients" },
+    );
+  }
   const runtime: CredentialAuthRuntime = {
     id,
     basePath,
@@ -75,6 +93,7 @@ export function defineCredentialAuthModule<
     appName,
     links: options.links,
     policies: resolvePolicies(options.policies, appName),
+    sessions,
     hasher,
     secrets: createSecretBox(options.secrets),
     defaultRoles: Object.freeze([...(options.defaultRoles ?? [])]),
@@ -117,6 +136,8 @@ export function defineCredentialAuthModule<
     ...module,
     basePath,
     policies: runtime.policies,
+    /** The resolved session transports and cookie attributes; pass to `credentialAuthentication({ sessions })` and `credentialSessionCsrfPolicy({ auth })`. */
+    sessions: runtime.sessions,
     /** Bind this token (after importing the module) to read accounts, sessions and audit rows. */
     store: runtime.store,
     flows: Object.freeze({ ...account, ...session, ...password, ...mfa }),

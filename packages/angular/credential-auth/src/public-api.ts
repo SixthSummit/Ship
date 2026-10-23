@@ -31,7 +31,13 @@ export {
 export { ShipRecoveryCodeComponent } from './recovery-code.component';
 export {
   browserSessionStorage,
+  type CookieSessionOptions,
+  type CredentialSessionTransport,
+  cookieCredentialCapability,
+  cookieSessionStorage,
   memorySessionStorage,
+  readBrowserCookie,
+  type ShipCookieSessionStorage,
   type ShipCredentialSessionStorage,
 } from './session-storage';
 export {

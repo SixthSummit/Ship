@@ -14,7 +14,9 @@ export interface CredentialAccount {
 }
 
 export interface CredentialSessionToken {
-  readonly token: string;
+  /** `bearer` carries `token`; `cookie` carries none, the response installed the cookie. */
+  readonly transport: 'bearer' | 'cookie';
+  readonly token?: string;
   readonly id: string;
   readonly expiresAt: string;
   readonly mfaState: CredentialSessionMfaState;

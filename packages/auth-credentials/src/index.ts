@@ -6,6 +6,29 @@
  */
 export type { RequestClient, RequestClientRegistry } from "./client.js";
 export { createRequestClientRegistry, readRequestClient } from "./client.js";
+export type {
+  CredentialSessionCookieOptions,
+  CredentialSessionCookiePolicy,
+  CredentialSessionCsrfOptions,
+  CredentialSessionCsrfPolicyOptions,
+  CredentialSessionOptions,
+  CredentialSessionPolicy,
+  CredentialSessionTransport,
+} from "./cookie.js";
+export {
+  clearSessionCookie,
+  credentialSessionCsrfPolicy,
+  DEFAULT_CSRF_COOKIE_NAME,
+  DEFAULT_CSRF_HEADER,
+  DEFAULT_SESSION_COOKIE_NAME,
+  DEFAULT_SESSION_POLICY,
+  generateCsrfToken,
+  readCookie,
+  resolveSessionPolicy,
+  SAFE_HTTP_METHODS,
+  serializeCsrfCookie,
+  serializeSessionCookie,
+} from "./cookie.js";
 export * from "./crypto/index.js";
 export * from "./errors.js";
 export type {
@@ -79,6 +102,7 @@ export {
 export type {
   CredentialAccountView,
   CredentialAuditEventView,
+  CredentialSessionTokenView,
   CredentialSessionView,
   CredentialSignInOutput,
 } from "./views.js";

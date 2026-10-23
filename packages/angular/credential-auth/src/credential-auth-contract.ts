@@ -3,6 +3,7 @@ import type {
   CredentialAuditEvent,
   CredentialChallengePassed,
   CredentialMe,
+  CredentialSessionToken,
   CredentialSessionView,
   CredentialSignInResult,
   CredentialTotpEnrolment,
@@ -43,8 +44,13 @@ export interface CredentialAuthOperation<
 
 type NoInput = Record<string, never>;
 type Accepted = { readonly 202: { readonly accepted: true } };
-type Credentials = { readonly body: { readonly email: string; readonly password: string } };
-type ChallengeInput = { readonly body: { readonly challenge: string; readonly code: string } };
+type Transport = { readonly transport?: 'bearer' | 'cookie' };
+type Credentials = {
+  readonly body: { readonly email: string; readonly password: string } & Transport;
+};
+type ChallengeInput = {
+  readonly body: { readonly challenge: string; readonly code: string } & Transport;
+};
 type TokenInput = { readonly body: { readonly token: string } };
 
 /**
@@ -144,7 +150,13 @@ export interface ShipCredentialAuthContract {
     >;
     readonly 'auth.totp.confirm': CredentialAuthOperation<
       { readonly body: { readonly code: string } },
-      { readonly 200: { readonly recoveryCodes: readonly string[] } },
+      {
+        readonly 200: {
+          readonly recoveryCodes: readonly string[];
+          /** The rotated session when enrolment replaced a cookie session. */
+          readonly session?: CredentialSessionToken;
+        };
+      },
       | 'AUTH_MFA_INVALID_CODE'
       | 'AUTH_ACCOUNT_LOCKED'
       | 'AUTH_ACCOUNT_DISABLED'

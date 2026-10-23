@@ -3,7 +3,10 @@ import type {
   RequestClientRegistry,
   SecretKeyRing,
 } from "@sixthsummit/ship-auth-credentials";
-import { createInMemoryCredentialStore } from "@sixthsummit/ship-auth-credentials";
+import {
+  createInMemoryCredentialStore,
+  createRequestClientRegistry,
+} from "@sixthsummit/ship-auth-credentials";
 import { credentialAuthConsoleExtension } from "@sixthsummit/ship-auth-credentials/console";
 import { defineConsoleModule } from "@sixthsummit/ship-console";
 import { contractSchema } from "@sixthsummit/ship-contract/schema";
@@ -396,7 +399,12 @@ export interface CustomizedInfrastructure {
   readonly credentialStore?: CredentialStore;
   /** Key ring sealing TOTP secrets; defaults to the development ring. */
   readonly authSecrets?: SecretKeyRing;
-  /** Shared with the HTTP credential adapter so sessions and audit rows carry ip and user agent. */
+  /**
+   * Shared with the HTTP credential adapter so sessions and audit rows carry
+   * ip and user agent, and so cookie mode knows how a request authenticated.
+   * `createCustomizedHttpApplication` always supplies one; a direct
+   * composition gets a private registry.
+   */
   readonly authClients?: RequestClientRegistry;
   /** Tenants the scheduled digest job fans out to. */
   readonly scheduledTenants?: readonly string[];
@@ -670,7 +678,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
     store: infrastructure.credentialStore ?? createInMemoryCredentialStore(),
     mail: mail.dependency,
     ...(infrastructure.authSecrets ? { secrets: infrastructure.authSecrets } : {}),
-    ...(infrastructure.authClients ? { clients: infrastructure.authClients } : {}),
+    clients: infrastructure.authClients ?? createRequestClientRegistry(),
     clock,
   });
   // One retention sweep covers job runs and both outboxes; no outbox cleanup
