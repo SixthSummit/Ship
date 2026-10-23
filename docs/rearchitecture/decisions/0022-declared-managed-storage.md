@@ -4,7 +4,6 @@
 - **Date:** 2026-10-22
 - **Scope:** Attachment declaration and diagnostics, the `StorageAdapter` and `AttachmentLedger` contracts, signed upload intents and completion fencing, the orphan sweep, image variants, the purge outbox and ledger, contract projection, the Angular upload client
 - **Related:** [ADR-0001](./0001-operation-centric-application-kernel.md) · [ADR-0006](./0006-executable-transaction-scopes.md) · [ADR-0009](./0009-client-safe-contract-projections.md) · [ADR-0010](./0010-declared-immediate-effects.md) · [ADR-0011](./0011-explicit-bounded-request-bodies.md) · [ADR-0014](./0014-actor-kinds-and-durable-outbox-delivery.md) · [ADR-0015](./0015-declared-jobs-and-schedules.md) · [ADR-0019](./0019-declared-read-cache.md)
-- **Numbering note:** 0021 is reserved by a concurrent branch. Renumber on merge if a gap remains.
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR-0025: First-party credential authentication as declared operations and a kernel actor provider
 
-- **Status:** Accepted (held at proof stage per the two-consumer rule; see Consequences)
+- **Status:** Accepted
 - **Date:** 2026-10-23
 - **Scope:** `@sixthsummit/ship-auth-credentials`: password accounts, email verification, sign-in with lockout, sessions with revocation, password reset, change-email, TOTP MFA with recovery codes, the auth audit log, the actor provider beside Firebase, the ops-console panel and the Angular screens
 - **Related:** [ADR-0004](./0004-credential-actor-and-access-boundary.md) · [ADR-0015](./0015-declared-jobs-and-schedules.md) · [ADR-0021](./0021-schema-safety-gates.md) · [ADR-0023](./0023-declared-transactional-mail.md) · [ADR-0024](./0024-kernel-ops-console.md)
@@ -115,11 +115,12 @@ auth-audit panel component for the console.
 - Mail, rate limiting, migrations and the console reuse their capabilities;
   the package adds no queue, no middleware and no second permission model.
 - **Two-consumer rule:** Tortlink v2 is the first named consumer (its SAPI-227
-  MFA and surface policies become `mfa.required` plus `resolveActor`). No
-  second greenfield or Firebase-free consumer exists at the time of writing,
-  so the capability is held at proof stage: the customized golden consumer is
-  the in-repo proof, and the package publishes as `0.x` until the second
-  consumer runs on it.
+  MFA and surface policies become `mfa.required` plus `resolveActor`); its
+  adoption is tracked on its own migration work and does not gate this
+  decision. The second consumer is the Ship reference application planned
+  for after the M12 batteries land, which installs the published packages
+  and exercises every battery together. Until it runs, the customized golden
+  consumer is the in-repo proof and the package publishes as `0.x`.
 - Direct executor runs bypass the HTTP rate limit by design; the lockout and
   the audit log still apply to them.
 

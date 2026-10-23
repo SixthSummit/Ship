@@ -4,7 +4,6 @@
 - **Date:** 2026-09-18
 - **Scope:** Channel declarations, subscription authorization, the `RealtimeBackend` adapter contract, the Socket.IO + Redis gateway adapter, presence, backpressure, and metrics
 - **Related:** [ADR-0001](./0001-operation-centric-application-kernel.md) · [ADR-0004](./0004-credential-actor-and-access-boundary.md) · [ADR-0008](./0008-authorized-tenant-capabilities.md) · [ADR-0009](./0009-client-safe-contract-projections.md) · [ADR-0010](./0010-declared-immediate-effects.md)
-- **Numbering note:** 0014 (actor kinds and outbox) has merged; 0015 (jobs) and 0016 (streaming) are reserved by concurrent branches. Renumber on merge if a gap remains.
 
 ## Context
 

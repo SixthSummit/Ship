@@ -4,7 +4,6 @@
 - **Date:** 2026-10-23
 - **Scope:** Rich text field declaration and extensions, the stored document model, the base allowlist and its version, server-side rendering and the plain-text projection, embedded attachment reconciliation and purge, the migration hook, contract projection, the Angular editor
 - **Related:** [ADR-0009](./0009-client-safe-contract-projections.md) · [ADR-0011](./0011-explicit-bounded-request-bodies.md) · [ADR-0021](./0021-schema-safety-gates.md) · [ADR-0022](./0022-declared-managed-storage.md)
-- **Numbering note:** 0025 is reserved by the concurrent credential authentication branch. Renumber on merge if a gap remains.
 
 ## Context
 
