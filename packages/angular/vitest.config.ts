@@ -15,6 +15,8 @@ export default defineConfig({
       ).pathname,
       '@sixthsummit/ship-angular/upload': new URL('./upload/src/public-api.ts', import.meta.url)
         .pathname,
+      '@sixthsummit/ship-angular/storage': new URL('./storage/src/public-api.ts', import.meta.url)
+        .pathname,
     },
   },
   test: {
@@ -48,6 +50,7 @@ export default defineConfig({
       'push/src/**/*.test.ts',
       'console/src/**/*.test.ts',
       'storage/src/**/*.test.ts',
+      'rich-text/src/**/*.test.ts',
       'realtime/src/**/*.spec.ts',
       'forms/src/**/*.test.ts',
       'forms/src/**/*.spec.ts',
@@ -79,6 +82,7 @@ export default defineConfig({
         'push/src/**/*.ts',
         'console/src/**/*.ts',
         'storage/src/**/*.ts',
+        'rich-text/src/**/*.ts',
         'forms/src/**/*.ts',
         'testing/src/**/*.ts',
         'cli/migrations/**/*.js',
@@ -136,6 +140,9 @@ export default defineConfig({
         'console/src/**/*.test.ts',
         'console/src/**/*.type-test.ts',
         'console/src/public-api.ts',
+        'rich-text/src/**/*.test.ts',
+        'rich-text/src/**/*.type-test.ts',
+        'rich-text/src/public-api.ts',
         'forms/src/**/*.spec.ts',
         'forms/src/**/*.test.ts',
         'forms/src/**/*.type-test.ts',

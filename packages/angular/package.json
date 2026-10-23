@@ -17,8 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage && pnpm test:query-generator:coverage",
-    "lint": "eslint src/ operations/src/ ship-api/src/ hono-v4/src/ legacy-rest/src/ auth/src/ firebase-auth/src/ download/src/ upload/src/ stream/src/ socket/src/ realtime/src/ push/src/ storage/src/ console/src/ forms/src/ testing/src/ query/src/",
-    "type-check": "tsc --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.ship-api.json && tsc -p tsconfig.hono-v4.json && tsc -p tsconfig.legacy-rest.json && tsc -p tsconfig.auth.json && tsc -p tsconfig.transports.json && tsc -p tsconfig.realtime.json && tsc -p tsconfig.query.json && tsc -p tsconfig.push.json && tsc -p tsconfig.storage.json && tsc -p tsconfig.console.json",
+    "lint": "eslint src/ operations/src/ ship-api/src/ hono-v4/src/ legacy-rest/src/ auth/src/ firebase-auth/src/ download/src/ upload/src/ stream/src/ socket/src/ realtime/src/ push/src/ storage/src/ console/src/ rich-text/src/ forms/src/ testing/src/ query/src/",
+    "type-check": "tsc --noEmit && tsc -p tsconfig.type-tests.json && tsc -p tsconfig.ship-api.json && tsc -p tsconfig.hono-v4.json && tsc -p tsconfig.legacy-rest.json && tsc -p tsconfig.auth.json && tsc -p tsconfig.transports.json && tsc -p tsconfig.realtime.json && tsc -p tsconfig.query.json && tsc -p tsconfig.push.json && tsc -p tsconfig.storage.json && tsc -p tsconfig.console.json && tsc -p tsconfig.rich-text.json",
     "test:query-generator:coverage": "vitest run --config vitest.query-generator.config.ts --coverage"
   },
   "keywords": [
@@ -113,6 +113,10 @@
     "./storage": {
       "types": "./lib/storage/index.d.ts",
       "default": "./lib/fesm2022/sixthsummit-ship-angular-storage.mjs"
+    },
+    "./rich-text": {
+      "types": "./lib/rich-text/index.d.ts",
+      "default": "./lib/fesm2022/sixthsummit-ship-angular-rich-text.mjs"
     }
   },
   "files": [
@@ -135,18 +139,18 @@
     "tslib": "^2.8.1"
   },
   "peerDependencies": {
-    "@sixthsummit/ship-contract": "^1.1.0 || ^1.2.0-alpha-20260924191925",
     "@angular/common": "^20.0.0",
     "@angular/core": "^20.0.0",
     "@angular/fire": "^20.0.0",
     "@angular/forms": "^20.0.0",
     "@angular/router": "^20.0.0",
+    "@angular/service-worker": "^20.0.0",
+    "@sixthsummit/ship-contract": "^1.1.0 || ^1.2.0-alpha-20260924191925",
+    "@tanstack/angular-query-experimental": "5.104.1",
     "firebase": "^11.10.0",
     "rxjs": ">=7.0.0",
     "socket.io-client": "^4.8.0",
-    "zod": "^3.23.0 || ^4.0.0",
-    "@tanstack/angular-query-experimental": "5.104.1",
-    "@angular/service-worker": "^20.0.0"
+    "zod": "^3.23.0 || ^4.0.0"
   },
   "peerDependenciesMeta": {
     "@sixthsummit/ship-contract": {
@@ -169,6 +173,15 @@
     },
     "@angular/service-worker": {
       "optional": true
+    },
+    "@tiptap/core": {
+      "optional": true
+    },
+    "@tiptap/pm": {
+      "optional": true
+    },
+    "@tiptap/starter-kit": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -182,21 +195,24 @@
     "@angular/forms": "20.3.34",
     "@angular/platform-browser": "20.3.34",
     "@angular/router": "20.3.34",
+    "@angular/service-worker": "20.3.34",
     "@sixthsummit/ship-contract": "workspace:*",
+    "@tanstack/angular-query-experimental": "5.104.1",
+    "@tiptap/core": "3.32.0",
+    "@tiptap/pm": "3.32.0",
+    "@tiptap/starter-kit": "3.32.0",
     "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^5.0.3",
+    "eslint": "^10.12.0",
     "firebase": "^11.10.0",
     "jsdom": "^30.1.2",
     "ng-packagr": "^20.3.2",
     "rxjs": "^7.8.2",
     "socket.io-client": "^4.8.4",
     "typescript": "~5.9.3",
-    "vitest": "^5.0.3",
-    "zod": "^3.25.76",
-    "@tanstack/angular-query-experimental": "5.104.1",
-    "@vitest/coverage-v8": "^5.0.3",
-    "eslint": "^10.12.0",
     "typescript-eslint": "^8.71.1",
-    "@angular/service-worker": "20.3.34"
+    "vitest": "^5.0.3",
+    "zod": "^3.25.76"
   },
   "engines": {
     "node": ">=20"
