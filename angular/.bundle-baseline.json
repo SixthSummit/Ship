@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T18:52:55.564Z",
+  "generatedAt": "2026-10-23T20:37:51.750Z",
   "measurements": [
     {
       "name": "@sixthsummit/ship-angular (runtime)",
@@ -200,16 +200,16 @@
     {
       "name": "@sixthsummit/ship-angular/credential-auth (runtime)",
       "fileCount": 1,
-      "raw": 37485,
-      "gz": 6716,
-      "br": 5656
+      "raw": 42481,
+      "gz": 8216,
+      "br": 6920
     },
     {
       "name": "@sixthsummit/ship-angular/credential-auth (types)",
       "fileCount": 1,
-      "raw": 23754,
-      "gz": 4963,
-      "br": 4270
+      "raw": 28624,
+      "gz": 6346,
+      "br": 5435
     },
     {
       "name": "@sixthsummit/ship-angular/rich-text (runtime)",
@@ -283,8 +283,8 @@
     }
   ],
   "totals": {
-    "raw": 773810,
-    "gz": 187787,
-    "br": 160214
+    "raw": 783676,
+    "gz": 190670,
+    "br": 162643
   }
 }

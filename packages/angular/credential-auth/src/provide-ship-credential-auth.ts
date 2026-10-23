@@ -10,7 +10,10 @@ export const SHIP_CREDENTIAL_AUTH = new InjectionToken<ShipCredentialAuth>('SHIP
  *
  * @example
  * ```ts
- * provideShipCredentialAuth({ client: () => injectShipClient(APP_CLIENT), storage: browserSessionStorage() });
+ * // Cookie mode (the default): the session lives in the server's httpOnly cookie.
+ * provideShipCredentialAuth({ client: () => injectShipClient(APP_CLIENT) });
+ * // Bearer mode for a native shell:
+ * provideShipCredentialAuth({ client: () => injectShipClient(APP_CLIENT), storage: memorySessionStorage() });
  * ```
  */
 export function provideShipCredentialAuth(options: ShipCredentialAuthOptions): Provider {
