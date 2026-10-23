@@ -5,12 +5,16 @@ import {
   type UnitOfWork,
   webhookSecret,
 } from "@sixthsummit/ship-core";
+import { createInMemoryMailLedger, logMailProvider } from "@sixthsummit/ship-mail";
+import { defineStoragePurgeOutbox } from "@sixthsummit/ship-storage";
 import {
+  createInMemoryAttachmentLedger,
   createInMemoryIdempotencyStore,
   createInMemoryJobBackend,
   createInMemoryLockProvider,
   createInMemoryOutbox,
   createInMemoryRealtimeBackend,
+  createInMemoryStorageAdapter,
   createInMemoryWebhookEventStore,
 } from "@sixthsummit/ship-testing";
 import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
@@ -61,6 +65,11 @@ function infrastructure(): CustomizedInfrastructure {
     webhookSecrets: { stripe: webhookSecret("whsec_fixture"), twilio: webhookSecret("auth-token") },
     jobs: createInMemoryJobBackend(),
     locks: createInMemoryLockProvider(),
+    storage: createInMemoryStorageAdapter(),
+    attachmentLedger: createInMemoryAttachmentLedger(),
+    purgeOutbox: createInMemoryOutbox(defineStoragePurgeOutbox()),
+    mailProvider: logMailProvider(),
+    mailLedger: createInMemoryMailLedger(),
     scheduledTenants: ["acme"],
   };
 }
