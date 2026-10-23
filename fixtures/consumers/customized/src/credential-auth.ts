@@ -38,7 +38,7 @@ export const authMailer = defineCredentialAuthMailer({
 });
 
 /**
- * Tortlink-shaped policy: the `sre` role (the one holding `console.operate`)
+ * Operator-grade policy: the `sre` role (the one holding `console.operate`)
  * must enrol in TOTP before its session is usable; everyone else may enrol.
  * Lockout, session and token policies are configuration, not code.
  */

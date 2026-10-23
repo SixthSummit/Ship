@@ -99,8 +99,8 @@ answers an empty `302` with a `Location` header after verifying signed state
 and exchanging a provider code. Projecting that route as a `200` JSON operation
 and rewriting it to a `302` in the adapter would make the generated contract and
 OpenAPI dishonest, and the strict query policy rejected the mixed scalar and
-bracket query parameters such callbacks receive (SAPI-653, Vault Drive
-Phase 4).
+bracket query parameters such callbacks receive (SAPI-653, the first
+consumer's OAuth callback).
 
 ### Decision
 
@@ -163,7 +163,7 @@ failure.
 
 - A redirect is a declared, validated operation result rather than an adapter
   rewrite, so direct execution, HTTP, OpenAPI and clients agree on it.
-- The consumer gate remains the Vault Drive calendar callback (SAPI-138,
+- The consumer gate remains the first consumer's calendar callback (SAPI-138,
   SAPI-443): mapping it behind a default-off selector with exact
   selected-versus-compat `Location`/status/header parity and replay safety is
   consumer work, not part of this addendum.

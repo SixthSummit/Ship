@@ -1,8 +1,8 @@
 # ADR 0013: Primitive form projection and retained joint artifacts
 
-- Status: Accepted
-- Date: 2026-09-08
-- Related: ADR 0009; ShipAngular ADR 0003
+- **Status:** Accepted
+- **Date:** 2026-09-08
+- **Related:** [ADR-0009](./0009-client-safe-contract-projections.md) · ShipAngular ADR 0003
 
 ## Context
 

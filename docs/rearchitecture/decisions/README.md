@@ -18,7 +18,7 @@ Architecture decision records capture consequential decisions for the ShipAPI re
 | ADR | Status | Decision |
 |---|---|---|
 | [0001](./0001-operation-centric-application-kernel.md) | Accepted | Adopt an operation-centric application kernel as the redesign direction |
-| [0002](./0002-pnpm-first-defer-turborepo.md) | Accepted | Adopt pnpm for workspace correctness; add Turborepo only from measured need |
+| [0002](./0002-pnpm-first-defer-turborepo.md) | Superseded | Adopt pnpm for workspace correctness; add Turborepo only from measured need |
 | [0003](./0003-operation-results-and-errors.md) | Accepted | Use status-indexed success schemas and declared error codes |
 | [0004](./0004-credential-actor-and-access-boundary.md) | Accepted | Separate transport credentials, actor resolution, and operation access |
 | [0005](./0005-http-wire-and-representation-contract.md) | Accepted | Project one stable HTTP wire and representation contract |
@@ -41,5 +41,5 @@ Architecture decision records capture consequential decisions for the ShipAPI re
 | [0022](./0022-declared-managed-storage.md) | Accepted | Declare managed storage as an attachment capability with provider adapters, signed intents, lazy variants and durable purge |
 | [0023](./0023-declared-transactional-mail.md) | Accepted | Declare mailers with typed messages and pure HTML + text templates, deliver every send as a job run with a per-key ledger claim, provider adapters, a non-production allowlist interceptor and development previews; contracts project message names only |
 | [0024](./0024-kernel-ops-console.md) | Accepted | Compose the operator console as declared operations behind the dedicated `console.operate` permission over optional adapter introspection |
-| [0025](./0025-first-party-credential-auth.md) | Accepted (proof stage) | First-party credential authentication as declared operations, a kernel actor provider beside Firebase, package-owned tables, policies as configuration and the console auth-audit panel |
+| [0025](./0025-first-party-credential-auth.md) | Accepted | First-party credential authentication as declared operations, a kernel actor provider beside Firebase, package-owned tables, policies as configuration and the console auth-audit panel |
 | [0026](./0026-declared-rich-text-fields.md) | Accepted | Declare rich text fields as a versioned, kernel-owned document allowlist stored as ProseMirror JSON, rendered server-side through one walker, widened only by named extensions, with embedded images as managed attachments purged with the owning record and an Angular editor built from the same manifest policy |

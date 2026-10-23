@@ -11,7 +11,7 @@ listed, it had no consumer-facing migration. For the full v3 → v4 move, see
 **Who's affected:** kernel-line apps with a browser client on another origin.
 Until now the adapter emitted no `Access-Control-*` headers and every app wired
 `hono/cors` by hand (the Ship project template's `apps/api/src/http.ts`
-workaround); compat-tier apps (Acclivity, Axis) already had `createApp({ cors })`.
+workaround); compat-tier apps already had `createApp({ cors })`.
 
 **What you change.**
 
