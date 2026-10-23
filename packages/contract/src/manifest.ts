@@ -33,6 +33,12 @@ export interface ClientContract {
   readonly channels?: Readonly<Record<string, ClientContractChannel>>;
   /** Declared managed attachments keyed by id. Carries no provider detail. Absent in pre-storage manifests. */
   readonly attachments?: Readonly<Record<string, ClientContractAttachment>>;
+  /**
+   * Declared mailers keyed by id, with message names only. Templates, sender
+   * addresses and payload schemas never reach the client. Absent when the
+   * application declares no mailer, so older manifests keep their fingerprint.
+   */
+  readonly mailers?: Readonly<Record<string, ClientContractMailer>>;
 }
 
 /** The upload policy a client validates against before it asks for a signed intent. */
@@ -44,12 +50,6 @@ export interface ClientContractAttachment {
   readonly maxCount: number;
   /** Declared variant names; generation is lazy and server-side. */
   readonly variants: readonly string[];
-  /**
-   * Declared mailers keyed by id, with message names only. Templates, sender
-   * addresses and payload schemas never reach the client. Absent when the
-   * application declares no mailer, so older manifests keep their fingerprint.
-   */
-  readonly mailers?: Readonly<Record<string, ClientContractMailer>>;
 }
 
 export interface ClientContractMailer {

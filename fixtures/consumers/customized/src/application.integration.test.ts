@@ -680,6 +680,8 @@ describe("customized managed storage against PostgreSQL", () => {
       attachmentLedger: createAttachmentLedger(database.db),
       purgeOutbox: createStoragePurgeOutbox(database.db),
       unattachedGraceMs: 60_000,
+      mailProvider: logMailProvider(),
+      mailLedger: createMailLedger(database.db),
       scheduledTenants: ["acme"],
     };
     const { application, http } = createCustomizedHttpApplication(infrastructure, sessions);
