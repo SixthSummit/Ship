@@ -217,6 +217,15 @@ For every data-backed slice:
 
 Never treat an empty generated diff alone as data-safety evidence.
 
+Once the Drizzle mappings exist, put the generated migrations under
+`@sixthsummit/ship-schema-lint` ([schema safety](./v4/features/schema-safety.md)):
+`ship-schema-lint check` refuses column drops, renames, retypes, NOT NULL
+without a default, non-concurrent indexes and backfills inside DDL and prints
+the safe recipe; `ship-schema-lint release` is the gated release step that
+replaces boot-time `migrate()`; the committed `schema.snapshot.json` fails CI
+when the physical schema drifts. Set `baseline` to the last historical
+migration so the linter starts with the first migration you write on v4.
+
 ## 6. Make effects visible
 
 A write operation may update the database in one unit of work. Email, webhooks,

@@ -45,6 +45,7 @@ export default defineConfig({
             { label: "Typed client", slug: "cross-framework/typed-client" },
             { label: "Public API surface", slug: "public-api-surface" },
             { label: "Versioning", slug: "versioning" },
+            { label: "Schema safety", slug: "features/schema-safety" },
           ],
         },
         {

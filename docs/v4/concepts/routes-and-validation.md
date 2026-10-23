@@ -151,8 +151,79 @@ transaction; use a durable outbox capability and dispatch separately.
 
 Success outputs are indexed by status. Return the declared default body or use
 `respond(status, body, { headers })` for another declared status or metadata.
-HTTP representations support JSON, text, binary, `204`, safe response headers,
-content type, content disposition, ETag, retry metadata, and request ID.
+HTTP representations support JSON, text, binary, `204`, declared redirects,
+safe response headers, content type, content disposition, ETag, retry
+metadata, and request ID.
+
+### Declared redirects
+
+An operation whose HTTP answer is a redirect declares it on the transport and
+on its output. The result has no body; the only representation is the status
+and a validated `Location` header:
+
+```ts
+const oauthCallback = defineOperation({
+  id: "calendar.oauth-callback",
+  transport: http.get("/calendar/oauth/google/callback", {
+    response: "redirect",
+    queryParsing: "first-value",
+  }),
+  input: { query: z.object({ code: z.string().optional(), state: z.string().optional() }) },
+  output: { 302: z.undefined() },
+  successStatus: 302,
+  errors: [],
+  access: publicAccess(),
+  transaction: "none",
+  dependencies: { oauth: oauthStateService },
+  handler: async ({ input, services }) => {
+    const verified = await services.oauth.verifyCallback(input.query);
+    return respond(302, undefined, {
+      headers: {
+        Location: verified.ok
+          ? `${FRONTEND}/settings/calendar?connected=true`
+          : `${FRONTEND}/settings/calendar?error=${verified.reason}`,
+      },
+    });
+  },
+});
+```
+
+The rules the compiler, executor, and Hono adapter enforce together:
+
+- `response: "redirect"` permits only `301`, `302`, `303`, `307`, and `308`
+  output statuses, and a 3xx output is rejected on any other transport.
+  `successStatus` must name one of the declared redirect statuses.
+- Every redirect output schema must accept `undefined` and produce
+  `undefined` (`z.undefined()` is the canonical declaration). A schema that
+  requires or produces a body is a definition-time
+  `SHIP_OPERATION_OUTPUT_INVALID` diagnostic; an asynchronous schema is checked
+  on every result instead.
+- The handler returns `respond(status, undefined, { headers: { Location } })`.
+  A terse return, a body, or a missing `Location` is an output failure, which
+  HTTP answers as the safe `500` envelope without a `Location` header.
+- `Location` must be a root-relative path (`/done`) or an absolute `http(s)`
+  URL. Protocol-relative values (`//evil.example`, `/\evil.example`),
+  embedded credentials, other schemes (`javascript:`, `mailto:`), leading or
+  trailing whitespace, and control characters are rejected before a response
+  exists; CR/LF is rejected by `respond()` itself, so header injection cannot
+  reach the wire.
+- Redirects carry no content type and no cache headers. Safe operation
+  headers such as `Cache-Control: no-store` pass through; reserved headers are
+  still rejected. `X-Request-Id` is always present.
+- A failure redirect is a handler decision: when a callback must send the
+  browser back to the application with an error, return the redirect with the
+  error encoded in `Location`. Declared `operationFailure()` results, framework
+  validation, authentication, and authorization failures remain the JSON error
+  envelope and never carry a `Location` header.
+
+Direct execution returns the same shape: `{ ok: true, status: 302, data:
+undefined, headers: { location } }`. The client contract and OpenAPI show an
+empty 3xx response with a required `Location` header, and the Fetch client
+uses `redirect: "manual"` so a capable runtime reads `result.metadata.location`
+while a browser that hides the redirect receives `SHIP_CLIENT_REDIRECT_OPAQUE`
+instead of an invented status. See [Typed client](../cross-framework/typed-client.md)
+for the client rules and [ADR-0005](../../rearchitecture/decisions/0005-http-wire-and-representation-contract.md)
+for the wire decision.
 
 Expected application failures use `operationError()` and
 `operationFailure()`. Undeclared throws become a safe internal failure and do not

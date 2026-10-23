@@ -21,6 +21,7 @@ const PACKAGE_DIRECTORIES = [
   "mail",
   "webhooks",
   "jobs-bullmq",
+  "schema-lint",
   "mcp-server",
   "claude-plugin",
   "core",

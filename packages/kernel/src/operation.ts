@@ -159,6 +159,39 @@ export function isExplicitOperationResponse(
   return typeof value === "object" && value !== null && Reflect.get(value, responseMarker) === true;
 }
 
+/**
+ * A declared redirect answers with no entity body, so every redirect output
+ * schema must accept `undefined` and produce `undefined`. The check runs at
+ * definition time for synchronous Standard Schemas (the common case); a schema
+ * that validates asynchronously or throws is left to the executor, which
+ * enforces the same rule on every result.
+ */
+function assertRedirectOutputsAreBodiless(
+  output: Record<string, RuntimeSchema>,
+  operationId: string | undefined,
+): void {
+  for (const [status, schema] of Object.entries(output)) {
+    let result: unknown;
+    try {
+      result = schema["~standard"].validate(undefined);
+    } catch {
+      continue;
+    }
+    if (typeof result !== "object" || result === null) continue;
+    if (typeof Reflect.get(result, "then") === "function") continue;
+    const issues = Reflect.get(result, "issues");
+    const producesBody = issues === undefined && Reflect.get(result, "value") !== undefined;
+    if ((issues !== undefined && issues !== null) || producesBody) {
+      fail(
+        "SHIP_OPERATION_OUTPUT_INVALID",
+        `redirect output ${status} must declare a bodiless schema that accepts undefined (for example z.undefined())`,
+        operationId,
+        "output",
+      );
+    }
+  }
+}
+
 function normalizeResponseHeaders(
   headers: Readonly<Record<string, string>> | undefined,
 ): Readonly<Record<string, string>> {
@@ -520,6 +553,8 @@ function assertOperationDefinition(
       "successStatus",
     );
   }
+
+  if (redirect) assertRedirectOutputsAreBodiless(output, operationId);
 
   assertErrorCodes(Reflect.get(definition, "errors"), operationId);
 
