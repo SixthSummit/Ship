@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-22T22:30:31.131Z",
+  "generatedAt": "2026-10-23T17:43:32.664Z",
   "measurements": [
     {
       "name": "@sixthsummit/ship-angular (runtime)",
@@ -18,30 +18,30 @@
     {
       "name": "@sixthsummit/ship-angular/operations (runtime)",
       "fileCount": 1,
-      "raw": 40442,
-      "gz": 9384,
-      "br": 8140
+      "raw": 40538,
+      "gz": 9402,
+      "br": 8158
     },
     {
       "name": "@sixthsummit/ship-angular/operations (types)",
       "fileCount": 1,
-      "raw": 34797,
-      "gz": 7994,
-      "br": 6909
+      "raw": 35039,
+      "gz": 8091,
+      "br": 6988
     },
     {
       "name": "@sixthsummit/ship-angular/ship-api (runtime)",
       "fileCount": 1,
-      "raw": 12037,
-      "gz": 3083,
-      "br": 2615
+      "raw": 12458,
+      "gz": 3182,
+      "br": 2700
     },
     {
       "name": "@sixthsummit/ship-angular/ship-api (types)",
       "fileCount": 1,
-      "raw": 3256,
-      "gz": 1048,
-      "br": 843
+      "raw": 3288,
+      "gz": 1054,
+      "br": 850
     },
     {
       "name": "@sixthsummit/ship-angular/query (runtime)",
@@ -170,6 +170,20 @@
       "br": 1020
     },
     {
+      "name": "@sixthsummit/ship-angular/storage (runtime)",
+      "fileCount": 1,
+      "raw": 5417,
+      "gz": 1741,
+      "br": 1503
+    },
+    {
+      "name": "@sixthsummit/ship-angular/storage (types)",
+      "fileCount": 1,
+      "raw": 6660,
+      "gz": 1855,
+      "br": 1550
+    },
+    {
       "name": "@sixthsummit/ship-angular/console (runtime)",
       "fileCount": 1,
       "raw": 54096,
@@ -184,18 +198,18 @@
       "br": 4426
     },
     {
-      "name": "@sixthsummit/ship-angular/storage (runtime)",
+      "name": "@sixthsummit/ship-angular/credential-auth (runtime)",
       "fileCount": 1,
-      "raw": 5417,
-      "gz": 1741,
-      "br": 1503
+      "raw": 37485,
+      "gz": 6716,
+      "br": 5656
     },
     {
-      "name": "@sixthsummit/ship-angular/storage (types)",
+      "name": "@sixthsummit/ship-angular/credential-auth (types)",
       "fileCount": 1,
-      "raw": 6660,
-      "gz": 1855,
-      "br": 1550
+      "raw": 23754,
+      "gz": 4963,
+      "br": 4270
     },
     {
       "name": "@sixthsummit/ship-angular/forms (runtime)",
@@ -255,8 +269,8 @@
     }
   ],
   "totals": {
-    "raw": 679175,
-    "gz": 166429,
-    "br": 141999
+    "raw": 741205,
+    "gz": 178328,
+    "br": 152114
   }
 }
