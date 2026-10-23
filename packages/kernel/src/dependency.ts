@@ -10,7 +10,8 @@ export type DependencyScope =
   | "idempotency"
   | "cache"
   | "job"
-  | "attachment";
+  | "attachment"
+  | "rich-text";
 export type OutboxDependencyRole = "writer" | "backend";
 export type JobDependencyRole = "backend" | "enqueue" | "lock";
 
@@ -122,7 +123,8 @@ export function isDependencyToken(value: unknown): value is DependencyToken {
     scope !== "idempotency" &&
     scope !== "cache" &&
     scope !== "job" &&
-    scope !== "attachment"
+    scope !== "attachment" &&
+    scope !== "rich-text"
   ) {
     return false;
   }
