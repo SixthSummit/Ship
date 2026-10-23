@@ -35,6 +35,7 @@ const PACKAGE_DIRECTORIES = new Map([
   ["@sixthsummit/ship-storage", "storage"],
   ["@sixthsummit/ship-console", "console"],
   ["@sixthsummit/ship-auth-credentials", "auth-credentials"],
+  ["@sixthsummit/ship-rich-text", "rich-text"],
 ]);
 
 // Shared runtimes the consumer imports next to the Ship adapters (docs/VERSIONING.md); each

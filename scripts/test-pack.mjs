@@ -20,6 +20,7 @@ const PACKAGE_DIRECTORIES = [
   "realtime-socketio",
   "push",
   "mail",
+  "rich-text",
   "webhooks",
   "jobs-bullmq",
   "schema-lint",

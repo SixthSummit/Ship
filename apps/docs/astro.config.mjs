@@ -78,6 +78,7 @@ export default defineConfig({
             { label: "Idempotency", slug: "features/idempotency" },
             { label: "Webhooks", slug: "features/webhooks" },
             { label: "Transactional mail", slug: "features/mail" },
+            { label: "Rich text fields", slug: "features/rich-text" },
             { label: "File uploads", slug: "features/uploads" },
             { label: "Health checks", slug: "features/health-checks" },
             { label: "JWT sessions", slug: "features/sessions" },

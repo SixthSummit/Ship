@@ -46,6 +46,11 @@ const entrypoints = [
     file: 'sixthsummit-ship-angular-credential-auth',
     types: 'credential-auth/index.d.ts',
   },
+  {
+    name: './rich-text',
+    file: 'sixthsummit-ship-angular-rich-text',
+    types: 'rich-text/index.d.ts',
+  },
   { name: './forms', file: 'sixthsummit-ship-angular-forms', types: 'forms/index.d.ts' },
   { name: './testing', file: 'sixthsummit-ship-angular-testing', types: 'testing/index.d.ts' },
   { name: './hono-v4', file: 'sixthsummit-ship-angular-hono-v4', types: 'hono-v4/index.d.ts' },

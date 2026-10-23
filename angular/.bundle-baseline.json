@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T17:43:32.664Z",
+  "generatedAt": "2026-10-23T18:52:55.564Z",
   "measurements": [
     {
       "name": "@sixthsummit/ship-angular (runtime)",
@@ -212,6 +212,20 @@
       "br": 4270
     },
     {
+      "name": "@sixthsummit/ship-angular/rich-text (runtime)",
+      "fileCount": 1,
+      "raw": 22687,
+      "gz": 6485,
+      "br": 5598
+    },
+    {
+      "name": "@sixthsummit/ship-angular/rich-text (types)",
+      "fileCount": 1,
+      "raw": 9918,
+      "gz": 2974,
+      "br": 2502
+    },
+    {
       "name": "@sixthsummit/ship-angular/forms (runtime)",
       "fileCount": 1,
       "raw": 6874,
@@ -269,8 +283,8 @@
     }
   ],
   "totals": {
-    "raw": 741205,
-    "gz": 178328,
-    "br": 152114
+    "raw": 773810,
+    "gz": 187787,
+    "br": 160214
   }
 }

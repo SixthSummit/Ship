@@ -9,6 +9,8 @@ import type { AnyProvider } from "./provider.js";
 import { isProvider } from "./provider.js";
 import type { AnyChannel } from "./realtime.js";
 import { isChannel } from "./realtime.js";
+import type { AnyRichText } from "./rich-text.js";
+import { isRichText } from "./rich-text.js";
 
 const MODULE_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
 
@@ -32,6 +34,8 @@ export interface ModuleDefinition<
   readonly attachments?: TAttachments;
   /** Mailers owned by this module; ids are namespaced by the module id. */
   readonly mailers?: readonly AnyMailer[];
+  /** Rich text fields owned by this module; operations bind only declared fields. */
+  readonly richText?: readonly AnyRichText[];
 }
 
 export interface ShipModule<
@@ -57,6 +61,7 @@ export interface ShipModule<
   /** Typed per module so the client contract can enumerate attachment ids and policies. */
   readonly attachments: TAttachments;
   readonly mailers: readonly AnyMailer[];
+  readonly richText: readonly AnyRichText[];
 }
 
 export interface AnyModule {
@@ -70,6 +75,8 @@ export interface AnyModule {
   readonly attachments: readonly AnyAttachment[];
   /** Optional so modules compiled by an older kernel still satisfy the shape. */
   readonly mailers?: readonly AnyMailer[];
+  /** Optional for the same reason as `mailers`. */
+  readonly richText?: readonly AnyRichText[];
 }
 
 export type ModuleDiagnosticCode =
@@ -87,7 +94,9 @@ export type ModuleDiagnosticCode =
   | "SHIP_MODULE_ATTACHMENT_INVALID"
   | "SHIP_MODULE_ATTACHMENT_DUPLICATE"
   | "SHIP_MODULE_MAILER_INVALID"
-  | "SHIP_MODULE_MAILER_DUPLICATE";
+  | "SHIP_MODULE_MAILER_DUPLICATE"
+  | "SHIP_MODULE_RICH_TEXT_INVALID"
+  | "SHIP_MODULE_RICH_TEXT_DUPLICATE";
 
 export class InvalidModuleDefinitionError extends Error {
   readonly code: ModuleDiagnosticCode;
@@ -183,6 +192,7 @@ export function defineModule<
     channels: Object.freeze([...(definition.channels ?? [])]) as unknown as TChannels,
     attachments: Object.freeze([...(definition.attachments ?? [])]) as unknown as TAttachments,
     mailers: Object.freeze([...(definition.mailers ?? [])]),
+    richText: Object.freeze([...(definition.richText ?? [])]),
   });
 }
 
@@ -325,6 +335,23 @@ function assertModuleDefinition(
     "module mailer",
     moduleId,
     "mailers",
+  );
+
+  const richText = Reflect.get(definition, "richText") ?? [];
+  assertArray(
+    richText,
+    isRichText,
+    "SHIP_MODULE_RICH_TEXT_INVALID",
+    "richText must contain only defineRichText() results",
+    moduleId,
+    "richText",
+  );
+  assertUnique(
+    richText.map((field) => field.id),
+    "SHIP_MODULE_RICH_TEXT_DUPLICATE",
+    "module rich text field",
+    moduleId,
+    "richText",
   );
 }
 

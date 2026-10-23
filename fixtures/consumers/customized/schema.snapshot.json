@@ -1,8 +1,71 @@
 {
   "schemaVersion": 1,
-  "schemas": ["public"],
+  "schemas": [
+    "public"
+  ],
   "enums": [],
   "tables": [
+    {
+      "schema": "public",
+      "name": "documents",
+      "columns": [
+        {
+          "name": "body",
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "body_text",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "documents_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "documents_pkey",
+          "definition": "CREATE UNIQUE INDEX documents_pkey ON public.documents USING btree (id)"
+        }
+      ]
+    },
     {
       "schema": "public",
       "name": "projects",

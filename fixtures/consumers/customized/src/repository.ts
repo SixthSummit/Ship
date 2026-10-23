@@ -6,6 +6,7 @@ import type {
   JobBackend,
   MailLedger,
   OutboxBackend,
+  RichTextDocument,
   UnitOfWork,
   WebhookEventStore,
 } from "@sixthsummit/ship-core";
@@ -32,6 +33,7 @@ import { publishedChannels } from "./channels.js";
 import { paymentsOutbox, reportsOutbox } from "./outbox.js";
 import {
   authTables,
+  documents,
   idempotencyKeys,
   jobControl,
   jobRuns,
@@ -71,9 +73,26 @@ export interface ReportRequest {
   readonly requestedBy: string;
 }
 
+export interface DocumentRow {
+  readonly id: string;
+  readonly title: string;
+  readonly body: RichTextDocument;
+  readonly bodyText: string;
+}
+
+export interface DocumentUpsert {
+  readonly id: string;
+  readonly title: string;
+  readonly body: RichTextDocument;
+  readonly bodyText: string;
+}
+
 export interface PortfolioRepository {
   summarize(query: PortfolioSummaryQuery): Promise<readonly PortfolioSummaryRow[]>;
   recordReportRequest(request: ReportRequest): Promise<{ readonly id: string }>;
+  upsertDocument(document: DocumentUpsert): Promise<void>;
+  readDocument(documentId: string): Promise<DocumentRow | undefined>;
+  deleteDocument(documentId: string): Promise<boolean>;
 }
 
 export interface PortfolioCapabilities {
@@ -237,6 +256,43 @@ function createPortfolioRepository(
             .returning({ id: reportRequests.id });
           if (!row) throw new Error("report request insert returned no row");
           return { id: row.id };
+        },
+        upsertDocument: async (document: DocumentUpsert) => {
+          await scopedTransaction
+            .insert(documents)
+            .values({ ...document, tenantId: scope.tenantId })
+            .onConflictDoUpdate({
+              target: documents.id,
+              set: {
+                title: document.title,
+                body: document.body,
+                bodyText: document.bodyText,
+                updatedAt: sql`now()`,
+              },
+              // The conflict target is the primary key; the tenant predicate keeps
+              // a colliding id from another tenant from being overwritten.
+              setWhere: tenantPredicate(documents.tenantId, scope),
+            });
+        },
+        readDocument: async (documentId: string) => {
+          const [row] = await scopedTransaction
+            .select({
+              id: documents.id,
+              title: documents.title,
+              body: documents.body,
+              bodyText: documents.bodyText,
+            })
+            .from(documents)
+            .where(and(eq(documents.id, documentId), tenantPredicate(documents.tenantId, scope)))
+            .limit(1);
+          return row ? { ...row, body: row.body as RichTextDocument } : undefined;
+        },
+        deleteDocument: async (documentId: string) => {
+          const deleted = await scopedTransaction
+            .delete(documents)
+            .where(and(eq(documents.id, documentId), tenantPredicate(documents.tenantId, scope)))
+            .returning({ id: documents.id });
+          return deleted.length > 0;
         },
       });
     },
