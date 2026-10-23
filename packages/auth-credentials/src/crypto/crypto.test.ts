@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scryptPasswordHasher } from "./password.js";
+import { argon2idPasswordHasher, scryptPasswordHasher } from "./password.js";
 import { createSecretBox } from "./secretbox.js";
 import {
   generateRecoveryCode,
@@ -45,6 +45,55 @@ describe("scryptPasswordHasher", () => {
   it("rejects parameters outside the safe range", () => {
     expect(() => scryptPasswordHasher({ logCost: 9 })).toThrow(TypeError);
     expect(() => scryptPasswordHasher({ keyLength: 8 })).toThrow(TypeError);
+  });
+});
+
+describe("argon2idPasswordHasher", () => {
+  const hasher = argon2idPasswordHasher({ memory: 1024, passes: 1 });
+
+  it("hashes with the standard PHC string and verifies in constant time", async () => {
+    const stored = await hasher.hash("correct horse battery staple");
+    expect(stored).toMatch(/^\$argon2id\$v=19\$m=1024,t=1,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/u);
+    expect(await hasher.verify("correct horse battery staple", stored)).toBe(true);
+    expect(await hasher.verify("wrong", stored)).toBe(false);
+    expect(await hasher.verify("anything", "not a hash")).toBe(false);
+    expect(
+      await hasher.verify(
+        "anything",
+        "$argon2id$v=19$m=99999999,t=1,p=1$abcdefghijk$abcdefghijklmnopqrstuv",
+      ),
+    ).toBe(false);
+    expect(hasher.needsRehash(stored)).toBe(false);
+  });
+
+  it("verifies a legacy scrypt hash and asks for a rehash", async () => {
+    const legacy = await scryptPasswordHasher({ logCost: 10 }).hash("same");
+    expect(await hasher.verify("same", legacy)).toBe(true);
+    expect(await hasher.verify("other", legacy)).toBe(false);
+    expect(hasher.needsRehash(legacy)).toBe(true);
+  });
+
+  it("salts every hash and reports when parameters were raised", async () => {
+    const first = await hasher.hash("same");
+    const second = await hasher.hash("same");
+    expect(first).not.toBe(second);
+    expect(argon2idPasswordHasher({ memory: 2048, passes: 1 }).needsRehash(first)).toBe(true);
+    expect(argon2idPasswordHasher({ memory: 1024, passes: 2 }).needsRehash(first)).toBe(true);
+    expect(await argon2idPasswordHasher({ memory: 2048, passes: 2 }).verify("same", first)).toBe(
+      true,
+    );
+  });
+
+  it("rejects parameters outside the safe range", () => {
+    expect(() => argon2idPasswordHasher({ memory: 4 })).toThrow(TypeError);
+    expect(() => argon2idPasswordHasher({ passes: 0 })).toThrow(TypeError);
+    expect(() => argon2idPasswordHasher({ tagLength: 8 })).toThrow(TypeError);
+    expect(() => argon2idPasswordHasher({ memory: 16, parallelism: 4 })).toThrow(TypeError);
+  });
+
+  it("uses the OWASP-or-better defaults", async () => {
+    const stored = await argon2idPasswordHasher().hash("default parameters");
+    expect(stored.startsWith("$argon2id$v=19$m=65536,t=3,p=1$")).toBe(true);
   });
 });
 

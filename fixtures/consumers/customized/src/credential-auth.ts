@@ -66,6 +66,7 @@ export function createCredentialAuthModule(definition: {
       verifyEmail: (token) => `${APP_URL}/verify/${token}`,
       resetPassword: (token) => `${APP_URL}/reset/${token}`,
       changeEmail: (token) => `${APP_URL}/email/${token}`,
+      signIn: `${APP_URL}/sign-in`,
     },
     secrets: definition.secrets ?? DEVELOPMENT_AUTH_SECRETS,
     policies: credentialAuthPolicies,

@@ -11,7 +11,11 @@ export const credentialMailPayloadSchema = z.object({
 });
 
 export type CredentialMailPayload = z.infer<typeof credentialMailPayloadSchema>;
-export type CredentialMailMessage = "verifyEmail" | "resetPassword" | "changeEmail";
+export type CredentialMailMessage =
+  | "verifyEmail"
+  | "resetPassword"
+  | "changeEmail"
+  | "existingAccount";
 
 export interface CredentialAuthMailerOptions<TId extends string = "auth.mailer"> {
   /** Must be namespaced by the auth module id (`<moduleId>.mailer`). Defaults to `auth.mailer`. */
@@ -45,10 +49,15 @@ const defaultTemplates: Record<
     html: `<p>Confirm that this is the new email address for your ${escapeHtml(appName)} account. It expires soon and works once.</p><p><a href="${escapeHtml(url)}">Confirm email change</a></p>`,
     text: `Confirm that this is the new email address for your ${appName} account. It expires soon and works once.\n\n${url}`,
   }),
+  existingAccount: ({ url, appName }) => ({
+    subject: `You already have a ${appName} account`,
+    html: `<p>Someone tried to create a ${escapeHtml(appName)} account with this email address, but it already has one. If that was you, sign in instead; if you forgot your password, reset it from the sign-in page.</p><p><a href="${escapeHtml(url)}">Sign in</a></p><p>If this was not you, no action is needed; nothing about your account changed.</p>`,
+    text: `Someone tried to create a ${appName} account with this email address, but it already has one. If that was you, sign in instead; if you forgot your password, reset it from the sign-in page.\n\n${url}\n\nIf this was not you, no action is needed; nothing about your account changed.`,
+  }),
 };
 
 /**
- * The three messages the credential flows send. Declare the result on the
+ * The four messages the credential flows send. Declare the result on the
  * auth module (the module does this for you) and register it with
  * `defineMailDelivery({ mailers })`.
  */
@@ -99,6 +108,17 @@ export function defineCredentialAuthMailer<const TId extends string = "auth.mail
           appName: options.appName,
         },
         render: template("changeEmail"),
+      },
+      existingAccount: {
+        payload: credentialMailPayloadSchema,
+        description:
+          "Sent to an address that registers again while it already has a verified account (onExistingEmail: conceal); links to the sign-in page.",
+        sample: {
+          email: "ada@example.test",
+          url: "https://app.example.test/sign-in",
+          appName: options.appName,
+        },
+        render: template("existingAccount"),
       },
     },
   });

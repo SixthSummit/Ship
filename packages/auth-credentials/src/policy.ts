@@ -68,9 +68,13 @@ export interface CredentialAuthPolicies {
   /** Whether sign-in requires a verified email. Defaults to true. */
   readonly requireVerifiedEmail: boolean;
   /**
-   * What `register` answers when the email already has an account:
-   * `"reject"` (409, the usable default) or `"conceal"` (201 with no new
-   * account and no mail, so the endpoint cannot enumerate accounts).
+   * What `register` answers when the email already has an account.
+   * `"conceal"` (the default) answers 201 exactly as a fresh registration
+   * does and mails the existing address instead: a verification link again
+   * if that account is still unverified, otherwise a notice that the account
+   * exists with a link to `links.signIn`. The caller learns nothing.
+   * `"reject"` answers 409 `AUTH_EMAIL_TAKEN`, which is friendlier and
+   * enumerates accounts; opt in where that is acceptable.
    */
   readonly onExistingEmail: "reject" | "conceal";
 }
@@ -111,7 +115,7 @@ export const DEFAULT_CREDENTIAL_AUTH_POLICIES: Omit<CredentialAuthPolicies, "mfa
   }),
   recoveryCodes: Object.freeze({ count: 10 }),
   requireVerifiedEmail: true,
-  onExistingEmail: "reject" as const,
+  onExistingEmail: "conceal" as const,
 });
 
 export function resolvePolicies(

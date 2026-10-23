@@ -1,5 +1,6 @@
 import { defineOperation, operationFailure, publicAccess } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
+import type { MailSender } from "@sixthsummit/ship-mail";
 import { z } from "zod";
 import { ACTION_TOKEN_PREFIX, generateToken, hashToken } from "../crypto/tokens.js";
 import {
@@ -16,7 +17,7 @@ import {
   parseRoles,
   sendCredentialMail,
 } from "../runtime.js";
-import { normalizeEmail } from "../store.js";
+import { type AuthAccount, type CredentialStore, normalizeEmail } from "../store.js";
 import { emailSchema, passwordSchema, tokenSchema } from "../views.js";
 
 const registerBody = z.object({
@@ -29,6 +30,37 @@ const verifyBody = z.object({ token: tokenSchema });
 const verifiedSchema = z.object({ verified: z.literal(true) });
 const resendBody = z.object({ email: emailSchema });
 const acceptedSchema = z.object({ accepted: z.literal(true) });
+
+/** Issues a fresh verification token for an unverified account and mails it. */
+async function issueVerification(
+  id: string,
+  runtime: CredentialAuthRuntime,
+  store: CredentialStore,
+  mail: MailSender,
+  account: AuthAccount,
+  requestId: Parameters<typeof audit>[2],
+): Promise<void> {
+  const now = runtime.clock();
+  await store.revokeTokens({ accountId: account.id, purpose: "verify-email", now });
+  const token = generateToken(ACTION_TOKEN_PREFIX);
+  const record = await store.createToken({
+    accountId: account.id,
+    purpose: "verify-email",
+    tokenHash: hashToken(token),
+    expiresAt: new Date(now.getTime() + runtime.policies.tokens.verifyEmailTtlMs),
+    now,
+  });
+  await audit(runtime, store, requestId, {
+    event: "email.verification-resent",
+    outcome: "success",
+    accountId: account.id,
+  });
+  await sendCredentialMail(runtime, mail, "verifyEmail", {
+    to: account.email,
+    url: runtime.links.verifyEmail(token),
+    idempotencyKey: `${id}:verify:${account.id}:${record.id}`,
+  });
+}
 
 export function defineAccountOperations<const TId extends string>(
   id: TId,
@@ -66,6 +98,28 @@ export function defineAccountOperations<const TId extends string>(
           details: { reason: "email-taken" },
         });
         if (runtime.policies.onExistingEmail === "reject") throw operationFailure(authEmailTaken);
+        // Conceal: answer exactly like a fresh registration and tell the owner
+        // of the address instead. An unverified account gets its verification
+        // link again; a verified one gets a notice pointing at sign-in.
+        const existing = await services.store.findAccountByEmail(email);
+        if (existing && existing.status === "active") {
+          if (existing.emailVerifiedAt) {
+            await sendCredentialMail(runtime, services.mail, "existingAccount", {
+              to: existing.email,
+              url: runtime.links.signIn ?? "",
+              idempotencyKey: `${id}:existing:${existing.id}:${context.requestId}`,
+            });
+          } else {
+            await issueVerification(
+              id,
+              runtime,
+              services.store,
+              services.mail,
+              existing,
+              context.requestId,
+            );
+          }
+        }
         return { status: "verification-sent" as const };
       }
       const account = created.account;
@@ -137,31 +191,19 @@ export function defineAccountOperations<const TId extends string>(
     transaction: "none",
     dependencies: { store: runtime.store, mail: runtime.mail },
     handler: async ({ input, services, context }) => {
-      const now = runtime.clock();
       const account = await services.store.findAccountByEmail(input.body.email);
       // Always 202: the response never says whether the email has an account.
       if (!account || account.emailVerifiedAt || account.status !== "active") {
         return { accepted: true as const };
       }
-      await services.store.revokeTokens({ accountId: account.id, purpose: "verify-email", now });
-      const token = generateToken(ACTION_TOKEN_PREFIX);
-      const record = await services.store.createToken({
-        accountId: account.id,
-        purpose: "verify-email",
-        tokenHash: hashToken(token),
-        expiresAt: new Date(now.getTime() + runtime.policies.tokens.verifyEmailTtlMs),
-        now,
-      });
-      await audit(runtime, services.store, context.requestId, {
-        event: "email.verification-resent",
-        outcome: "success",
-        accountId: account.id,
-      });
-      await sendCredentialMail(runtime, services.mail, "verifyEmail", {
-        to: account.email,
-        url: runtime.links.verifyEmail(token),
-        idempotencyKey: `${id}:verify:${account.id}:${record.id}`,
-      });
+      await issueVerification(
+        id,
+        runtime,
+        services.store,
+        services.mail,
+        account,
+        context.requestId,
+      );
       return { accepted: true as const };
     },
   });

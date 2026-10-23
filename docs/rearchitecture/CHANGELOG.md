@@ -159,6 +159,7 @@ heading did not mean that every item below was still unreleased.
 
 ### Changed
 
+- `@sixthsummit/ship-auth-credentials` defaults (ADR-0025 amended): argon2id from `node:crypto` replaces scrypt as the password hasher (scrypt hashes still verify and rehash on sign-in), and `onExistingEmail` defaults to `conceal`, with an `existingAccount` mail and a required `links.signIn` in that mode.
 - ADR index and headers reconciled: ADR-0002 is listed as Superseded to match its file, ADR-0025 is Accepted (the two-consumer proof moves to the planned reference application), ADR-0013 uses the shared header format, and the stale numbering notes in ADR-0022 and ADR-0026 are removed.
 - Prepared framework-only public documentation: removed private application evidence and migration inventories, retained framework ADR decisions and package release entries, and replaced application-derived regression fixtures with synthetic inputs.
 

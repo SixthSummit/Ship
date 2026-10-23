@@ -30,6 +30,7 @@ export const auth = defineCredentialAuthModule({
   links: {
     verifyEmail: (token) => `${env.APP_URL}/verify/${token}`,
     resetPassword: (token) => `${env.APP_URL}/reset/${token}`,
+    signIn: `${env.APP_URL}/sign-in`,
     changeEmail: (token) => `${env.APP_URL}/email/${token}`,
   },
   secrets: { current: "k1", keys: { k1: env.AUTH_MFA_KEY } }, // 32 bytes, hex or base64
@@ -75,7 +76,8 @@ session id); the actor is the account.
 
 ## Security choices
 
-- Passwords: scrypt (`node:crypto`, N=2^15, r=8, p=1, 16-byte salt, 32-byte key) in a PHC string; `needsRehash` upgrades on sign-in; `PasswordHasher` is pluggable (argon2id).
+- Passwords: argon2id (`node:crypto`, 64 MiB, t=3, p=1, 16-byte salt, 32-byte tag) in the standard PHC string; `needsRehash` upgrades on sign-in, including from scrypt; `scryptPasswordHasher` and any `PasswordHasher` can be bound instead.
+- Existing email on register: concealed by default (201, the owner is mailed a verification link or an existing-account notice linking to `links.signIn`); `onExistingEmail: "reject"` answers 409.
 - TOTP: RFC 6238 over HMAC-SHA1, 6 digits, 30 s, ±1 step, last-used-step replay guard, tested against the RFC vectors.
 - Tokens (verify, reset, change-email, MFA challenge, session): 256 random bits, only the SHA-256 is stored, consumed with a conditional write.
 - MFA secrets: AES-256-GCM under a consumer key ring with key ids for rotation.
