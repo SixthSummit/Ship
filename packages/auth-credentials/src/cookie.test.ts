@@ -29,6 +29,7 @@ import { totpCode, totpStep } from "./crypto/totp.js";
 import { createInMemoryCredentialStore } from "./memory-store.js";
 import type { CredentialAuthModuleOptions } from "./module.js";
 import { defineCredentialAuthModule } from "./module.js";
+import { credentialAuthentication } from "./provider.js";
 
 const TOKEN = `ship_s_${"a".repeat(43)}`;
 const APP_ORIGIN = "https://app.example.test";
@@ -313,6 +314,57 @@ describe("the CSRF pre-validation policy", () => {
     expect((await call("/app/read", { method: "GET" })).headers.getSetCookie()).toEqual([]);
   });
 
+  it("is required at adapter construction whenever the credential adapter reads the cookie", () => {
+    const fixture = createFixture({ sessions: { transport: "both" } });
+    const auth = credentialAuthentication({
+      store: fixture.store,
+      session: fixture.auth.policies.session,
+      sessions: fixture.auth.sessions,
+    });
+    expect(auth.credentials.requires).toEqual([
+      { key: "*", policyId: "ship-credentials.csrf", message: expect.stringContaining("CSRF") },
+    ]);
+    const missing = expect.objectContaining({
+      code: "SHIP_HONO_OPTIONS_INVALID",
+      message: expect.stringContaining("credentialSessionCsrfPolicy"),
+    });
+    expect(() => createHonoAdapter(fixture.app, { auth })).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(fixture.app, {
+        auth,
+        preValidationPolicies: {
+          "auth.sign-in": credentialSessionCsrfPolicy({ auth: fixture.auth }),
+        },
+      }),
+    ).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(fixture.app, {
+        auth,
+        preValidationPolicies: { "*": () => ({ allowed: true }) },
+      }),
+    ).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(fixture.app, {
+        auth,
+        preValidationPolicies: { "*": credentialSessionCsrfPolicy({ auth: fixture.auth }) },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      createHonoAdapter(fixture.app, {
+        auth,
+        preValidationPolicies: {
+          "*": [() => ({ allowed: true }), credentialSessionCsrfPolicy({ auth: fixture.auth })],
+        },
+      }),
+    ).not.toThrow();
+    // A bearer-only adapter requires nothing.
+    const bearer = createFixture();
+    expect(
+      credentialAuthentication({ store: bearer.store, sessions: bearer.auth.sessions }).credentials
+        .requires,
+    ).toBeUndefined();
+  });
+
   it("validates its options", () => {
     expect(() =>
       credentialSessionCsrfPolicy({ auth: { ...auth, sessions: resolveSessionPolicy(undefined) } }),
@@ -590,6 +642,58 @@ describe("cookie-mode sessions over HTTP", () => {
     expect(revoked.headers.getSetCookie()[0]).toMatch(/^ship_session=; /u);
     expect(client.jar.names()).not.toContain("ship_session");
     expect(bearer.session.transport).toBe("bearer");
+  });
+
+  it("rotates the cookie session on a password change and signs the other sessions out", async () => {
+    const fixture = createFixture({
+      sessions: { transport: "both" },
+      trustedOrigins: [APP_ORIGIN],
+    });
+    await fixture.start();
+    const bearer = await registerAndSignIn(fixture);
+    const client = browser(fixture);
+    const signedIn = await client.request("/auth/sign-in", {
+      body: { email: EMAIL, password: PASSWORD, transport: "cookie" },
+    });
+    expect(signedIn.status).toBe(200);
+    const before = client.jar.get("ship_session")?.value as string;
+
+    const changed = await client.request("/auth/password/change", {
+      body: { currentPassword: PASSWORD, newPassword: "another correct horse" },
+    });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toEqual({
+      changed: true,
+      revoked: 1,
+      session: {
+        transport: "cookie",
+        id: expect.any(String),
+        expiresAt: expect.any(String),
+        mfaState: "none",
+      },
+    });
+    const after = client.jar.get("ship_session")?.value as string;
+    expect(after).not.toBe(before);
+    expect(client.jar.get("ship_session")?.attributes).toContain("HttpOnly");
+    expect(
+      (await fixture.request("/auth/me", { headers: { cookie: `ship_session=${before}` } })).status,
+    ).toBe(401);
+    expect((await fixture.request("/auth/me", { token: bearer.session.token })).status).toBe(401);
+    const me = await client.request("/auth/me", { origin: null });
+    expect(me.status).toBe(200);
+    expect(me.body.session.id).toBe(changed.body.session.id);
+    expect(await fixture.store.findSession(signedIn.body.session.id)).toMatchObject({
+      revokedReason: "rotated",
+    });
+    expect(await fixture.store.findSession(bearer.session.id)).toMatchObject({
+      revokedReason: "password-changed",
+    });
+    // The change is CSRF-guarded like every other write from a cookie session.
+    const unguarded = await client.request("/auth/password/change", {
+      body: { currentPassword: "another correct horse", newPassword: PASSWORD },
+      csrf: false,
+    });
+    expect(unguarded.status).toBe(403);
   });
 
   it("validates the requested transport against the enabled ones", async () => {

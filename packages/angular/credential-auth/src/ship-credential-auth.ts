@@ -211,6 +211,32 @@ export class ShipCredentialAuth {
     return (await this.call('reset-password', { body: { token, password } })) !== undefined;
   }
 
+  /**
+   * Changes the password after re-entering the current one. The server
+   * rotates the current session (a bearer client adopts the new token here;
+   * a cookie client received it in `Set-Cookie`) and, unless
+   * `signOutOtherSessions` is `false`, revokes every other session.
+   */
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+    signOutOtherSessions = true
+  ): Promise<boolean> {
+    const result = await this.call<{
+      changed: true;
+      revoked: number;
+      session?: CredentialSessionToken;
+    }>('change-password', { body: { currentPassword, newPassword, signOutOtherSessions } });
+    if (!result) return false;
+    const state = this.internal();
+    if (result.session && (state.status === 'signed-in' || state.status === 'enrolment-required')) {
+      this.internal.set({ ...state, session: this.keep(result.session) });
+    }
+    if (signOutOtherSessions)
+      this.sessionsState.update(sessions => sessions.filter(session => session.current));
+    return true;
+  }
+
   async enrolTotp(password: string): Promise<CredentialTotpEnrolment | undefined> {
     return this.call<CredentialTotpEnrolment>('totp.enrol', { body: { password } });
   }

@@ -221,6 +221,18 @@ allowlist, plus the request's own origin from the forwarded or `Host` headers.
 The policy issues the CSRF cookie itself, so the token exists after the first
 sign-in or `GET /auth/me`.
 
+Registering the guard is not left to documentation. The credential adapter
+that reads the cookie declares a `ship-hono` policy requirement (the
+`"*"` key must carry the policy id `ship-credentials.csrf`), and
+`createHonoAdapter` refuses to construct without it; a key may hold a list
+of policies so the guard composes with a consumer's own. A consumer that
+wraps the adapter forwards the requirement.
+
+A password change (`auth.change-password`, password re-entry under the
+lockout policy) rotates the current session whatever its transport, since a
+stolen token is the very token the request carries, and revokes every other
+session unless asked not to. Password reset already signs every session out.
+
 `@sixthsummit/ship-angular/credential-auth` makes `cookieSessionStorage()`
 the default: the client asks for the cookie transport, never holds a token,
 asks `me` on initialize, lets the server clear the cookie on sign-out and

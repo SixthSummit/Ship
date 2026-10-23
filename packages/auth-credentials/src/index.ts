@@ -16,8 +16,10 @@ export type {
   CredentialSessionTransport,
 } from "./cookie.js";
 export {
+  CREDENTIAL_CSRF_POLICY_ID,
   clearSessionCookie,
   credentialSessionCsrfPolicy,
+  credentialSessionCsrfRequirement,
   DEFAULT_CSRF_COOKIE_NAME,
   DEFAULT_CSRF_HEADER,
   DEFAULT_SESSION_COOKIE_NAME,

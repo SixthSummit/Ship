@@ -241,6 +241,68 @@ describe('ShipCredentialAuth', () => {
     ).toHaveLength(1);
   });
 
+  it('changes the password, adopts the rotated session and drops the other sessions', async () => {
+    const storage = memorySessionStorage();
+    const view = (id: string, current: boolean) => ({
+      id,
+      createdAt: '2026-10-23T12:00:00.000Z',
+      expiresAt: '2026-11-22T12:00:00.000Z',
+      lastSeenAt: '2026-10-23T12:00:00.000Z',
+      mfaState: 'verified' as const,
+      current,
+    });
+    const client = fakeClient({
+      'auth.sign-in': () => ({
+        ok: true,
+        status: 200,
+        data: { status: 'signed-in', session: session(), account },
+      }),
+      'auth.sessions.list': () => ({
+        ok: true,
+        status: 200,
+        data: { sessions: [view('s-verified', true), view('s-other', false)] },
+      }),
+      'auth.change-password': input => {
+        const body = (input as { body: { currentPassword: string } }).body;
+        return body.currentPassword === 'pw'
+          ? {
+              ok: true,
+              status: 200,
+              data: {
+                changed: true,
+                revoked: 1,
+                session: { ...session(), token: 'ship_s_rotated', id: 's-rotated' },
+              },
+            }
+          : {
+              ok: false,
+              status: 401,
+              error: { code: 'AUTH_INVALID_CREDENTIALS', message: 'nope' },
+            };
+      },
+    });
+    const auth = new ShipCredentialAuth({ client, storage });
+    await auth.signIn('ada@example.test', 'pw');
+    await auth.loadSessions();
+    expect(auth.sessions()).toHaveLength(2);
+
+    expect(await auth.changePassword('wrong', 'new password')).toBe(false);
+    expect(auth.failure()).toMatchObject({ code: 'AUTH_INVALID_CREDENTIALS' });
+    expect(storage.read()).toBe('ship_s_verified');
+    expect(auth.sessions()).toHaveLength(2);
+
+    expect(await auth.changePassword('pw', 'new password')).toBe(true);
+    expect(client.call).toHaveBeenLastCalledWith('auth.change-password', {
+      body: { currentPassword: 'pw', newPassword: 'new password', signOutOtherSessions: true },
+    });
+    expect(storage.read()).toBe('ship_s_rotated');
+    expect(auth.state()).toMatchObject({
+      status: 'signed-in',
+      session: { id: 's-rotated', token: 'ship_s_rotated' },
+    });
+    expect(auth.sessions()).toEqual([view('s-verified', true)]);
+  });
+
   it('drops a token a server sends to a cookie-mode client and exposes a bearer capability otherwise', async () => {
     const client = fakeClient({
       'auth.sign-in': () => ({

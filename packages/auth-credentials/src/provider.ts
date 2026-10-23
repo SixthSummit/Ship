@@ -18,6 +18,7 @@ import {
   type CredentialSessionCookiePolicy,
   type CredentialSessionPolicy,
   type CredentialSessionTransport,
+  credentialSessionCsrfRequirement,
   readSessionCookie,
 } from "./cookie.js";
 import { hashToken, isTokenShaped, SESSION_TOKEN_PREFIX } from "./crypto/tokens.js";
@@ -60,7 +61,10 @@ export interface CredentialSessionCredentialOptions {
 /**
  * Extracts `Authorization: Bearer ship_s_…`, or the session cookie when the
  * module enables it and no bearer header is present, plus the client facts,
- * without trusting anything else.
+ * without trusting anything else. With a cookie transport the adapter
+ * requires `credentialSessionCsrfPolicy()` under the adapter's `"*"` key, so
+ * `createHonoAdapter` fails at construction rather than serving cookie
+ * sessions without CSRF protection.
  */
 export function credentialSessionCredentials(
   options: CredentialSessionCredentialOptions = {},
@@ -71,8 +75,10 @@ export function credentialSessionCredentials(
   )
     ? options.sessions.cookie
     : undefined;
+  const requires = credentialSessionCsrfRequirement(options.sessions);
   return defineHonoCredentialAdapter({
     id: "ship-credentials.bearer",
+    ...(requires.length > 0 ? { requires } : {}),
     extract(request): CredentialSessionCredential {
       const client = readRequestClient(request);
       const value = request.headers.get(header);

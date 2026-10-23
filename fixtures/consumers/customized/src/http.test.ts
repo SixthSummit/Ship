@@ -1,4 +1,8 @@
 import {
+  createInMemoryCredentialStore,
+  createRequestClientRegistry,
+} from "@sixthsummit/ship-auth-credentials";
+import {
   cacheInvalidationOutbox,
   defineRealtimePublicationOutbox,
   startJobRuntime,
@@ -6,6 +10,7 @@ import {
   type UnitOfWork,
   webhookSecret,
 } from "@sixthsummit/ship-core";
+import { createHonoAdapter } from "@sixthsummit/ship-hono";
 import { createInMemoryMailLedger, logMailProvider } from "@sixthsummit/ship-mail";
 import { defineStoragePurgeOutbox } from "@sixthsummit/ship-storage";
 import {
@@ -20,8 +25,17 @@ import {
 } from "@sixthsummit/ship-testing";
 import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import { describe, expect, it } from "vitest";
-import { type CustomizedInfrastructure, publishedChannels } from "./application.js";
-import type { SessionDirectory } from "./auth.js";
+import {
+  type CustomizedInfrastructure,
+  createCustomizedApplication,
+  publishedChannels,
+} from "./application.js";
+import {
+  customizedActorResolver,
+  customizedCredentialAdapter,
+  type SessionDirectory,
+} from "./auth.js";
+import { credentialSessionCsrf } from "./credential-auth.js";
 import { createCustomizedHttpApplication, DEFAULT_CORS_ORIGINS } from "./http.js";
 import { paymentsOutbox as paymentsOutboxDefinition, reportsOutbox } from "./outbox.js";
 import type { PortfolioCapabilities } from "./repository.js";
@@ -124,6 +138,32 @@ describe("customized portfolio HTTP application", () => {
     expect(() =>
       createCustomizedHttpApplication(infrastructure(), sessions, { corsOrigins: ["*"] }),
     ).toThrow(expect.objectContaining({ code: "SHIP_HONO_CORS_INVALID" }));
+  });
+
+  it("cannot mount the cookie-reading credential adapter without the CSRF guard", () => {
+    const credentialStore = createInMemoryCredentialStore();
+    const authClients = createRequestClientRegistry();
+    const application = createCustomizedApplication({
+      ...infrastructure(),
+      credentialStore,
+      authClients,
+    });
+    const auth = {
+      credentials: customizedCredentialAdapter(),
+      actors: customizedActorResolver({ directory: sessions, store: credentialStore }),
+    };
+    expect(() => createHonoAdapter(application, { auth })).toThrow(
+      expect.objectContaining({
+        code: "SHIP_HONO_OPTIONS_INVALID",
+        message: expect.stringContaining("credentialSessionCsrfPolicy"),
+      }),
+    );
+    expect(() =>
+      createHonoAdapter(application, {
+        auth,
+        preValidationPolicies: { "*": credentialSessionCsrf([...DEFAULT_CORS_ORIGINS]) },
+      }),
+    ).not.toThrow();
   });
 
   it("signs a browser in over the session cookie beside a bearer session, with the CSRF guard on every write", async () => {

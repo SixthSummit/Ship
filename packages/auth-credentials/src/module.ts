@@ -117,6 +117,7 @@ export function defineCredentialAuthModule<
     session.revokeAllSessions,
     password.forgotPassword,
     password.resetPassword,
+    password.changePassword,
     password.changeEmail,
     password.confirmEmailChange,
     mfa.enrol,

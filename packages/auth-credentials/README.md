@@ -68,7 +68,7 @@ const http = createHonoAdapter(app, {
 | `auth.forgot-password`, `auth.reset-password` | `POST /auth/password/forgot`, `/auth/password/reset` | public |
 | `auth.confirm-email-change` | `POST /auth/email/confirm` | public (token) |
 | `auth.sign-out`, `auth.me`, `auth.sessions.list`, `auth.sessions.revoke`, `auth.sessions.revoke-all` | `POST /auth/sign-out`, `GET /auth/me`, `GET /auth/sessions`, `POST /auth/sessions/revoke`, `/auth/sessions/revoke-all` | authenticated |
-| `auth.change-email`, `auth.totp.enrol`, `auth.totp.confirm` | `POST /auth/email/change`, `/auth/totp/enrol`, `/auth/totp/confirm` | authenticated (password re-entry) |
+| `auth.change-password`, `auth.change-email`, `auth.totp.enrol`, `auth.totp.confirm` | `POST /auth/password/change`, `/auth/email/change`, `/auth/totp/enrol`, `/auth/totp/confirm` | authenticated (password re-entry; change-password rotates the current session and revokes the others) |
 
 Sessions are opaque bearers (`Authorization: Bearer ship_s_…`), hashed at
 rest. The resolver's identity is the session (`ship-credentials.session` /

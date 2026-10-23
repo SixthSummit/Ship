@@ -38,6 +38,7 @@ describe("defineCredentialAuthModule", () => {
       "auth.sessions.revoke-all",
       "auth.forgot-password",
       "auth.reset-password",
+      "auth.change-password",
       "auth.change-email",
       "auth.confirm-email-change",
       "auth.totp.enrol",
@@ -523,6 +524,122 @@ describe("password reset and email change", () => {
           body: { email: "ada2@example.test", password: PASSWORD },
         })
       ).status,
+    ).toBe(200);
+  });
+});
+
+describe("password change", () => {
+  it("re-enters the password under the lockout policy, rotates the current session and signs the others out", async () => {
+    const fixture = createFixture({ policies: { lockout: { threshold: 3, windowMs: 60_000 } } });
+    await fixture.start();
+    const first = await registerAndSignIn(fixture);
+    const second = await fixture.request("/auth/sign-in", {
+      body: { email: EMAIL, password: PASSWORD },
+    });
+    const third = await fixture.request("/auth/sign-in", {
+      body: { email: EMAIL, password: PASSWORD },
+    });
+    const token = first.session.token;
+
+    expect(
+      (
+        await fixture.request("/auth/password/change", {
+          token,
+          body: { currentPassword: PASSWORD, newPassword: "short" },
+        })
+      ).status,
+    ).toBe(422);
+    const wrong = await fixture.request("/auth/password/change", {
+      token,
+      body: { currentPassword: "wrong", newPassword: "another correct horse" },
+    });
+    expect(wrong.status).toBe(401);
+    expect(wrong.body.error.code).toBe("AUTH_INVALID_CREDENTIALS");
+    expect(
+      fixture.store.auditEvents().filter((event) => event.event === "password.changed"),
+    ).toMatchObject([{ outcome: "failure", details: { reason: "wrong-password", attempts: 1 } }]);
+    // Wrong re-entries count towards the lockout like a failed sign-in.
+    await fixture.request("/auth/password/change", {
+      token,
+      body: { currentPassword: "wrong", newPassword: "another correct horse" },
+    });
+    const locked = await fixture.request("/auth/password/change", {
+      token,
+      body: { currentPassword: "wrong", newPassword: "another correct horse" },
+    });
+    expect(locked.status).toBe(423);
+    fixture.advance(16 * 60_000);
+
+    // One other session is kept out of the sweep when asked; the current one is still rotated.
+    const kept = await fixture.request("/auth/password/change", {
+      token: third.body.session.token,
+      body: {
+        currentPassword: PASSWORD,
+        newPassword: "another correct horse",
+        signOutOtherSessions: false,
+      },
+    });
+    expect(kept.status).toBe(200);
+    expect(kept.body).toEqual({
+      changed: true,
+      revoked: 0,
+      session: {
+        transport: "bearer",
+        token: expect.stringMatching(/^ship_s_/u),
+        id: expect.any(String),
+        expiresAt: expect.any(String),
+        mfaState: "none",
+      },
+    });
+    expect(kept.body.session.token).not.toBe(third.body.session.token);
+    expect((await fixture.request("/auth/me", { token: third.body.session.token })).status).toBe(
+      401,
+    );
+    expect((await fixture.request("/auth/me", { token })).status).toBe(200);
+    expect(await fixture.store.findSession(third.body.session.id)).toMatchObject({
+      revokedReason: "rotated",
+    });
+
+    const changed = await fixture.request("/auth/password/change", {
+      token,
+      body: { currentPassword: "another correct horse", newPassword: PASSWORD },
+    });
+    expect(changed.status).toBe(200);
+    // The second sign-in and the rotated third one are gone; only the new current session lives.
+    expect(changed.body.revoked).toBe(2);
+    expect((await fixture.request("/auth/me", { token })).status).toBe(401);
+    expect((await fixture.request("/auth/me", { token: second.body.session.token })).status).toBe(
+      401,
+    );
+    expect((await fixture.request("/auth/me", { token: kept.body.session.token })).status).toBe(
+      401,
+    );
+    const me = await fixture.request("/auth/me", { token: changed.body.session.token });
+    expect(me.status).toBe(200);
+    expect(me.body.session.id).toBe(changed.body.session.id);
+    expect(await fixture.store.findSession(second.body.session.id)).toMatchObject({
+      revokedReason: "password-changed",
+    });
+    expect(
+      fixture.store.auditEvents().filter((event) => event.event === "password.changed"),
+    ).toContainEqual(
+      expect.objectContaining({
+        outcome: "success",
+        accountId: first.account.id,
+        sessionId: first.session.id,
+        details: { sessionsRevoked: 2, rotatedTo: changed.body.session.id },
+      }),
+    );
+    expect(
+      (
+        await fixture.request("/auth/sign-in", {
+          body: { email: EMAIL, password: "another correct horse" },
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (await fixture.request("/auth/sign-in", { body: { email: EMAIL, password: PASSWORD } }))
+        .status,
     ).toBe(200);
   });
 });
