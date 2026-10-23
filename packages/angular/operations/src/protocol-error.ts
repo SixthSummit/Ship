@@ -6,7 +6,9 @@ export type ProtocolFailureReason =
   | 'unexpected-status'
   | 'unexpected-content-type'
   | 'invalid-event'
-  | 'invalid-message';
+  | 'invalid-message'
+  /** The browser answered a declared redirect operation with an opaque redirect it will not expose. */
+  | 'opaque-redirect';
 
 export interface ProtocolErrorOptions {
   readonly reason: ProtocolFailureReason;

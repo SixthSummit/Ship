@@ -1,6 +1,7 @@
 import type {
   AttachmentLedger,
   IdempotencyStore,
+  MailLedger,
   OutboxBackend,
   UnitOfWork,
   WebhookEventStore,
@@ -9,6 +10,7 @@ import { cacheInvalidationOutbox, defineRealtimePublicationOutbox } from "@sixth
 import {
   createDrizzleAttachmentLedger,
   createDrizzleIdempotencyStore,
+  createDrizzleMailLedger,
   createDrizzleOutbox,
   createDrizzleUnitOfWork,
   createDrizzleWebhookEventStore,
@@ -26,6 +28,7 @@ import { publishedChannels } from "./channels.js";
 import { paymentsOutbox, reportsOutbox } from "./outbox.js";
 import {
   idempotencyKeys,
+  mailSendsTable,
   type portfolioSchema,
   projects,
   reportRequests,
@@ -147,6 +150,10 @@ export function createIdempotencyStore(
   database: NodePgDatabase<typeof portfolioSchema>,
 ): IdempotencyStore {
   return createDrizzleIdempotencyStore({ database, table: idempotencyKeys });
+}
+
+export function createMailLedger(database: NodePgDatabase<typeof portfolioSchema>): MailLedger {
+  return createDrizzleMailLedger({ database, table: mailSendsTable });
 }
 
 export function createPortfolioUnitOfWork(

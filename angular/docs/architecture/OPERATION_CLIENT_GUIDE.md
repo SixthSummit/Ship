@@ -268,6 +268,15 @@ The current cross-repository gaps and proposed defaults are recorded in
 
 ## Transport lifecycle guarantees
 
+A ShipAPI operation declared with `response: "redirect"` resolves as an ordinary success
+whose `status` is the declared 3xx, whose `data` is `undefined`, and whose
+`headers.location` carries the validated `Location` when the Fetch runtime exposes it
+(server-side rendering, tests, Node). A browser `fetch` answers such a call with an
+opaque redirect it will not expose; the `/ship-api` executor reports that as
+`ProtocolError` with reason `opaque-redirect` rather than inventing a status. Browser
+flows that must complete the navigation (OAuth callbacks) should send the browser to the
+endpoint instead of calling the operation from script.
+
 Downloads reject redirects, including redirects to another approved origin. Generated download
 bindings must name the final URL so credential policy can approve it before any bytes are sent.
 In `stream` mode, `start()` returns the response and readable stream after headers arrive;

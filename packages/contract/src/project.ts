@@ -12,6 +12,7 @@ import type {
   ClientContract,
   ClientContractAttachment,
   ClientContractChannel,
+  ClientContractMailer,
   ClientContractOperation,
   ClientContractStreamResponse,
   ClientContractSuccess,
@@ -26,6 +27,7 @@ export type {
   ClientContractChannel,
   ClientContractChannelScope,
   ClientContractError,
+  ClientContractMailer,
   ClientContractOperation,
   ClientContractStreamLimits,
   ClientContractStreamResponse,
@@ -60,12 +62,19 @@ export function projectClientContract<
   const attachments = Object.fromEntries(
     application.graph.attachments.map((node) => [node.id, projectAttachment(node)]),
   );
+  const mailers: Record<string, ClientContractMailer> = Object.fromEntries(
+    application.graph.mailers.map((mailer) => [
+      mailer.id,
+      Object.freeze({ messages: Object.freeze([...mailer.messages]) }),
+    ]),
+  );
   const unsigned = stableJson({
     schemaVersion: 1,
     appId: application.id,
     operations,
     channels,
     attachments,
+    ...(Object.keys(mailers).length > 0 ? { mailers } : {}),
   });
   const fingerprint = `sha256:${createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
   return deepFreeze({ ...unsigned, fingerprint }) as unknown as ClientContract;

@@ -1030,9 +1030,12 @@ async function resolveBindings(
           { operationId: operation.id, providerId: JOB_BACKEND_ID },
         );
       }
-      services[name] = isJobEnqueueDependencyToken(token)
-        ? createJobEnqueuer(token.job, backend)
-        : backend;
+      if (isJobEnqueueDependencyToken(token)) {
+        const enqueuer = createJobEnqueuer(token.job, backend);
+        services[name] = token.adapt ? token.adapt(enqueuer) : enqueuer;
+        continue;
+      }
+      services[name] = backend;
       continue;
     }
     if (isOutboxDependencyToken(token)) {

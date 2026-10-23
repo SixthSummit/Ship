@@ -4,6 +4,7 @@ import {
   collectJobs,
   createExecutor,
   defineRealtimePublicationOutbox,
+  MAIL_ORIGINAL_TO_HEADER,
   operationActor,
   providerActor,
   REALTIME_PUBLICATION_OUTBOX_ID,
@@ -13,6 +14,11 @@ import {
   type UnitOfWork,
   webhookSecret,
 } from "@sixthsummit/ship-core";
+import {
+  allowlistInterceptor,
+  createInMemoryMailLedger,
+  logMailProvider,
+} from "@sixthsummit/ship-mail";
 import { defineStoragePurgeOutbox, STORAGE_PURGE_OUTBOX_ID } from "@sixthsummit/ship-storage";
 import {
   collectPublishes,
@@ -41,6 +47,7 @@ import {
 } from "./application.js";
 import { createLegacyBridge } from "./bridge.js";
 import type { ReportNotifier } from "./effects.js";
+import { reportsMailer } from "./mail.js";
 import {
   paymentsOutbox as paymentsOutboxDefinition,
   REPORTS_EXPECTED_RATE_PER_SECOND,
@@ -83,6 +90,8 @@ type FixtureInfrastructure = CustomizedInfrastructure & {
   readonly storage: ReturnType<typeof createInMemoryStorageAdapter>;
   readonly attachmentLedger: ReturnType<typeof createInMemoryAttachmentLedger>;
   readonly purgeOutbox: ReturnType<typeof createInMemoryOutbox>;
+  readonly mailProvider: ReturnType<typeof logMailProvider>;
+  readonly mailLedger: ReturnType<typeof createInMemoryMailLedger>;
 };
 
 function fixtureInfrastructure(
@@ -107,6 +116,8 @@ function fixtureInfrastructure(
     storage: createInMemoryStorageAdapter(overrides.clock ? { now: overrides.clock } : {}),
     attachmentLedger: createInMemoryAttachmentLedger(),
     purgeOutbox: createInMemoryOutbox(defineStoragePurgeOutbox()),
+    mailProvider: logMailProvider(),
+    mailLedger: createInMemoryMailLedger(),
     scheduledTenants: ["acme", "beta"],
     ...overrides,
   } as FixtureInfrastructure;
@@ -723,6 +734,7 @@ describe("customized declared jobs", () => {
       graph.jobs.map((job) => [job.id, job.trigger.kind, job.concurrency.mode, job.enqueues]),
     ).toEqual([
       ["jobs.cleanup", "schedule", "single-runner", []],
+      ["mail.deliver", "enqueue", "parallel", []],
       ["reports.deliver", "enqueue", "single-runner", []],
       ["reports.digest", "schedule", "single-runner", ["reports.deliver"]],
       ["ship-storage.generate-variant", "enqueue", "parallel", []],
@@ -1226,5 +1238,140 @@ describe("managed storage", () => {
         { actor: editor },
       ),
     ).toMatchObject({ ok: false, error: { code: "INTENT_EXPIRED" } });
+  });
+});
+
+describe("customized transactional mail", () => {
+  const emailBody = {
+    recipient: "owner@real-customer.example",
+    period: "2026-09-18",
+    projectCount: 3,
+  };
+
+  it("projects the mailer, the delivery job and message names only into graph and contract", () => {
+    const app = createCustomizedApplication(fixtureInfrastructure());
+    expect(app.graph.mailers).toEqual([
+      {
+        id: "reports.mailer",
+        moduleId: "reports",
+        from: "Portfolio Reports <reports@example.test>",
+        messages: ["digestReady"],
+      },
+    ]);
+    expect(app.graph.jobs.find((job) => job.id === "mail.deliver")).toMatchObject({
+      moduleId: "mail",
+      trigger: { kind: "enqueue" },
+      effects: ["ship.mail.provider"],
+      operations: { enqueuedBy: ["reports.email"] },
+    });
+    const contract = projectClientContract(app);
+    expect(contract.mailers).toEqual({ "reports.mailer": { messages: ["digestReady"] } });
+    expect(JSON.stringify(contract)).not.toContain("reports@example.test");
+  });
+
+  it("enqueues one delivery per idempotency key from the operation and refuses other tenants", async () => {
+    const infrastructure = fixtureInfrastructure();
+    const app = createCustomizedApplication(infrastructure);
+    await startJobRuntime(app, { backend: infrastructure.jobs, mode: "api" });
+    const executor = createExecutor(app);
+    const send = (tenantId: string) =>
+      executor.run(
+        "reports.email",
+        { params: { tenantId }, body: emailBody },
+        { actor: publisher },
+      );
+
+    expect(await send("acme")).toMatchObject({
+      ok: true,
+      status: 202,
+      data: { accepted: true, deduplicated: false },
+    });
+    expect(await send("acme")).toMatchObject({ ok: true, data: { deduplicated: true } });
+    expect(await send("beta")).toMatchObject({ ok: false, status: 403 });
+    const jobs = infrastructure.jobs as ReturnType<typeof createInMemoryJobBackend>;
+    expect(jobs.runs().map((run) => [run.jobId, run.dedupeKey])).toEqual([
+      ["mail.deliver", "digest-email:acme:2026-09-18:owner@real-customer.example"],
+    ]);
+    expect(infrastructure.mailProvider.sent()).toHaveLength(0);
+
+    await jobs.drain();
+    const replay = await runJobOnce(app, "mail.deliver", jobs.runs()[0]?.input, { executor });
+    expect(replay).toMatchObject({ ok: true, data: { status: "duplicate" } });
+    expect(infrastructure.mailProvider.sent()).toHaveLength(1);
+    expect(infrastructure.mailProvider.sent()[0]?.envelope).toMatchObject({
+      from: "Portfolio Reports <reports@example.test>",
+      to: ["owner@real-customer.example"],
+      subject: "Portfolio digest for 2026-09-18",
+      text: "Digest ready: 3 projects summarized for acme on 2026-09-18.",
+    });
+    expect(infrastructure.mailLedger.records()).toEqual([
+      expect.objectContaining({
+        idempotencyKey: "digest-email:acme:2026-09-18:owner@real-customer.example",
+        status: "sent",
+        attempts: 1,
+        tenantId: "acme",
+        intercepted: false,
+      }),
+    ]);
+  });
+
+  it("redirects real customers to the allowlist inbox outside production", async () => {
+    const infrastructure = fixtureInfrastructure({
+      mailInterceptor: allowlistInterceptor({
+        allow: ["@example.test"],
+        redirectTo: ["qa-inbox@example.test"],
+      }),
+    });
+    const app = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(app);
+    const delivered = await runJobOnce(
+      app,
+      "mail.deliver",
+      {
+        mailerId: "reports.mailer",
+        message: "digestReady",
+        to: ["owner@real-customer.example"],
+        payload: { tenantId: "acme", period: "2026-09-18", projectCount: 1 },
+        idempotencyKey: "digest-email:acme:2026-09-18:owner@real-customer.example",
+      },
+      { executor },
+    );
+    expect(delivered).toMatchObject({ ok: true, data: { status: "sent", intercepted: true } });
+    expect(infrastructure.mailProvider.sent()[0]?.envelope).toMatchObject({
+      to: ["qa-inbox@example.test"],
+      subject: "[to: owner@real-customer.example] Portfolio digest for 2026-09-18",
+      headers: { [MAIL_ORIGINAL_TO_HEADER]: "owner@real-customer.example" },
+    });
+    expect(
+      await infrastructure.mailLedger.list({ recipient: "owner@real-customer.example", limit: 5 }),
+    ).toMatchObject([{ deliveredTo: ["qa-inbox@example.test"], intercepted: true }]);
+  });
+
+  it("renders every registered message from its sample for the development preview", async () => {
+    const app = createCustomizedApplication(fixtureInfrastructure());
+    const executor = createExecutor(app);
+    const developer = operationActor({ id: "dev", permissions: ["ship.mail:preview"] });
+    const list = await executor.run("mail.preview-list", {}, { actor: developer });
+    expect(list).toMatchObject({
+      ok: true,
+      data: {
+        mailers: [{ id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] }],
+      },
+    });
+    if (!list.ok) throw new Error("preview list unexpectedly failed");
+    for (const mailer of list.data.mailers) {
+      for (const message of mailer.messages) {
+        const rendered = await executor.run(
+          "mail.preview-render",
+          { params: { mailerId: mailer.id, message: message.name } },
+          { actor: developer },
+        );
+        expect(rendered).toMatchObject({
+          ok: true,
+          data: { subject: "Portfolio digest for 2026-09-18" },
+        });
+      }
+    }
+    expect(reportsMailer.messageNames).toEqual(["digestReady"]);
   });
 });

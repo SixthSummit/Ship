@@ -44,6 +44,16 @@ export interface ClientContractAttachment {
   readonly maxCount: number;
   /** Declared variant names; generation is lazy and server-side. */
   readonly variants: readonly string[];
+  /**
+   * Declared mailers keyed by id, with message names only. Templates, sender
+   * addresses and payload schemas never reach the client. Absent when the
+   * application declares no mailer, so older manifests keep their fingerprint.
+   */
+  readonly mailers?: Readonly<Record<string, ClientContractMailer>>;
+}
+
+export interface ClientContractMailer {
+  readonly messages: readonly string[];
 }
 
 export type ClientContractChannelScope = "actor" | "tenant" | "resource";

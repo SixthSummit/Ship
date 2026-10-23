@@ -1,7 +1,13 @@
 import { createHttpOperationClient } from "@sixthsummit/ship-contract";
 import type { ApplicationContractOf } from "@sixthsummit/ship-contract/application";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
-import { createExecutor, systemActor, webhookSecret } from "@sixthsummit/ship-core";
+import {
+  createExecutor,
+  startJobRuntime,
+  systemActor,
+  webhookSecret,
+} from "@sixthsummit/ship-core";
+import { logMailProvider } from "@sixthsummit/ship-mail";
 import { createInMemoryRealtimeBackend } from "@sixthsummit/ship-testing";
 import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import {
@@ -23,6 +29,7 @@ import {
   createAttachmentLedger,
   createCacheInvalidationOutbox,
   createIdempotencyStore,
+  createMailLedger,
   createPaymentsOutbox,
   createPortfolioUnitOfWork,
   createRealtimePublicationOutbox,
@@ -32,6 +39,7 @@ import {
 } from "./repository.js";
 import {
   idempotencyKeys,
+  mailSendsTable,
   portfolioSchema,
   projects,
   reportRequests,
@@ -68,6 +76,7 @@ describe("customized packed application", () => {
   const realtime = createInMemoryRealtimeBackend({ channels: publishedChannels });
   const record = vi.fn(async () => undefined);
   const paymentSink: PaymentEventSink = { adapter: "recording", record };
+  const mailProvider = logMailProvider();
   const stripeSecret = "whsec_integration";
   const twilioToken = "twilio-auth-token";
   /** Real time plus a test-controlled offset so dispatch and retention share one clock. */
@@ -93,6 +102,8 @@ describe("customized packed application", () => {
     attachmentLedger: createAttachmentLedger(database.db),
     purgeOutbox: createStoragePurgeOutbox(database.db),
     unattachedGraceMs: 60_000,
+    mailProvider,
+    mailLedger: createMailLedger(database.db),
     scheduledTenants: ["acme"],
   });
 
@@ -577,6 +588,57 @@ describe("customized packed application", () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ subject: "Digest for 2026-09-18" }),
     );
+  });
+  it("sends transactional mail once per idempotency key with one ledger row and one provider call", async () => {
+    const infra = infrastructure();
+    const { application, http } = createCustomizedHttpApplication(infra, sessions);
+    await startJobRuntime(application, { backend: infra.jobs, mode: "api" });
+    const executor = createExecutor(application);
+    const post = () =>
+      http.request("/tenants/acme/report-emails", {
+        method: "POST",
+        headers: {
+          authorization: "ShipSession publisher-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          recipient: "owner@real-customer.example",
+          period: "2026-09-18",
+          projectCount: 2,
+        }),
+      });
+    const first = await post();
+    expect(first.status).toBe(202);
+    await expect(first.json()).resolves.toMatchObject({ accepted: true, deduplicated: false });
+    await expect((await post()).json()).resolves.toMatchObject({ deduplicated: true });
+
+    await expect(infra.jobs.drain()).resolves.toEqual({ executed: 1, completed: 1, failed: 0 });
+    const replay = await runJobOnce(application, "mail.deliver", infra.jobs.runs()[0]?.input, {
+      executor,
+    });
+    expect(replay).toMatchObject({ ok: true, data: { status: "duplicate", attempt: 1 } });
+    // A later send with the same key enqueues again (the first run is terminal) and is
+    // still answered from the ledger.
+    await expect((await post()).json()).resolves.toMatchObject({ deduplicated: false });
+    await expect(infra.jobs.drain()).resolves.toEqual({ executed: 1, completed: 1, failed: 0 });
+
+    expect(mailProvider.sent()).toHaveLength(1);
+    expect(mailProvider.sent()[0]?.envelope.subject).toBe("Portfolio digest for 2026-09-18");
+    const rows = await database.db.select().from(mailSendsTable);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      idempotencyKey: "digest-email:acme:2026-09-18:owner@real-customer.example",
+      mailerId: "reports.mailer",
+      message: "digestReady",
+      recipients: ["owner@real-customer.example"],
+      status: "sent",
+      attempts: 1,
+      provider: "log",
+      tenantId: "acme",
+    });
+    await expect(
+      infra.mailLedger.list({ recipient: "owner@real-customer.example", limit: 10 }),
+    ).resolves.toHaveLength(1);
   });
 });
 

@@ -2,6 +2,8 @@ import type { AnyAttachment } from "./attachment.js";
 import { isAttachment } from "./attachment.js";
 import type { DependencyToken } from "./dependency.js";
 import { isDependencyToken } from "./dependency.js";
+import type { AnyMailer } from "./mail.js";
+import { isMailer } from "./mail.js";
 import type { AnyOperation } from "./operation.js";
 import type { AnyProvider } from "./provider.js";
 import { isProvider } from "./provider.js";
@@ -28,6 +30,8 @@ export interface ModuleDefinition<
   readonly channels?: TChannels;
   /** Managed attachments owned by this module. Operations bind only declared attachments. */
   readonly attachments?: TAttachments;
+  /** Mailers owned by this module; ids are namespaced by the module id. */
+  readonly mailers?: readonly AnyMailer[];
 }
 
 export interface ShipModule<
@@ -52,6 +56,7 @@ export interface ShipModule<
   readonly channels: TChannels;
   /** Typed per module so the client contract can enumerate attachment ids and policies. */
   readonly attachments: TAttachments;
+  readonly mailers: readonly AnyMailer[];
 }
 
 export interface AnyModule {
@@ -63,6 +68,8 @@ export interface AnyModule {
   readonly exports: readonly DependencyToken[];
   readonly channels: readonly AnyChannel[];
   readonly attachments: readonly AnyAttachment[];
+  /** Optional so modules compiled by an older kernel still satisfy the shape. */
+  readonly mailers?: readonly AnyMailer[];
 }
 
 export type ModuleDiagnosticCode =
@@ -78,7 +85,9 @@ export type ModuleDiagnosticCode =
   | "SHIP_MODULE_CHANNEL_INVALID"
   | "SHIP_MODULE_CHANNEL_DUPLICATE"
   | "SHIP_MODULE_ATTACHMENT_INVALID"
-  | "SHIP_MODULE_ATTACHMENT_DUPLICATE";
+  | "SHIP_MODULE_ATTACHMENT_DUPLICATE"
+  | "SHIP_MODULE_MAILER_INVALID"
+  | "SHIP_MODULE_MAILER_DUPLICATE";
 
 export class InvalidModuleDefinitionError extends Error {
   readonly code: ModuleDiagnosticCode;
@@ -173,6 +182,7 @@ export function defineModule<
     exports: Object.freeze([...definition.exports]) as unknown as TExports,
     channels: Object.freeze([...(definition.channels ?? [])]) as unknown as TChannels,
     attachments: Object.freeze([...(definition.attachments ?? [])]) as unknown as TAttachments,
+    mailers: Object.freeze([...(definition.mailers ?? [])]),
   });
 }
 
@@ -298,6 +308,23 @@ function assertModuleDefinition(
     "module attachment",
     moduleId,
     "attachments",
+  );
+
+  const mailers = Reflect.get(definition, "mailers") ?? [];
+  assertArray(
+    mailers,
+    isMailer,
+    "SHIP_MODULE_MAILER_INVALID",
+    "mailers must contain only defineMailer() results",
+    moduleId,
+    "mailers",
+  );
+  assertUnique(
+    mailers.map((mailer) => mailer.id),
+    "SHIP_MODULE_MAILER_DUPLICATE",
+    "module mailer",
+    moduleId,
+    "mailers",
   );
 }
 

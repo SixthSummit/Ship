@@ -1,5 +1,6 @@
 import {
   shipIdempotencyTable,
+  shipMailSendsTable,
   shipOutboxTable,
   shipStorageIntentsTable,
   shipStorageObjectsTable,
@@ -41,6 +42,7 @@ export const webhookEventsTable = shipWebhookEventsTable();
 export const storageIntents = shipStorageIntentsTable();
 export const storageObjects = shipStorageObjectsTable();
 export const storagePurges = shipStoragePurgesTable();
+export const mailSendsTable = shipMailSendsTable();
 
 export const portfolioSchema = {
   projects,
@@ -52,4 +54,5 @@ export const portfolioSchema = {
   storageIntents,
   storageObjects,
   storagePurges,
+  mailSendsTable,
 };

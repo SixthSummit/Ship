@@ -126,6 +126,7 @@ describe("compileApp", () => {
           exports: ["accounts.repository"],
           channels: [],
           attachments: [],
+          mailers: [],
         },
         {
           id: "platform",
@@ -135,6 +136,7 @@ describe("compileApp", () => {
           exports: ["platform.clock"],
           channels: [],
           attachments: [],
+          mailers: [],
         },
       ],
       operations: [
@@ -170,6 +172,7 @@ describe("compileApp", () => {
       channels: [],
       jobs: [],
       attachments: [],
+      mailers: [],
     });
 
     const serialized = JSON.stringify(app.graph);

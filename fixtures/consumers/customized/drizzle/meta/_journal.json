@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792706389444,
+      "tag": "0000_portfolio_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792717730912,
+      "tag": "0001_mail_sends",
+      "breakpoints": true
+    }
+  ]
+}

@@ -25,6 +25,7 @@ import {
   JOB_BACKEND_ID,
   JOB_LOCK_PROVIDER_ID,
 } from "./job.js";
+import { collectMailerOwners, type MailerGraphNode, projectMailers } from "./mail.js";
 import type { AnyModule } from "./module.js";
 import { isShipModule } from "./module.js";
 import type {
@@ -126,7 +127,9 @@ export type ApplicationDiagnosticCode =
   | "SHIP_ATTACHMENT_IMPORT_REQUIRED"
   | "SHIP_ATTACHMENT_PROVIDER_LIFETIME_INVALID"
   | "SHIP_OPERATION_ATTACHMENT_UNBOUND"
-  | "SHIP_OPERATION_ATTACHMENT_UNDECLARED";
+  | "SHIP_OPERATION_ATTACHMENT_UNDECLARED"
+  | "SHIP_MAILER_ID_DUPLICATE"
+  | "SHIP_MAILER_ID_MISMATCH";
 
 export type ApplicationDiagnosticSeverity = "error" | "warning";
 
@@ -217,6 +220,8 @@ export interface ApplicationGraph {
   readonly jobs: readonly JobGraphNode[];
   /** Declared managed attachments; absent provider detail by design. */
   readonly attachments: readonly AttachmentGraphNode[];
+  /** Declared mailers and their message names; templates and payload schemas are never projected. */
+  readonly mailers: readonly MailerGraphNode[];
 }
 
 export interface JobGraphNode {
@@ -309,6 +314,7 @@ export interface ModuleGraphNode {
   readonly exports: readonly string[];
   readonly channels: readonly string[];
   readonly attachments: readonly string[];
+  readonly mailers: readonly string[];
 }
 
 export interface OperationGraphNode {
@@ -634,6 +640,7 @@ function compileDiagnostics(
 
   const channelOwners = collectChannelOwners(appId, sortedModules, diagnostics);
   const attachmentOwners = collectAttachmentOwners(appId, sortedModules, diagnostics);
+  collectMailerOwners(appId, sortedModules, diagnostics);
 
   for (const module of sortedModules) {
     for (const importedId of [...module.imports].sort()) {
@@ -1676,6 +1683,7 @@ function projectGraph(
         exports: Object.freeze(module.exports.map((item) => item.id).sort()),
         channels: Object.freeze(module.channels.map((item) => item.id).sort()),
         attachments: Object.freeze(module.attachments.map((item) => item.id).sort()),
+        mailers: Object.freeze((module.mailers ?? []).map((item) => item.id).sort()),
       }),
     );
 
@@ -1701,6 +1709,7 @@ function projectGraph(
     channels: projectChannels(modules),
     jobs: projectJobs(modules),
     attachments: projectAttachments(modules),
+    mailers: projectMailers(modules),
   });
 }
 

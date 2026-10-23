@@ -19,6 +19,8 @@ ShipAPI is a pnpm workspace containing an operation-oriented application kernel 
 | `packages/jobs-bullmq`, `packages/webhooks` | Optional jobs backend and provider webhook verifiers |
 | `packages/push` / `@sixthsummit/ship-push` | Optional VAPID Web Push sender; apps own subscription storage and delivery jobs |
 | `packages/storage` / `@sixthsummit/ship-storage` | Declared managed storage: attachment module with signed upload intents, fenced completion, orphan sweep, lazy variants and durable purge; disk, S3/R2 and GCS adapters (`defineAttachment` lives in the kernel) |
+| `packages/mail` / `@sixthsummit/ship-mail` | Declared transactional mail: `defineMailDelivery` on the jobs capability, typed sender, send ledger, allowlist interceptor, previews, log + Resend adapters (`defineMailer` lives in the kernel; ADR-0023, `docs/v4/features/mail.md`) |
+| `packages/schema-lint` / `@sixthsummit/ship-schema-lint` | Migration linter for the production column rules, canonical schema snapshot check, gated release preset and boot-time guard; see `docs/v4/features/schema-safety.md` |
 | `packages/testing`, `packages/cli` | Parity/integration harness and graph/contract tooling |
 | `packages/core` / `@sixthsummit/ship-api` | Existing route-first v4 compatibility APIs and scaffolds |
 
