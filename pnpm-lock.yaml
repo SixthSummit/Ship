@@ -375,6 +375,21 @@ importers:
         specifier: ^4.3.6
         version: 4.5.4
 
+  packages/console:
+    devDependencies:
+      '@sixthsummit/ship-core':
+        specifier: workspace:*
+        version: link:../kernel
+      '@sixthsummit/ship-hono':
+        specifier: workspace:*
+        version: link:../hono
+      '@sixthsummit/ship-testing':
+        specifier: workspace:^
+        version: link:../testing
+      zod:
+        specifier: ^4.3.6
+        version: 4.6.7
+
   packages/contract:
     dependencies:
       json-schema-to-ts:

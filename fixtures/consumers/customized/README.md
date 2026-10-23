@@ -58,6 +58,12 @@ application exercises:
   `portfolio.photos` over the `@sixthsummit/ship-storage` module: signed upload
   intents, completion fencing, the orphan sweep, a lazily rendered variant, and a
   purge intent that commits with the detachment and is dispatched durably; and
+- the operator console (`@sixthsummit/ship-console`) mounted under `/console/*`
+  behind the dedicated `console.operate` slug that only the `sre` role holds:
+  the `operator` role, which may replay webhooks, is refused on every console
+  operation, while an SRE retries a dead-lettered delivery run, pauses and
+  resumes the job through the PostgreSQL control table, and replays a stored
+  Stripe receipt without touching SQL; and
 - constructor injection that selects the notification, outbox, webhook event,
   job backend, lock, storage, ledger and idempotency adapters at composition
   time and keeps unit tests network-free through the in-memory backends from

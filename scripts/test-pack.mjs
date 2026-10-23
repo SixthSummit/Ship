@@ -23,6 +23,7 @@ const PACKAGE_DIRECTORIES = [
   "jobs-bullmq",
   "schema-lint",
   "storage",
+  "console",
   "mcp-server",
   "claude-plugin",
   "core",

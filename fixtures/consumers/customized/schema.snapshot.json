@@ -154,6 +154,233 @@
     },
     {
       "schema": "public",
+      "name": "ship_job_control",
+      "columns": [
+        {
+          "name": "job_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "paused_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_job_control_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (job_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_job_control_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_job_control_pkey ON public.ship_job_control USING btree (job_id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_job_runs",
+      "columns": [
+        {
+          "name": "attempts",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "claim_token",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "dedupe_key",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "discard_reason",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "discarded_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "history",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "input",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "job_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'waiting'::text"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_job_runs_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_job_runs_claim_idx",
+          "definition": "CREATE INDEX ship_job_runs_claim_idx ON public.ship_job_runs USING btree (job_id, status, available_at)"
+        },
+        {
+          "name": "ship_job_runs_dedupe_idx",
+          "definition": "CREATE UNIQUE INDEX ship_job_runs_dedupe_idx ON public.ship_job_runs USING btree (job_id, dedupe_key) WHERE (status = ANY (ARRAY['waiting'::text, 'active'::text]))"
+        },
+        {
+          "name": "ship_job_runs_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_job_runs_pkey ON public.ship_job_runs USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_job_state",
+      "columns": [
+        {
+          "name": "job_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "last_run_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "last_success_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "next_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "trigger",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_job_state_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (job_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_job_state_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_job_state_pkey ON public.ship_job_state USING btree (job_id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
       "name": "ship_mail_sends",
       "columns": [
         {

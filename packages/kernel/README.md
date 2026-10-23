@@ -90,5 +90,6 @@ introduces them; `ship-api inspect app` lists them per module.
 | `ship.outbox:manage`   | any `defineOutboxDispatcher({ deadLetter: true })`, so also `defineCacheInvalidationModule`, `defineRealtimePublicationModule` and `defineStorageModule` |
 | `ship.jobs:manage`     | `defineJobManagement`                                                                               |
 | `ship.webhooks:replay` | `defineWebhookReplay`                                                                               |
+| `console.operate`      | `defineConsoleModule` in `@sixthsummit/ship-console`; never implied by the slugs above or an admin role |
 
 Declared caching introduces no slug of its own.

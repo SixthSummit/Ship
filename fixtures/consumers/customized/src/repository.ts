@@ -1,6 +1,7 @@
 import type {
   AttachmentLedger,
   IdempotencyStore,
+  JobBackend,
   MailLedger,
   OutboxBackend,
   UnitOfWork,
@@ -10,6 +11,7 @@ import { cacheInvalidationOutbox, defineRealtimePublicationOutbox } from "@sixth
 import {
   createDrizzleAttachmentLedger,
   createDrizzleIdempotencyStore,
+  createDrizzleJobBackend,
   createDrizzleMailLedger,
   createDrizzleOutbox,
   createDrizzleUnitOfWork,
@@ -28,6 +30,9 @@ import { publishedChannels } from "./channels.js";
 import { paymentsOutbox, reportsOutbox } from "./outbox.js";
 import {
   idempotencyKeys,
+  jobControl,
+  jobRuns,
+  jobState,
   mailSendsTable,
   type portfolioSchema,
   projects,
@@ -118,6 +123,23 @@ export function createWebhookEventStore(
     table: webhookEventsTable,
     outboxTable: reportsOutboxTable,
     idempotencyTable: idempotencyKeys,
+  });
+}
+
+/**
+ * The PostgreSQL job backend with the opt-in control table, so the ops
+ * console can pause a job durably where every worker process sees it.
+ */
+export function createJobBackend(
+  database: NodePgDatabase<typeof portfolioSchema>,
+  options: { readonly pollIntervalMs?: number; readonly clock?: () => Date } = {},
+): JobBackend & { readonly lockProvider: import("@sixthsummit/ship-core").LockProvider } {
+  return createDrizzleJobBackend({
+    database,
+    table: jobRuns,
+    stateTable: jobState,
+    controlTable: jobControl,
+    ...options,
   });
 }
 

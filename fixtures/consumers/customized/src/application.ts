@@ -1,3 +1,4 @@
+import { defineConsoleModule } from "@sixthsummit/ship-console";
 import { contractSchema } from "@sixthsummit/ship-contract/schema";
 import {
   type AttachmentLedger,
@@ -707,7 +708,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       valueProvider(webhookEvents, infrastructure.webhookEvents),
     ],
     imports: ["portfolio", "reports"],
-    exports: [paymentsOutbox.writer],
+    exports: [paymentsOutbox.writer, webhookEvents],
   });
   const messagingModule = defineModule({
     id: "messaging",
@@ -723,6 +724,23 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
     imports: ["portfolio", "reports", "payments"],
     exports: [],
   });
+  // The operator console: every panel is a declared operation under
+  // `/console/*`, gated by `console.operate` alone. It binds the tokens the
+  // imported modules export (job backend, outbox writers, webhook store and
+  // unit of work) and never widens what `ship.jobs:manage` or
+  // `ship.webhooks:replay` holders may do.
+  const consoleModule = defineConsoleModule({
+    imports: ["portfolio", "reports", "payments"],
+    jobs: true,
+    outboxes: [reportsOutbox, paymentsOutbox],
+    webhooks: {
+      webhooks: [payments.stripe, messaging.inboundSms, messaging.smsStatus],
+      store: webhookEvents,
+      unitOfWork: portfolioUnitOfWork,
+    },
+    realtime: { backend: realtime, channels: [...publishedChannels, projectActivity] },
+    clock,
+  });
   return defineApp({
     id: "golden-customized",
     modules: [
@@ -733,6 +751,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       paymentsModule,
       messagingModule,
       jobsModule,
+      consoleModule,
       storage,
       mailModule,
     ],

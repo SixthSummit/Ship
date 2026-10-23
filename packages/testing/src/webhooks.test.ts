@@ -58,6 +58,20 @@ describe("createInMemoryWebhookEventStore", () => {
     expect(store.events()).toEqual([]);
   });
 
+  it("lists events newest first, filtered by webhook and received-before", async () => {
+    const store = createInMemoryWebhookEventStore();
+    await store.record({}, event("e1", new Date(1000)));
+    await store.record({}, event("e2", new Date(2000), "ingress.other"));
+    await store.record({}, event("e3", new Date(3000)));
+    expect((await store.list({ limit: 10 })).map((item) => item.id)).toEqual(["e3", "e2", "e1"]);
+    expect(
+      (await store.list({ webhookId: "ingress.hook", limit: 10 })).map((item) => item.id),
+    ).toEqual(["e3", "e1"]);
+    expect((await store.list({ before: new Date(3000), limit: 1 })).map((item) => item.id)).toEqual(
+      ["e2"],
+    );
+  });
+
   it("cleans up dispatched events past retention but never undispatched ones", async () => {
     const backend = createInMemoryOutbox(outbox);
     const idempotency = createInMemoryIdempotencyStore();

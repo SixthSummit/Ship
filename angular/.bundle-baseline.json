@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-22T22:30:11.796Z",
+  "generatedAt": "2026-10-22T22:30:31.131Z",
   "measurements": [
     {
       "name": "@sixthsummit/ship-angular (runtime)",
@@ -170,6 +170,20 @@
       "br": 1020
     },
     {
+      "name": "@sixthsummit/ship-angular/console (runtime)",
+      "fileCount": 1,
+      "raw": 54096,
+      "gz": 8253,
+      "br": 6889
+    },
+    {
+      "name": "@sixthsummit/ship-angular/console (types)",
+      "fileCount": 1,
+      "raw": 26415,
+      "gz": 5152,
+      "br": 4426
+    },
+    {
       "name": "@sixthsummit/ship-angular/storage (runtime)",
       "fileCount": 1,
       "raw": 5417,
@@ -241,8 +255,8 @@
     }
   ],
   "totals": {
-    "raw": 598664,
-    "gz": 153024,
-    "br": 130684
+    "raw": 679175,
+    "gz": 166429,
+    "br": 141999
   }
 }

@@ -14,6 +14,7 @@ import type {
   OutboxHealth,
   OutboxIntentInput,
   OutboxRecord,
+  OutboxRecordQuery,
   OutboxRecordResult,
   OutboxRetention,
 } from "@sixthsummit/ship-core";
@@ -156,6 +157,25 @@ export function createInMemoryOutbox(outbox: AnyOutbox): InMemoryOutbox {
   const listDeadLettered = async ({ limit }: { readonly limit: number }) =>
     Object.freeze(rows.filter((row) => row.status === "dead-lettered").slice(0, limit));
 
+  const findRecord = async (recordId: string): Promise<OutboxRecord | undefined> => {
+    const index = find(recordId);
+    return index < 0 ? undefined : rows[index];
+  };
+
+  const listRecords = async (query: OutboxRecordQuery): Promise<readonly OutboxRecord[]> =>
+    Object.freeze(
+      rows
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) => query.status === undefined || row.status === query.status)
+        .sort(
+          (left, right) =>
+            right.row.createdAt.getTime() - left.row.createdAt.getTime() ||
+            right.index - left.index,
+        )
+        .slice(0, query.limit)
+        .map(({ row }) => row),
+    );
+
   const retry = async (recordId: string, now: Date) => {
     const index = find(recordId);
     if (index < 0 || rows[index]!.status !== "dead-lettered") return undefined;
@@ -220,6 +240,8 @@ export function createInMemoryOutbox(outbox: AnyOutbox): InMemoryOutbox {
     complete,
     fail,
     listDeadLettered,
+    findRecord,
+    listRecords,
     retry,
     discard,
     cleanup,

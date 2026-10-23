@@ -1,3 +1,4 @@
+import { CONSOLE_OPERATE_PERMISSION } from "@sixthsummit/ship-console";
 import {
   type ActorResolver,
   defineActorResolver,
@@ -12,7 +13,7 @@ export type SessionCredential =
 
 interface SessionIdentity {
   readonly actorId: string;
-  readonly role: "analyst" | "publisher" | "operator";
+  readonly role: "analyst" | "publisher" | "operator" | "sre";
   readonly tenants: readonly string[];
 }
 
@@ -25,6 +26,11 @@ const rolePermissions = {
   publisher: ["portfolio:read", "portfolio:write", "reports:notify"],
   /** Operations staff: may re-enqueue a stored webhook event through the mounted replay. */
   operator: ["portfolio:read", WEBHOOK_REPLAY_PERMISSION],
+  /**
+   * Site reliability: the only role that holds the console slug. It is granted
+   * on its own, never implied by `operator` or any other management permission.
+   */
+  sre: ["portfolio:read", CONSOLE_OPERATE_PERMISSION],
 } as const;
 
 export function sessionCredentialAdapter(): HonoCredentialAdapter<SessionCredential> {

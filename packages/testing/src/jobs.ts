@@ -11,10 +11,13 @@ import type {
   JobHealth,
   JobHealthEntry,
   JobIntervalTrigger,
+  JobIntrospection,
   JobRun,
+  JobRunQuery,
   JobRunStatus,
   JobRuntimeBinding,
   JobRuntimeDeclaration,
+  JobScheduleState,
   JobScheduleTrigger,
   JobWorkerMode,
   LockLease,
@@ -114,6 +117,8 @@ export interface InMemoryDrainResult {
 
 export interface InMemoryJobBackend extends JobBackend {
   readonly adapter: "memory";
+  /** Run listing, schedules and pause/resume, as an ops console reads them. */
+  readonly introspection: JobIntrospection;
   /** Snapshot of every run, oldest first. */
   readonly runs: () => readonly JobRun[];
   readonly schedules: () => readonly InMemoryJobSchedule[];
@@ -174,6 +179,7 @@ export function createInMemoryJobBackend(
   const inFlight = new Set<Promise<void>>();
   const lastRunAt = new Map<string, Date>();
   const lastSuccessAt = new Map<string, Date>();
+  const paused = new Set<string>();
 
   const declaration = (jobId: string): JobRuntimeDeclaration => {
     const found = binding?.jobs.find((job) => job.id === jobId);
@@ -274,6 +280,7 @@ export function createInMemoryJobBackend(
       ...new Set(runs.filter((run) => run.status === "waiting").map((run) => run.jobId)),
     ].sort();
     for (const jobId of jobIds) {
+      if (paused.has(jobId)) continue;
       const job = declaration(jobId);
       const active = runs.filter((run) => run.jobId === jobId && run.status === "active");
       if (active.length >= job.concurrency.max) continue;
@@ -495,10 +502,56 @@ export function createInMemoryJobBackend(
     return Object.freeze({ completedDeleted, deadLetteredDeleted });
   };
 
+  const introspection: JobIntrospection = Object.freeze({
+    kind: "ship.job-introspection" as const,
+    declarations: () => Object.freeze([...(binding?.jobs ?? [])]),
+    listRuns: async (query: JobRunQuery) => {
+      const now = clock();
+      for (const run of runs) {
+        if (run.status === "delayed" && run.availableAt.getTime() <= now.getTime()) {
+          run.status = "waiting";
+        }
+      }
+      return Object.freeze(
+        runs
+          .filter(
+            (run) =>
+              (query.jobId === undefined || run.jobId === query.jobId) &&
+              (query.status === undefined || run.status === query.status),
+          )
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+          .slice(0, query.limit)
+          .map(snapshot),
+      );
+    },
+    getRun: async (runId: string) => {
+      const run = runs.find((item) => item.runId === runId);
+      return run ? snapshot(run) : undefined;
+    },
+    listSchedules: async (): Promise<readonly JobScheduleState[]> =>
+      Object.freeze(
+        [...schedules]
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([jobId, entry]) =>
+            Object.freeze({ jobId, trigger: entry.trigger, nextAt: entry.nextAt }),
+          ),
+      ),
+    listPaused: async () => Object.freeze([...paused].sort()),
+    pause: async (jobId: string) => {
+      declaration(jobId);
+      paused.add(jobId);
+    },
+    resume: async (jobId: string) => {
+      declaration(jobId);
+      paused.delete(jobId);
+    },
+  });
+
   return Object.freeze({
     kind: "ship.job-backend" as const,
     adapter: "memory" as const,
     concurrencyBudget: budget,
+    introspection,
     attach: (value: JobRuntimeBinding) => {
       binding = value;
     },
@@ -532,6 +585,7 @@ export function createInMemoryJobBackend(
       cursors.clear();
       lastRunAt.clear();
       lastSuccessAt.clear();
+      paused.clear();
     },
   });
 }
