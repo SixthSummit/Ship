@@ -160,6 +160,538 @@
     },
     {
       "schema": "public",
+      "name": "ship_auth_accounts",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "email_verified_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "failed_attempts",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "last_failed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "locked_until",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "roles",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'[]'::jsonb"
+        },
+        {
+          "name": "sessions_invalid_before",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'active'::text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_auth_accounts_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_auth_accounts_email_idx",
+          "definition": "CREATE UNIQUE INDEX ship_auth_accounts_email_idx ON public.ship_auth_accounts USING btree (email)"
+        },
+        {
+          "name": "ship_auth_accounts_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_auth_accounts_pkey ON public.ship_auth_accounts USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_auth_audit_events",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "details",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "event",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "ip",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "outcome",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "request_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "session_id",
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "user_agent",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_auth_audit_events_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_auth_audit_account_idx",
+          "definition": "CREATE INDEX ship_auth_audit_account_idx ON public.ship_auth_audit_events USING btree (account_id, created_at)"
+        },
+        {
+          "name": "ship_auth_audit_event_idx",
+          "definition": "CREATE INDEX ship_auth_audit_event_idx ON public.ship_auth_audit_events USING btree (event, created_at)"
+        },
+        {
+          "name": "ship_auth_audit_events_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_auth_audit_events_pkey ON public.ship_auth_audit_events USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_auth_credentials",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "algorithm",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "password_hash",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_auth_credentials_account_id_ship_auth_accounts_id_fk",
+          "type": "f",
+          "definition": "FOREIGN KEY (account_id) REFERENCES ship_auth_accounts(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ship_auth_credentials_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (account_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_auth_credentials_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_auth_credentials_pkey ON public.ship_auth_credentials USING btree (account_id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_auth_mfa_secrets",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "enabled_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "key_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "last_used_step",
+          "type": "integer",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "secret_ciphertext",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_auth_mfa_secrets_account_id_ship_auth_accounts_id_fk",
+          "type": "f",
+          "definition": "FOREIGN KEY (account_id) REFERENCES ship_auth_accounts(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ship_auth_mfa_secrets_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (account_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_auth_mfa_secrets_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_auth_mfa_secrets_pkey ON public.ship_auth_mfa_secrets USING btree (account_id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_auth_recovery_codes",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "code_hash",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_auth_recovery_codes_account_id_ship_auth_accounts_id_fk",
+          "type": "f",
+          "definition": "FOREIGN KEY (account_id) REFERENCES ship_auth_accounts(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ship_auth_recovery_codes_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_auth_recovery_codes_account_idx",
+          "definition": "CREATE INDEX ship_auth_recovery_codes_account_idx ON public.ship_auth_recovery_codes USING btree (account_id, code_hash)"
+        },
+        {
+          "name": "ship_auth_recovery_codes_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_auth_recovery_codes_pkey ON public.ship_auth_recovery_codes USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_auth_sessions",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "ip",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "mfa_state",
+          "type": "text",
+          "nullable": false,
+          "default": "'none'::text"
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "revoked_reason",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "token_hash",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "user_agent",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_auth_sessions_account_id_ship_auth_accounts_id_fk",
+          "type": "f",
+          "definition": "FOREIGN KEY (account_id) REFERENCES ship_auth_accounts(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ship_auth_sessions_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_auth_sessions_account_idx",
+          "definition": "CREATE INDEX ship_auth_sessions_account_idx ON public.ship_auth_sessions USING btree (account_id, created_at)"
+        },
+        {
+          "name": "ship_auth_sessions_hash_idx",
+          "definition": "CREATE UNIQUE INDEX ship_auth_sessions_hash_idx ON public.ship_auth_sessions USING btree (token_hash)"
+        },
+        {
+          "name": "ship_auth_sessions_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_auth_sessions_pkey ON public.ship_auth_sessions USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_auth_tokens",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "purpose",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "token_hash",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_auth_tokens_account_id_ship_auth_accounts_id_fk",
+          "type": "f",
+          "definition": "FOREIGN KEY (account_id) REFERENCES ship_auth_accounts(id) ON DELETE CASCADE"
+        },
+        {
+          "name": "ship_auth_tokens_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_auth_tokens_account_idx",
+          "definition": "CREATE INDEX ship_auth_tokens_account_idx ON public.ship_auth_tokens USING btree (account_id, purpose)"
+        },
+        {
+          "name": "ship_auth_tokens_hash_idx",
+          "definition": "CREATE UNIQUE INDEX ship_auth_tokens_hash_idx ON public.ship_auth_tokens USING btree (token_hash)"
+        },
+        {
+          "name": "ship_auth_tokens_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_auth_tokens_pkey ON public.ship_auth_tokens USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
       "name": "ship_idempotency_keys",
       "columns": [
         {

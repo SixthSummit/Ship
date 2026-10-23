@@ -1,3 +1,8 @@
+import {
+  createRequestClientRegistry,
+  totpCode,
+  totpStep,
+} from "@sixthsummit/ship-auth-credentials";
 import { createHttpOperationClient } from "@sixthsummit/ship-contract";
 import type { ApplicationContractOf } from "@sixthsummit/ship-contract/application";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
@@ -29,6 +34,7 @@ import { createCustomizedHttpApplication } from "./http.js";
 import {
   createAttachmentLedger,
   createCacheInvalidationOutbox,
+  createCredentialStore,
   createIdempotencyStore,
   createJobBackend,
   createMailLedger,
@@ -40,6 +46,8 @@ import {
   createWebhookEventStore,
 } from "./repository.js";
 import {
+  authAuditEvents,
+  authSessions,
   documents,
   idempotencyKeys,
   mailSendsTable,
@@ -111,6 +119,8 @@ describe("customized packed application", () => {
     mailProvider,
     mailLedger: createMailLedger(database.db),
     scheduledTenants: ["acme"],
+    credentialStore: createCredentialStore(database.db),
+    authClients: createRequestClientRegistry(),
   });
 
   beforeAll(async () => {
@@ -769,6 +779,157 @@ describe("customized packed application", () => {
     await expect(
       infra.mailLedger.list({ recipient: "owner@real-customer.example", limit: 10 }),
     ).resolves.toHaveLength(1);
+  });
+});
+
+describe("customized credential auth against PostgreSQL", () => {
+  let database: PostgresTestDb<typeof portfolioSchema>;
+  const mailProvider = logMailProvider();
+  const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+
+  beforeAll(async () => {
+    database = await setupPostgresTestDb(portfolioSchema);
+  });
+
+  afterAll(async () => {
+    await database.cleanup();
+  });
+
+  it("runs register, verify, sign-in, TOTP, recovery, revoke-all and the console audit panel on the auth tables", async () => {
+    const store = createCredentialStore(database.db);
+    const infra = {
+      unitOfWork: createPortfolioUnitOfWork(database.db),
+      notifier: { adapter: "recording", send: vi.fn(async () => undefined) },
+      outbox: createReportsOutbox(database.db),
+      idempotency: createIdempotencyStore(database.db),
+      cache: createInMemoryCacheBackend(),
+      cacheOutbox: createCacheInvalidationOutbox(database.db),
+      realtime: createInMemoryRealtimeBackend({ channels: publishedChannels }),
+      realtimeOutbox: createRealtimePublicationOutbox(database.db),
+      paymentSink: { adapter: "recording", record: vi.fn(async () => undefined) },
+      paymentsOutbox: createPaymentsOutbox(database.db),
+      webhookEvents: createWebhookEventStore(database.db),
+      webhookSecrets: { stripe: webhookSecret("whsec_x"), twilio: webhookSecret("twilio-x") },
+      clock: clock.now,
+      jobs: createInMemoryJobBackend(),
+      locks: createInMemoryLockProvider(),
+      storage: createInMemoryStorageAdapter({ now: () => clock.now() }),
+      attachmentLedger: createAttachmentLedger(database.db),
+      purgeOutbox: createStoragePurgeOutbox(database.db),
+      mailProvider,
+      mailLedger: createMailLedger(database.db),
+      credentialStore: store,
+      authClients: createRequestClientRegistry(),
+    };
+    const { application, http } = createCustomizedHttpApplication(infra, sessions);
+    await startJobRuntime(application, { backend: infra.jobs, mode: "api" });
+    const post = async (path: string, body: unknown, token?: string) => {
+      const response = await http.request(path, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "198.51.100.4",
+          "user-agent": "golden/1.0",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test helper over arbitrary JSON bodies
+      const json: any = response.headers.get("content-type")?.includes("json")
+        ? await response.json()
+        : undefined;
+      return { status: response.status, body: json };
+    };
+    const password = "correct horse battery staple";
+
+    expect((await post("/auth/register", { email: "ada@example.test", password })).status).toBe(
+      201,
+    );
+    await expect(infra.jobs.drain()).resolves.toMatchObject({ completed: 1, failed: 0 });
+    const verifyUrl =
+      /https:\/\/\S+/u.exec(mailProvider.sent().at(-1)?.envelope.text ?? "")?.[0] ?? "";
+    expect(
+      (await post("/auth/verify-email", { token: verifyUrl.slice(verifyUrl.lastIndexOf("/") + 1) }))
+        .status,
+    ).toBe(200);
+    const signedIn = await post("/auth/sign-in", { email: "ada@example.test", password });
+    expect(signedIn.body).toMatchObject({ status: "signed-in", session: { mfaState: "none" } });
+    const token = signedIn.body.session.token as string;
+    const sessionRows = await database.db.select().from(authSessions);
+    expect(sessionRows).toHaveLength(1);
+    expect(sessionRows[0]).toMatchObject({
+      ip: "198.51.100.4",
+      userAgent: "golden/1.0",
+      mfaState: "none",
+    });
+    expect(sessionRows[0]?.tokenHash).not.toContain("ship_s_");
+
+    // TOTP enrolment and a challenged sign-in, with the replay guard on the stored step.
+    const enrol = await post("/auth/totp/enrol", { password }, token);
+    const confirm = await post(
+      "/auth/totp/confirm",
+      { code: totpCode(enrol.body.secret, totpStep(clock.now())) },
+      token,
+    );
+    expect(confirm.status).toBe(200);
+    clock.offsetMs += 60_000;
+    const challenged = await post("/auth/sign-in", { email: "ada@example.test", password });
+    expect(challenged.body.status).toBe("mfa-required");
+    const code = totpCode(enrol.body.secret, totpStep(clock.now()));
+    const verified = await post("/auth/totp/verify", {
+      challenge: challenged.body.challenge.token,
+      code,
+    });
+    expect(verified.body.status).toBe("signed-in");
+    const again = await post("/auth/sign-in", { email: "ada@example.test", password });
+    expect(
+      (await post("/auth/totp/verify", { challenge: again.body.challenge.token, code })).status,
+    ).toBe(401);
+    const recovered = await post("/auth/recovery/consume", {
+      challenge: again.body.challenge.token,
+      code: confirm.body.recoveryCodes[0],
+    });
+    expect(recovered.body).toMatchObject({ status: "signed-in", recoveryCodesRemaining: 9 });
+
+    // Revoke-all from one session invalidates every bearer on the next request.
+    expect((await post("/auth/sessions/revoke-all", {}, verified.body.session.token)).body).toEqual(
+      { revoked: 3 },
+    );
+    for (const bearer of [token, verified.body.session.token, recovered.body.session.token]) {
+      expect(
+        (await http.request("/auth/me", { headers: { authorization: `Bearer ${bearer}` } })).status,
+      ).toBe(401);
+    }
+
+    // The audit rows are PostgreSQL rows and the console panel reads them behind console.operate.
+    const rows = await database.db.select().from(authAuditEvents);
+    expect(rows.map((row) => row.event)).toEqual(
+      expect.arrayContaining([
+        "register",
+        "email.verify",
+        "sign-in",
+        "mfa.enrolled",
+        "mfa.challenged",
+        "mfa.verify",
+        "mfa.recover",
+        "sessions.revoke-all",
+      ]),
+    );
+    for (const row of rows) expect(JSON.stringify(row)).not.toContain("ship_");
+    const refused = await http.request("/console/auth-audit/events", {
+      headers: { authorization: "ShipSession operator-token" },
+    });
+    expect(refused.status).toBe(403);
+    const panel = await http.request(
+      "/console/auth-audit/events?email=ada@example.test&event=mfa.recover",
+      {
+        headers: { authorization: "ShipSession sre-token" },
+      },
+    );
+    expect(panel.status).toBe(200);
+    await expect(panel.json()).resolves.toMatchObject({
+      events: [{ event: "mfa.recover", outcome: "success" }],
+    });
   });
 });
 

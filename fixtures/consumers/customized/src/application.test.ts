@@ -1,3 +1,9 @@
+import {
+  createInMemoryCredentialStore,
+  createRequestClientRegistry,
+  totpCode,
+  totpStep,
+} from "@sixthsummit/ship-auth-credentials";
 import { CONSOLE_OPERATE_PERMISSION } from "@sixthsummit/ship-console";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
 import {
@@ -48,8 +54,10 @@ import {
   projectActivity,
   publishedChannels,
 } from "./application.js";
+import type { SessionDirectory } from "./auth.js";
 import { createLegacyBridge } from "./bridge.js";
 import type { ReportNotifier } from "./effects.js";
+import { createCustomizedHttpApplication } from "./http.js";
 import { reportsMailer } from "./mail.js";
 import {
   paymentsOutbox as paymentsOutboxDefinition,
@@ -1431,6 +1439,12 @@ describe("customized transactional mail", () => {
     const app = createCustomizedApplication(fixtureInfrastructure());
     expect(app.graph.mailers).toEqual([
       {
+        id: "auth.mailer",
+        moduleId: "auth",
+        from: "Portfolio <auth@example.test>",
+        messages: ["changeEmail", "resetPassword", "verifyEmail"],
+      },
+      {
         id: "reports.mailer",
         moduleId: "reports",
         from: "Portfolio Reports <reports@example.test>",
@@ -1441,11 +1455,23 @@ describe("customized transactional mail", () => {
       moduleId: "mail",
       trigger: { kind: "enqueue" },
       effects: ["ship.mail.provider"],
-      operations: { enqueuedBy: ["reports.email"] },
+      operations: {
+        enqueuedBy: [
+          "auth.change-email",
+          "auth.forgot-password",
+          "auth.register",
+          "auth.resend-verification",
+          "reports.email",
+        ],
+      },
     });
     const contract = projectClientContract(app);
-    expect(contract.mailers).toEqual({ "reports.mailer": { messages: ["digestReady"] } });
+    expect(contract.mailers).toEqual({
+      "auth.mailer": { messages: ["changeEmail", "resetPassword", "verifyEmail"] },
+      "reports.mailer": { messages: ["digestReady"] },
+    });
     expect(JSON.stringify(contract)).not.toContain("reports@example.test");
+    expect(JSON.stringify(contract)).not.toContain("auth@example.test");
   });
 
   it("enqueues one delivery per idempotency key from the operation and refuses other tenants", async () => {
@@ -1534,9 +1560,25 @@ describe("customized transactional mail", () => {
     expect(list).toMatchObject({
       ok: true,
       data: {
-        mailers: [{ id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] }],
+        mailers: [
+          {
+            id: "auth.mailer",
+            messages: [
+              { name: "verifyEmail", hasSample: true },
+              { name: "resetPassword", hasSample: true },
+              { name: "changeEmail", hasSample: true },
+            ],
+          },
+          { id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] },
+        ],
       },
     });
+    const subjects: Record<string, string> = {
+      "auth.mailer/changeEmail": "Confirm your new Portfolio email",
+      "auth.mailer/resetPassword": "Reset your Portfolio password",
+      "auth.mailer/verifyEmail": "Verify your email for Portfolio",
+      "reports.mailer/digestReady": "Portfolio digest for 2026-09-18",
+    };
     if (!list.ok) throw new Error("preview list unexpectedly failed");
     for (const mailer of list.data.mailers) {
       for (const message of mailer.messages) {
@@ -1547,11 +1589,190 @@ describe("customized transactional mail", () => {
         );
         expect(rendered).toMatchObject({
           ok: true,
-          data: { subject: "Portfolio digest for 2026-09-18" },
+          data: { subject: subjects[`${mailer.id}/${message.name}`] },
         });
       }
     }
     expect(reportsMailer.messageNames).toEqual(["digestReady"]);
+  });
+});
+
+describe("credential auth beside the session directory", () => {
+  const directory: SessionDirectory = {
+    find: (token) =>
+      token === "operator-token"
+        ? { actorId: "operator", role: "operator", tenants: [] }
+        : token === "sre-token"
+          ? { actorId: "sre", role: "sre", tenants: [] }
+          : undefined,
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: test helper over arbitrary JSON bodies
+  const json = async (response: Response): Promise<any> =>
+    response.headers.get("content-type")?.includes("json") ? await response.json() : undefined;
+
+  it("registers, verifies through the mail job, signs in and reaches tenant reads with the same actor contract", async () => {
+    const credentialStore = createInMemoryCredentialStore();
+    const infra = fixtureInfrastructure({
+      credentialStore,
+      authClients: createRequestClientRegistry(),
+      unitOfWork: fixtureUnitOfWork(vi.fn(async () => [])),
+    });
+    const { application, http } = createCustomizedHttpApplication(infra, directory);
+    await startJobRuntime(application, { backend: infra.jobs, mode: "api" });
+    const post = (path: string, body: unknown, token?: string) =>
+      http.request(path, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "203.0.113.9",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+    const registered = await post("/auth/register", {
+      email: "ada@example.test",
+      password: "correct horse battery staple",
+    });
+    expect(registered.status).toBe(201);
+    await expect(infra.jobs.drain()).resolves.toMatchObject({ completed: 1, failed: 0 });
+    const verifyMail = infra.mailProvider.sent().at(-1);
+    expect(verifyMail).toMatchObject({ mailerId: "auth.mailer", message: "verifyEmail" });
+    const url = /https:\/\/\S+/u.exec(verifyMail?.envelope.text ?? "")?.[0] ?? "";
+    expect(url.startsWith("https://portfolio.golden.test/verify/ship_t_")).toBe(true);
+    const unverified = await post("/auth/sign-in", {
+      email: "ada@example.test",
+      password: "correct horse battery staple",
+    });
+    expect(unverified.status).toBe(403);
+    expect(
+      (await post("/auth/verify-email", { token: url.slice(url.lastIndexOf("/") + 1) })).status,
+    ).toBe(200);
+
+    const signedIn = await post("/auth/sign-in", {
+      email: "ada@example.test",
+      password: "correct horse battery staple",
+    });
+    expect(signedIn.status).toBe(200);
+    const session = await json(signedIn);
+    expect(session).toMatchObject({ status: "signed-in", account: { roles: ["analyst"] } });
+
+    // The credential session resolves to an actor with the analyst role's slugs, so the
+    // tenant read behaves exactly as it does for a directory session.
+    const summary = await http.request("/tenants/acme/portfolio?states[]=open", {
+      headers: { authorization: `Bearer ${session.session.token}` },
+    });
+    expect(summary.status).toBe(200);
+    const denied = await http.request("/tenants/beta/portfolio?states[]=open", {
+      headers: { authorization: `Bearer ${session.session.token}` },
+    });
+    expect(denied.status).toBe(403);
+    expect(
+      (
+        await http.request("/console", {
+          headers: { authorization: `Bearer ${session.session.token}` },
+        })
+      ).status,
+    ).toBe(403);
+
+    // The audit log is a console panel: the operator role is refused, the SRE reads it.
+    const refused = await http.request("/console/auth-audit/events", {
+      headers: { authorization: "ShipSession operator-token" },
+    });
+    expect(refused.status).toBe(403);
+    const events = await http.request("/console/auth-audit/events?email=ada@example.test", {
+      headers: { authorization: "ShipSession sre-token" },
+    });
+    expect(events.status).toBe(200);
+    const listed = await json(events);
+    expect(
+      listed.events.map(
+        (event: { event: string; outcome: string }) => `${event.event}:${event.outcome}`,
+      ),
+    ).toEqual(["sign-in:success", "email.verify:success", "sign-in:failure", "register:success"]);
+    expect(listed.events[0]).toMatchObject({ ip: "203.0.113.9" });
+    const panels = await json(
+      await http.request("/console", { headers: { authorization: "ShipSession sre-token" } }),
+    );
+    expect(panels.panels.map((panel: { id: string }) => panel.id)).toContain("auth-audit");
+  });
+
+  it("requires the sre role to enrol in TOTP before its credential session reaches the console", async () => {
+    const credentialStore = createInMemoryCredentialStore();
+    const clock = { now: new Date("2026-10-23T09:00:00.000Z") };
+    const infra = fixtureInfrastructure({ credentialStore, clock: () => clock.now });
+    const { application, http } = createCustomizedHttpApplication(infra, directory);
+    await startJobRuntime(application, { backend: infra.jobs, mode: "api" });
+    const post = (path: string, body: unknown, token?: string) =>
+      http.request(path, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    await post("/auth/register", {
+      email: "sre@example.test",
+      password: "correct horse battery staple",
+    });
+    const account = await credentialStore.findAccountByEmail("sre@example.test");
+    if (!account) throw new Error("account missing");
+    await credentialStore.updateAccount(
+      account.id,
+      { roles: ["sre"], emailVerifiedAt: clock.now },
+      clock.now,
+    );
+
+    const pending = await json(
+      await post("/auth/sign-in", {
+        email: "sre@example.test",
+        password: "correct horse battery staple",
+      }),
+    );
+    expect(pending.status).toBe("mfa-enrolment-required");
+    const token = pending.session.token as string;
+    expect(
+      (await http.request("/console", { headers: { authorization: `Bearer ${token}` } })).status,
+    ).toBe(403);
+    const enrol = await json(
+      await post("/auth/totp/enrol", { password: "correct horse battery staple" }, token),
+    );
+    expect(enrol.otpauthUrl).toContain("issuer=Portfolio");
+    const confirm = await post(
+      "/auth/totp/confirm",
+      { code: totpCode(enrol.secret, totpStep(clock.now)) },
+      token,
+    );
+    expect(confirm.status).toBe(200);
+    expect(
+      (await http.request("/console", { headers: { authorization: `Bearer ${token}` } })).status,
+    ).toBe(200);
+
+    // A later sign-in is challenged; the challenge-passed session carries console.operate.
+    clock.now = new Date(clock.now.getTime() + 60_000);
+    const challenged = await json(
+      await post("/auth/sign-in", {
+        email: "sre@example.test",
+        password: "correct horse battery staple",
+      }),
+    );
+    expect(challenged.status).toBe("mfa-required");
+    const verified = await json(
+      await post("/auth/totp/verify", {
+        challenge: challenged.challenge.token,
+        code: totpCode(enrol.secret, totpStep(clock.now)),
+      }),
+    );
+    expect(verified.status).toBe("signed-in");
+    const audit = await http.request("/console/auth-audit/account?email=sre@example.test", {
+      headers: { authorization: `Bearer ${verified.session.token}` },
+    });
+    expect(audit.status).toBe(200);
+    expect(await json(audit)).toMatchObject({
+      account: { mfaEnabled: true, roles: ["sre"] },
+      recoveryCodes: { remaining: 10, used: 0 },
+    });
   });
 });
 

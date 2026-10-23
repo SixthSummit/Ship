@@ -26,6 +26,7 @@ const PACKAGE_DIRECTORIES = [
   "schema-lint",
   "storage",
   "console",
+  "auth-credentials",
   "mcp-server",
   "claude-plugin",
   "core",

@@ -34,6 +34,7 @@ const PACKAGE_DIRECTORIES = new Map([
   ["@sixthsummit/ship-mail", "mail"],
   ["@sixthsummit/ship-storage", "storage"],
   ["@sixthsummit/ship-console", "console"],
+  ["@sixthsummit/ship-auth-credentials", "auth-credentials"],
   ["@sixthsummit/ship-rich-text", "rich-text"],
 ]);
 

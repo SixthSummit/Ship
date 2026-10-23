@@ -42,6 +42,11 @@ const entrypoints = [
   { name: './storage', file: 'sixthsummit-ship-angular-storage', types: 'storage/index.d.ts' },
   { name: './console', file: 'sixthsummit-ship-angular-console', types: 'console/index.d.ts' },
   {
+    name: './credential-auth',
+    file: 'sixthsummit-ship-angular-credential-auth',
+    types: 'credential-auth/index.d.ts',
+  },
+  {
     name: './rich-text',
     file: 'sixthsummit-ship-angular-rich-text',
     types: 'rich-text/index.d.ts',

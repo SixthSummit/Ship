@@ -79,6 +79,7 @@ export default [
     files: [
       "packages/core/src/app/db/**",
       "packages/drizzle/src/**",
+      "packages/auth-credentials/src/drizzle.ts",
       "packages/core/src/app/services/DrizzleEntityService.ts",
       "packages/core/src/app/auth/jwt/DrizzleRefreshTokenStore.ts",
       "modules/**/schema.ts",

@@ -32,6 +32,7 @@ const PACKAGE_DIRECTORIES = new Map([
   ["@sixthsummit/ship-webhooks", "webhooks"],
   ["@sixthsummit/ship-jobs-bullmq", "jobs-bullmq"],
   ["@sixthsummit/ship-console", "console"],
+  ["@sixthsummit/ship-auth-credentials", "auth-credentials"],
   ["@sixthsummit/ship-cache-redis", "cache-redis"],
 ]);
 

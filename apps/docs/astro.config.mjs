@@ -73,6 +73,7 @@ export default defineConfig({
             { label: "Observability", slug: "features/observability" },
             { label: "Caching", slug: "features/cache" },
             { label: "Storage adapters", slug: "features/storage" },
+            { label: "Credential auth", slug: "features/auth-credentials" },
             { label: "Rate limiting", slug: "features/rate-limit" },
             { label: "Idempotency", slug: "features/idempotency" },
             { label: "Webhooks", slug: "features/webhooks" },

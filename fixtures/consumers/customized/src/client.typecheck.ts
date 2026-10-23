@@ -58,7 +58,28 @@ channels["portfolio.activity"].payload.itemCount satisfies number;
 // @ts-expect-error channel ids stay exact
 channels["reports.unknown"];
 
+async function verifyCredentialAuthContract(): Promise<void> {
+  const signIn = await client.call("auth.sign-in", {
+    body: { email: "ada@example.test", password: "correct horse battery staple" },
+  });
+  if (signIn.ok) {
+    if (signIn.data.status === "signed-in") signIn.data.session.token satisfies string;
+    if (signIn.data.status === "mfa-required") signIn.data.challenge.token satisfies string;
+    if (signIn.data.status === "mfa-enrolment-required") {
+      signIn.data.session.mfaState satisfies "none" | "pending-enrolment" | "verified";
+    }
+  }
+  if (!signIn.ok) {
+    signIn.error.code satisfies "AUTH_INVALID_CREDENTIALS" | "AUTH_ACCOUNT_LOCKED" | (string & {});
+  }
+  const events = await client.call("console.auth-audit.events", { query: { limit: 10 } });
+  if (events.ok) events.data.events[0]?.event satisfies string | undefined;
+  // @ts-expect-error sign-in requires the password in the body
+  await client.call("auth.sign-in", { body: { email: "ada@example.test" } });
+}
+
 void verifyClientContract;
+void verifyCredentialAuthContract;
 
 // Attachment policies are part of the typed contract, carrying no provider detail.
 type Attachments = ApplicationContractOf<typeof application>["attachments"];
