@@ -76,14 +76,36 @@ export interface HonoFailureProjectionContext {
   readonly operationId?: string;
 }
 
+/**
+ * A policy allows the request (optionally stamping response headers), denies
+ * it with a failure the operation declares, or denies it with one of the
+ * ADR-0004 resolution reasons, which the adapter projects exactly as the actor
+ * resolver's own refusals (`invalid-credential` → 401 `AUTHENTICATION_ERROR`,
+ * `forbidden` → 403 `AUTHORIZATION_ERROR`). The reason form lets a transport
+ * guard such as a CSRF check refuse any operation without every operation
+ * declaring the error, and without ever surfacing as a 500.
+ */
 export type HonoPreValidationPolicyResult =
   | Readonly<{ allowed: true; headers?: Readonly<Record<string, string>> }>
-  | Readonly<{ allowed: false; failure: OperationFailure }>;
+  | Readonly<{ allowed: false; failure: OperationFailure }>
+  | Readonly<{
+      allowed: false;
+      reason: "invalid-credential" | "forbidden";
+      /** Replaces the framework message in the envelope; never a secret. */
+      message?: string;
+    }>;
 
 /** Runs after HTTP authentication and access, before input reading or validation. */
 export type HonoPreValidationPolicy = (
   context: HonoPreValidationPolicyContext,
 ) => HonoPreValidationPolicyResult | Promise<HonoPreValidationPolicyResult>;
+
+/**
+ * The `preValidationPolicies` key under which a policy runs for every
+ * projected operation, ahead of the operation's own policy. Both must allow;
+ * their response headers merge, the operation-specific ones winning.
+ */
+export const GLOBAL_PRE_VALIDATION_POLICY = "*";
 
 export interface CreateHonoAdapterOptions<TCredential = unknown> {
   /** Used only when an incoming X-Request-Id is absent or unsafe to reflect. */
@@ -99,7 +121,11 @@ export interface CreateHonoAdapterOptions<TCredential = unknown> {
   ) => unknown;
   /** JSON failure media type. Omit to retain the framework's charset-qualified default. */
   readonly failureContentType?: "application/json" | "application/json; charset=UTF-8";
-  /** Operation-id keyed transport policies; never invoked by direct executor runs. */
+  /**
+   * Operation-id keyed transport policies; never invoked by direct executor
+   * runs. The `"*"` key ({@link GLOBAL_PRE_VALIDATION_POLICY}) runs for every
+   * operation before the operation's own policy.
+   */
   readonly preValidationPolicies?: Readonly<Record<string, HonoPreValidationPolicy>>;
   /** Receives unexpected failures after the wire response has been made safe. */
   readonly onUnexpectedError?: (
@@ -140,7 +166,10 @@ export function createHonoAdapter<
     serializeFailure(failure, projectFailureBody, operation, failureContentType);
   const routes = collectHttpOperations(application);
   for (const [operationId, policy] of Object.entries(options.preValidationPolicies ?? {})) {
-    if (!routes.some((operation) => operation.id === operationId) || typeof policy !== "function") {
+    const known =
+      operationId === GLOBAL_PRE_VALIDATION_POLICY ||
+      routes.some((operation) => operation.id === operationId);
+    if (!known || typeof policy !== "function") {
       throw new HonoAdapterError(
         "SHIP_HONO_OPTIONS_INVALID",
         `preValidationPolicies contains an unknown operation or invalid policy: ${JSON.stringify(operationId)}`,
@@ -182,11 +211,11 @@ export function createHonoAdapter<
 
     app.on(transport.metadata.method, transport.metadata.path, async (context) => {
       const requestId = readRequestId(context, options.generateRequestId);
-      let policyHeaders: Readonly<Record<string, string>> | undefined;
+      const policyHeaders: [string, string][] = [];
       const finish = (response: Response): Response => {
-        if (policyHeaders) {
-          for (const [name, value] of Object.entries(policyHeaders))
-            response.headers.set(name, value);
+        for (const [name, value] of policyHeaders) {
+          if (name.toLowerCase() === "set-cookie") response.headers.append(name, value);
+          else response.headers.set(name, value);
         }
         return response;
       };
@@ -197,8 +226,12 @@ export function createHonoAdapter<
         const accessFailure = checkOperationAccess(operation, authentication.actor, requestId);
         if (accessFailure) return failureResponse(accessFailure, operation);
 
-        const policy = options.preValidationPolicies?.[operation.id];
-        if (policy) {
+        const policies = [
+          options.preValidationPolicies?.[GLOBAL_PRE_VALIDATION_POLICY],
+          options.preValidationPolicies?.[operation.id],
+        ];
+        for (const policy of policies) {
+          if (!policy) continue;
           const decision = await policy({
             request: context.req.raw,
             operationId: operation.id,
@@ -211,6 +244,11 @@ export function createHonoAdapter<
             throw new TypeError("pre-validation policy must return an allow or deny decision");
           }
           if (!decision.allowed) {
+            if ("reason" in decision) {
+              return finish(
+                failureResponse(resolutionFailure(decision.reason, decision.message, requestId)),
+              );
+            }
             const { failure } = decision;
             const declared =
               failure instanceof OperationFailure
@@ -228,25 +266,27 @@ export function createHonoAdapter<
             if (details && "issues" in details && details.issues !== undefined) {
               throw new TypeError("pre-validation policy returned invalid failure details");
             }
-            return failureResponse(
-              {
-                ok: false,
-                status: declared.status,
-                error: {
-                  code: declared.code,
-                  message: failure.message,
-                  ...(details && "value" in details ? { details: details.value } : {}),
+            return finish(
+              failureResponse(
+                {
+                  ok: false,
+                  status: declared.status,
+                  error: {
+                    code: declared.code,
+                    message: failure.message,
+                    ...(details && "value" in details ? { details: details.value } : {}),
+                  },
+                  ...(failure.headers ? { headers: failure.headers } : {}),
+                  requestId,
                 },
-                ...(failure.headers ? { headers: failure.headers } : {}),
-                requestId,
-              },
-              operation,
+                operation,
+              ),
             );
           }
           if (decision.headers) {
             // Reuse the same reserved-name and value validation as operation responses.
             responseHeaders(requestId, decision.headers);
-            policyHeaders = decision.headers;
+            policyHeaders.push(...Object.entries(decision.headers));
           }
         }
 
@@ -419,36 +459,40 @@ async function resolveActor<TCredential>(
     };
   }
 
-  if (resolution.reason === "invalid-credential") {
+  return { ok: false, failure: resolutionFailure(resolution.reason, undefined, requestId) };
+}
+
+/** The ADR-0004 projection of a resolution reason, shared by the resolver path and policy denials. */
+function resolutionFailure(
+  reason: "invalid-credential" | "forbidden" | "unavailable",
+  message: string | undefined,
+  requestId: string,
+): OperationFailureResult {
+  const safeMessage =
+    typeof message === "string" && message.length > 0 && message.length <= 256
+      ? message
+      : undefined;
+  if (reason === "invalid-credential") {
     return {
       ok: false,
-      failure: {
-        ok: false,
-        status: 401,
-        error: { code: "AUTHENTICATION_ERROR", message: "Authentication failed" },
-        requestId,
-      },
+      status: 401,
+      error: { code: "AUTHENTICATION_ERROR", message: safeMessage ?? "Authentication failed" },
+      requestId,
     };
   }
-  if (resolution.reason === "forbidden") {
+  if (reason === "forbidden") {
     return {
       ok: false,
-      failure: {
-        ok: false,
-        status: 403,
-        error: { code: "AUTHORIZATION_ERROR", message: "Access denied" },
-        requestId,
-      },
+      status: 403,
+      error: { code: "AUTHORIZATION_ERROR", message: safeMessage ?? "Access denied" },
+      requestId,
     };
   }
   return {
     ok: false,
-    failure: {
-      ok: false,
-      status: 503,
-      error: { code: "AUTHENTICATION_UNAVAILABLE", message: "Authentication is unavailable" },
-      requestId,
-    },
+    status: 503,
+    error: { code: "AUTHENTICATION_UNAVAILABLE", message: "Authentication is unavailable" },
+    requestId,
   };
 }
 
@@ -1007,7 +1051,10 @@ function responseHeaders(
         `operation may not override reserved response header ${JSON.stringify(name)}`,
       );
     }
-    headers.set(name, value);
+    // `Set-Cookie` is the one header that must stay one-per-cookie: an operation
+    // and a policy may each set one without clobbering the other.
+    if (lower === "set-cookie") headers.append(name, value);
+    else headers.set(name, value);
   }
   return headers;
 }

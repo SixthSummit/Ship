@@ -16,7 +16,7 @@ const account = {
   mfaEnabled: true,
   createdAt: 'x',
 };
-const session = { token: 'ship_s_x', id: 's1', expiresAt: 'later', mfaState: 'verified' };
+const session = { transport: 'cookie', id: 's1', expiresAt: 'later', mfaState: 'verified' };
 
 function type(element: HTMLElement, selector: string, value: string): void {
   const input = element.querySelector<HTMLInputElement>(selector);
@@ -68,7 +68,11 @@ describe('credential auth screens', () => {
     submit(element);
     await fixture.whenStable();
     expect(call).toHaveBeenCalledWith('auth.sign-in', {
-      body: { email: 'ada@example.test', password: 'correct horse battery staple' },
+      body: {
+        email: 'ada@example.test',
+        password: 'correct horse battery staple',
+        transport: 'cookie',
+      },
     });
     expect(element.querySelector('[role=alert]')?.textContent).toContain('temporarily locked');
     expect(element.querySelector('[role=alert]')?.textContent).toContain('30 s');

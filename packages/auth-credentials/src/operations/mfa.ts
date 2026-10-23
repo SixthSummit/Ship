@@ -3,6 +3,7 @@ import {
   defineOperation,
   operationFailure,
   publicAccess,
+  respond,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
 import { z } from "zod";
@@ -28,6 +29,9 @@ import {
   lockedFailure,
   lockRemainingSeconds,
   recordFailedAttempt,
+  requestTransport,
+  resolveTransport,
+  sessionCookieHeaders,
   sessionTokenView,
 } from "../runtime.js";
 import type { AuthAccount, AuthToken, CredentialStore } from "../store.js";
@@ -44,8 +48,11 @@ import { requireAccount } from "./session.js";
 const enrolBody = z.object({ password: passwordSchema });
 const enrolledSchema = z.object({ secret: z.string(), otpauthUrl: z.string() });
 const confirmBody = z.object({ code: codeSchema });
-const confirmedSchema = z.object({ recoveryCodes: z.array(z.string()) });
-const challengeBody = z.object({ challenge: tokenSchema, code: codeSchema });
+const confirmedSchema = z.object({
+  recoveryCodes: z.array(z.string()),
+  /** Present when the session was rotated on enrolment (cookie sessions): the replacement. */
+  session: sessionTokenSchema.optional(),
+});
 const challengePassedSchema = z.object({
   status: z.literal("signed-in"),
   session: sessionTokenSchema,
@@ -58,6 +65,11 @@ export function defineMfaOperations<const TId extends string>(
   runtime: CredentialAuthRuntime,
 ) {
   const { basePath } = runtime;
+  const challengeBody = z.object({
+    challenge: tokenSchema,
+    code: codeSchema,
+    transport: z.enum(runtime.sessions.transports).optional(),
+  });
   const totp = {
     digits: runtime.policies.mfa.digits,
     periodSeconds: runtime.policies.mfa.periodSeconds,
@@ -235,16 +247,43 @@ export function defineMfaOperations<const TId extends string>(
       );
       await services.store.replaceRecoveryCodes(account.id, codes.map(hashRecoveryCode), now);
       const sessionId = currentSessionId(context.identity);
-      if (sessionId) await services.store.updateSession(sessionId, { mfaState: "verified" });
+      // Privilege change: a cookie session is rotated (the old token is
+      // revoked and a verified one installed) so a cookie captured before
+      // enrolment never carries the verified state. A bearer session keeps
+      // its token and is marked verified in place.
+      const rotate =
+        sessionId !== undefined && requestTransport(runtime, context.requestId) === "cookie";
+      let rotated: Awaited<ReturnType<typeof issueSession>> | undefined;
+      if (rotate) {
+        rotated = await issueSession(
+          runtime,
+          services.store,
+          account,
+          "verified",
+          context.requestId,
+          now,
+        );
+        await services.store.revokeSession(sessionId, { now, reason: "rotated" });
+      } else if (sessionId) {
+        await services.store.updateSession(sessionId, { mfaState: "verified" });
+      }
       await clearFailedAttempts(services.store, account, now);
       await audit(runtime, services.store, context.requestId, {
         event: "mfa.enrolled",
         outcome: "success",
         accountId: account.id,
         ...(sessionId ? { sessionId } : {}),
-        details: { recoveryCodes: codes.length },
+        details: {
+          recoveryCodes: codes.length,
+          ...(rotated ? { rotatedTo: rotated.session.id } : {}),
+        },
       });
-      return { recoveryCodes: codes };
+      if (!rotated) return { recoveryCodes: codes };
+      return respond(
+        200,
+        { recoveryCodes: codes, session: sessionTokenView(rotated, "cookie") },
+        { headers: sessionCookieHeaders(runtime, rotated, "cookie", now) },
+      );
     },
   });
 
@@ -288,11 +327,14 @@ export function defineMfaOperations<const TId extends string>(
         now,
         "mfa.verify",
       );
-      return {
+      const transport = resolveTransport(runtime, input.body.transport);
+      const body = {
         status: "signed-in" as const,
-        session: sessionTokenView(issued),
+        session: sessionTokenView(issued, transport),
         account: accountView(account, true),
       };
+      const headers = sessionCookieHeaders(runtime, issued, transport, now);
+      return headers ? respond(200, body, { headers }) : body;
     },
   });
 
@@ -328,12 +370,15 @@ export function defineMfaOperations<const TId extends string>(
         "mfa.recover",
       );
       const counts = await services.store.countRecoveryCodes(account.id);
-      return {
+      const transport = resolveTransport(runtime, input.body.transport);
+      const body = {
         status: "signed-in" as const,
-        session: sessionTokenView(issued),
+        session: sessionTokenView(issued, transport),
         account: accountView(account, true),
         recoveryCodesRemaining: counts.remaining,
       };
+      const headers = sessionCookieHeaders(runtime, issued, transport, now);
+      return headers ? respond(200, body, { headers }) : body;
     },
   });
 

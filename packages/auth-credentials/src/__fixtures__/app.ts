@@ -22,6 +22,7 @@ import {
 import { createInMemoryJobBackend } from "@sixthsummit/ship-testing/jobs";
 import { z } from "zod";
 import { createRequestClientRegistry } from "../client.js";
+import { type CredentialSessionOptions, credentialSessionCsrfPolicy } from "../cookie.js";
 import { argon2idPasswordHasher } from "../crypto/password.js";
 import { defineCredentialAuthMailer } from "../mailer.js";
 import { createInMemoryCredentialStore, type InMemoryCredentialStore } from "../memory-store.js";
@@ -54,6 +55,12 @@ export interface FixtureOptions {
   readonly signInLink?: string | null;
   /** An external store (the PostgreSQL store in the integration test); defaults to in-memory. */
   readonly store?: CredentialStore;
+  /** Session transport configuration; cookie transports also register the CSRF policy under `"*"`. */
+  readonly sessions?: CredentialSessionOptions;
+  /** Browser origins the CSRF policy trusts beside the request's own origin. */
+  readonly trustedOrigins?: readonly string[];
+  /** `null` omits the clients registry to exercise the cookie-mode diagnostic. */
+  readonly clients?: null;
 }
 
 /** The auth module beside a protected application operation and a slow one for the revoke-all race. */
@@ -89,7 +96,8 @@ export function createFixture(options: FixtureOptions = {}) {
       ...(options.onExistingEmail ? { onExistingEmail: options.onExistingEmail } : {}),
     },
     defaultRoles: options.defaultRoles ?? [],
-    clients,
+    ...(options.clients === null ? {} : { clients }),
+    ...(options.sessions ? { sessions: options.sessions } : {}),
     clock,
   });
   const mailModule = defineModule({
@@ -161,18 +169,23 @@ export function createFixture(options: FixtureOptions = {}) {
     resolveActor,
     clients,
     session: auth.policies.session,
+    sessions: auth.sessions,
     clock,
   });
-  const httpApp = createHonoAdapter(app, {
-    auth: authentication,
-    ...(options.rateLimit
+  const preValidationPolicies = {
+    ...(auth.sessions.cookie
       ? {
-          preValidationPolicies: credentialAuthRateLimitPolicies({
-            ...options.rateLimit,
-            clock,
+          "*": credentialSessionCsrfPolicy({
+            auth,
+            ...(options.trustedOrigins ? { trustedOrigins: options.trustedOrigins } : {}),
           }),
         }
       : {}),
+    ...(options.rateLimit ? credentialAuthRateLimitPolicies({ ...options.rateLimit, clock }) : {}),
+  };
+  const httpApp = createHonoAdapter(app, {
+    auth: authentication,
+    ...(Object.keys(preValidationPolicies).length > 0 ? { preValidationPolicies } : {}),
   });
   const executor = createExecutor(app);
 
@@ -257,7 +270,40 @@ export async function registerAndSignIn(fixture: Fixture, email = EMAIL, passwor
   if (signedIn.status !== 200) throw new Error(`sign-in failed: ${JSON.stringify(signedIn.body)}`);
   return signedIn.body as {
     status: string;
-    session: { token: string; id: string; expiresAt: string; mfaState: string };
+    session: { token: string; id: string; expiresAt: string; mfaState: string; transport: string };
     account: { id: string; email: string };
+  };
+}
+
+/**
+ * A minimal cookie jar for the fixture: stores every `Set-Cookie` a response
+ * carries (honouring `Max-Age=0` as removal) and renders the `Cookie` header
+ * a browser would send back. Attributes are kept for assertions.
+ */
+export function createCookieJar() {
+  const cookies = new Map<string, { value: string; attributes: string }>();
+  return {
+    absorb(headers: Headers): void {
+      for (const line of headers.getSetCookie()) {
+        const [pair = "", ...rest] = line.split(";");
+        const separator = pair.indexOf("=");
+        const name = pair.slice(0, separator).trim();
+        const value = pair.slice(separator + 1).trim();
+        const attributes = rest.map((part) => part.trim()).join("; ");
+        if (/(?:^|; )Max-Age=0(?:;|$)/u.test(attributes) || value.length === 0)
+          cookies.delete(name);
+        else cookies.set(name, { value, attributes });
+      }
+    },
+    header(): string | undefined {
+      if (cookies.size === 0) return undefined;
+      return [...cookies].map(([name, cookie]) => `${name}=${cookie.value}`).join("; ");
+    },
+    get(name: string): { value: string; attributes: string } | undefined {
+      return cookies.get(name);
+    },
+    names(): string[] {
+      return [...cookies.keys()];
+    },
   };
 }

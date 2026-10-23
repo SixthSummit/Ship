@@ -1,11 +1,16 @@
 import {
   type CredentialAuthPolicyOptions,
+  type CredentialSessionOptions,
   type CredentialStore,
+  credentialSessionCsrfPolicy,
+  DEFAULT_CREDENTIAL_AUTH_POLICIES,
   defineCredentialAuthMailer,
   defineCredentialAuthModule,
   type RequestClientRegistry,
+  resolveSessionPolicy,
   type SecretKeyRing,
 } from "@sixthsummit/ship-auth-credentials";
+import type { HonoPreValidationPolicy } from "@sixthsummit/ship-hono";
 import type { MailDelivery } from "@sixthsummit/ship-mail";
 import type { reportsMailer } from "./mail.js";
 
@@ -49,11 +54,44 @@ export const credentialAuthPolicies: CredentialAuthPolicyOptions = {
   mfa: { required: (account) => account.roles.includes("sre"), issuer: "Portfolio" },
 };
 
+/**
+ * Both session transports (SAPI-762): the browser app signs in over the
+ * `httpOnly` cookie (nothing readable from script, reload-safe), native and
+ * machine clients keep the bearer. The cookie attributes are the package
+ * defaults (`ship_session`, `Secure`, `SameSite=Lax`, `Path=/`), and the
+ * `ship_csrf` cookie is echoed in `x-csrf-token`.
+ */
+export const credentialSessions: CredentialSessionOptions = { transport: "both" };
+export const credentialSessionPolicy = resolveSessionPolicy(credentialSessions);
+
+/**
+ * The CSRF guard for cookie sessions, registered under the adapter's `"*"`
+ * pre-validation key so it runs on every operation after actor resolution:
+ * the trusted origins are exactly the CORS allowlist.
+ */
+export function credentialSessionCsrf(trustedOrigins: readonly string[]): HonoPreValidationPolicy {
+  return credentialSessionCsrfPolicy({
+    auth: {
+      id: "auth",
+      sessions: credentialSessionPolicy,
+      policies: {
+        session: {
+          maxAgeMs:
+            credentialAuthPolicies.session?.maxAgeMs ??
+            DEFAULT_CREDENTIAL_AUTH_POLICIES.session.maxAgeMs,
+        },
+      },
+    },
+    trustedOrigins,
+  });
+}
+
 export function createCredentialAuthModule(definition: {
   readonly store: CredentialStore;
   readonly mail: MailDelivery<readonly [typeof reportsMailer, typeof authMailer]>["dependency"];
   readonly secrets?: SecretKeyRing;
-  readonly clients?: RequestClientRegistry;
+  /** Required by cookie mode: shared with the HTTP adapter so the module knows how a request authenticated. */
+  readonly clients: RequestClientRegistry;
   readonly clock?: () => Date;
 }) {
   return defineCredentialAuthModule({
@@ -70,9 +108,10 @@ export function createCredentialAuthModule(definition: {
     },
     secrets: definition.secrets ?? DEVELOPMENT_AUTH_SECRETS,
     policies: credentialAuthPolicies,
+    sessions: credentialSessions,
     // Self-registered accounts start as analysts; operators promote roles out of band.
     defaultRoles: ["analyst"],
-    ...(definition.clients ? { clients: definition.clients } : {}),
+    clients: definition.clients,
     ...(definition.clock ? { clock: definition.clock } : {}),
   });
 }

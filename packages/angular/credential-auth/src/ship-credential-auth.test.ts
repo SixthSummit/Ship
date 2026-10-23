@@ -13,6 +13,7 @@ const account = {
   createdAt: '2026-10-23T12:00:00.000Z',
 };
 const session = (mfaState: 'none' | 'verified' | 'pending-enrolment' = 'verified') => ({
+  transport: 'bearer' as const,
   token: `ship_s_${mfaState}`,
   id: `s-${mfaState}`,
   expiresAt: '2026-11-22T12:00:00.000Z',
@@ -141,7 +142,11 @@ describe('ShipCredentialAuth', () => {
       }),
       'auth.totp.confirm': () => ({ ok: true, status: 200, data: { recoveryCodes: ['a-b-c-d'] } }),
     });
-    const auth = new ShipCredentialAuth({ client: () => client, prefix: 'auth' });
+    const auth = new ShipCredentialAuth({
+      client: () => client,
+      prefix: 'auth',
+      storage: memorySessionStorage(),
+    });
     await auth.signIn('ada@example.test', 'pw');
     expect(await auth.recover('aaaaa-bbbbb-ccccc-ddddd')).toBeUndefined();
     expect(auth.state()).toEqual({ status: 'anonymous' });
@@ -151,5 +156,122 @@ describe('ShipCredentialAuth', () => {
     expect(auth.recoveryCodes()).toEqual(['a-b-c-d']);
     auth.clearRecoveryCodes();
     expect(auth.recoveryCodes()).toBeUndefined();
+  });
+
+  it('defaults to cookie mode: asks for the cookie transport, keeps no token and always asks me', async () => {
+    const cookieSession = {
+      transport: 'cookie' as const,
+      id: 's-c',
+      expiresAt: 'later',
+      mfaState: 'none' as const,
+    };
+    let signedIn = false;
+    const client = fakeClient({
+      'auth.me': () =>
+        signedIn
+          ? {
+              ok: true,
+              status: 200,
+              data: {
+                account,
+                session: { ...cookieSession, current: true, createdAt: 'x', lastSeenAt: 'x' },
+              },
+            }
+          : { ok: false, status: 401, error: { code: 'AUTHENTICATION_ERROR', message: 'no' } },
+      'auth.sign-in': () => {
+        signedIn = true;
+        return {
+          ok: true,
+          status: 200,
+          data: { status: 'signed-in', session: cookieSession, account },
+        };
+      },
+      'auth.totp.confirm': () => ({
+        ok: true,
+        status: 200,
+        data: {
+          recoveryCodes: ['a-b-c-d'],
+          session: { ...cookieSession, id: 's-rotated', mfaState: 'verified' },
+        },
+      }),
+      'auth.sign-out': () => {
+        signedIn = false;
+        return { ok: true, status: 200, data: { signedOut: true } };
+      },
+    });
+    const auth = new ShipCredentialAuth({ client });
+    expect(auth.transport).toBe('cookie');
+    await expect(auth.initialize()).resolves.toEqual({ status: 'anonymous' });
+    expect(client.call).toHaveBeenCalledWith('auth.me', {}); // the cookie is the browser's to send
+
+    await auth.signIn('ada@example.test', 'pw');
+    expect(client.call).toHaveBeenLastCalledWith('auth.sign-in', {
+      body: { email: 'ada@example.test', password: 'pw', transport: 'cookie' },
+    });
+    expect(auth.state()).toEqual({ status: 'signed-in', account, session: cookieSession });
+    await expect(auth.getToken()).resolves.toBeNull();
+    expect(JSON.stringify(auth.state())).not.toContain('ship_s_');
+    expect(globalThis.localStorage.length).toBe(0);
+    expect(auth.credential()).toMatchObject({
+      kind: 'cookie',
+      credentials: 'include',
+      csrfHeaderName: 'x-csrf-token',
+    });
+
+    // A reload restores the session from the cookie alone.
+    const reloaded = new ShipCredentialAuth({ client });
+    await expect(reloaded.initialize()).resolves.toMatchObject({
+      status: 'signed-in',
+      session: cookieSession,
+    });
+
+    // Enrolment rotates the cookie session; the state adopts the replacement without a token.
+    await auth.confirmTotp('123456');
+    expect(auth.state()).toMatchObject({
+      status: 'signed-in',
+      session: { transport: 'cookie', id: 's-rotated', mfaState: 'verified' },
+    });
+
+    await auth.signOut();
+    expect(client.call).toHaveBeenLastCalledWith('auth.sign-out', {});
+    expect(auth.state()).toEqual({ status: 'anonymous' });
+    await auth.signOut();
+    expect(
+      client.call.mock.calls.filter(([operation]) => operation === 'auth.sign-out')
+    ).toHaveLength(1);
+  });
+
+  it('drops a token a server sends to a cookie-mode client and exposes a bearer capability otherwise', async () => {
+    const client = fakeClient({
+      'auth.sign-in': () => ({
+        ok: true,
+        status: 200,
+        data: { status: 'signed-in', session: session('none'), account },
+      }),
+    });
+    const cookie = new ShipCredentialAuth({ client });
+    await cookie.signIn('ada@example.test', 'pw');
+    expect(cookie.state()).toMatchObject({ session: { transport: 'cookie', id: 's-none' } });
+    expect(JSON.stringify(cookie.state())).not.toContain('token');
+
+    const storage = memorySessionStorage();
+    const bearer = new ShipCredentialAuth({ client, storage });
+    expect(bearer.transport).toBe('bearer');
+    await bearer.signIn('ada@example.test', 'pw');
+    expect(client.call).toHaveBeenLastCalledWith('auth.sign-in', {
+      body: { email: 'ada@example.test', password: 'pw' },
+    });
+    expect(storage.read()).toBe('ship_s_none');
+    const capability = bearer.credential();
+    expect(capability.kind).toBe('bearer');
+    if (capability.kind === 'bearer') {
+      await expect(
+        capability.getToken({
+          operation: 'x' as never,
+          attempt: 1,
+          signal: new AbortController().signal,
+        })
+      ).resolves.toBe('ship_s_none');
+    }
   });
 });

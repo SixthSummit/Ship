@@ -91,7 +91,7 @@ cannot both win. The in-memory store implements the same contract, and
 | MFA secrets at rest | AES-256-GCM under a consumer-supplied key ring (`{ current, keys }`, 32-byte keys, key id recorded on the row and bound as associated data) so keys rotate by adding one and switching `current`. |
 | Recovery codes | Ten 20-character codes from a 31-symbol alphabet (~99 bits), stored hashed, each consumed once. |
 | Comparisons | `timingSafeEqual` for every secret; the unknown-email path verifies a decoy hash so timing does not reveal account existence; forgot-password and resend answer 202 regardless. |
-| Session token | Opaque bearer, hashed at rest, absolute and idle expiry, `revokedAt`, plus the account cutoff for revoke-all and password reset. The Angular client keeps it in memory by default (`browserSessionStorage` opts into `localStorage`). |
+| Session token | Opaque, hashed at rest, absolute and idle expiry, `revokedAt`, plus the account cutoff for revoke-all and password reset. Carried as a bearer (native and machine clients) or, per the 2026-10-23 addendum, as an `httpOnly` cookie with CSRF protection, which is the browser default; the Angular bearer storages (`memorySessionStorage`, `browserSessionStorage`) stay for non-browser hosts. |
 | Logging | Nothing secret is ever audited or logged; audit rows carry reason codes and counts only. |
 
 ### The audit log is a console panel
@@ -164,3 +164,101 @@ policy line for applications that prefer the friendlier answer.
 
 Rejected per ADR-0024: one `console.operate` slug keeps the grant auditable;
 the extension seam enforces exactly that permission.
+
+## Addendum 2026-10-23: cookie-mode sessions as the browser default (SAPI-762)
+
+This addendum adds a second session transport to the accepted decision. The
+operations, the actor contract, the store and the audit log are unchanged.
+
+### Context
+
+The bearer session shipped first because it is transport-neutral and lets
+native and machine clients hold the token themselves. In a browser the Angular
+client had to keep it in memory, the only default that is not a known
+vulnerability, and so signed the person out on every full reload; the opt-in
+`localStorage` storage fixed reloads and handed the token to any injected
+script. The industry answer for a browser is a session cookie JavaScript
+cannot read, paired with CSRF protection.
+
+### Decision
+
+`defineCredentialAuthModule({ sessions: { transport, cookie, environment } })`
+selects `bearer` (still the default, nothing changes for an existing
+consumer), `cookie`, or `both`, where each sign-in chooses through a
+`transport` body field that only accepts the enabled values. A cookie session
+is installed by the sign-in, TOTP verify and recovery consume operations
+through `respond()` headers as `httpOnly`, `Secure`, `SameSite=Lax` (or
+`Strict`), `Path=/`, with `Max-Age` set to the absolute lifetime (idle expiry
+stays with the resolver), and the body carries `session.transport: "cookie"`
+without a token. Sign-out, revoking the current session and revoke-all clear
+it. TOTP confirmation rotates a cookie session (old token revoked as
+`rotated`, a verified one installed) so a cookie captured before enrolment
+never carries the verified state; a bearer session is marked verified in
+place so native clients keep their token. `Secure` is refused at definition
+time unless `sessions.environment` is explicitly `"development"`; the package
+never reads `NODE_ENV`. Cookie transports require the shared client registry,
+which now records how each request authenticated.
+
+The Hono credential adapter reads the cookie when no bearer header is
+present; a bearer always wins. A cookie session the resolver cannot verify
+counts as absent on a public operation and is refused on an authenticated
+one: the cookie is ambient, the browser keeps sending it after a revoke-all,
+and sign-in must stay reachable to replace it. A present invalid bearer keeps
+the ADR-0004 rule and is refused everywhere.
+
+CSRF protection is `credentialSessionCsrfPolicy()`, a SAPI-476 pre-validation
+policy registered under the new `"*"` key of `createHonoAdapter({ preValidationPolicies })`
+so it runs on every operation after actor resolution; `ship-hono` also gains
+the `{ allowed: false, reason }` policy result, projected exactly as the
+resolver's own 401/403, so the refusal is a declared 403 and never a 500, and
+appends `Set-Cookie` instead of clobbering it. Safe methods are exempt. A
+request presenting the session cookie must carry a trusted `Origin` (else the
+`Referer` origin; neither is a refusal) and echo the readable CSRF cookie in
+the CSRF header, compared in constant time; a session-issuing operation is
+refused on an untrusted `Origin` (login CSRF) and passes without one (a native
+client). Trusted origins are the consumer's list, the same as the CORS
+allowlist, plus the request's own origin from the forwarded or `Host` headers.
+The policy issues the CSRF cookie itself, so the token exists after the first
+sign-in or `GET /auth/me`.
+
+`@sixthsummit/ship-angular/credential-auth` makes `cookieSessionStorage()`
+the default: the client asks for the cookie transport, never holds a token,
+asks `me` on initialize, lets the server clear the cookie on sign-out and
+adopts a rotated session. `cookieCredentialCapability()` is the
+`kind: "cookie"` capability for the policy client (credentials included, the
+CSRF cookie echoed in `x-csrf-token`). The bearer storages remain for native
+shells and non-browser hosts.
+
+### Consequences
+
+- A browser app signs in, reloads and stays signed in with no token readable
+  from JavaScript; the CSRF matrix and the SAPI-760 wildcard-plus-credentials
+  guard close the cross-site paths; revoke-all ends a cookie session on the
+  next request, including during an in-flight one.
+- Cookie mode is a same-site deployment (`SameSite=Lax` never crosses sites):
+  one origin behind a proxy, or sibling hosts of one registrable domain with
+  `cookie.domain` set and `Access-Control-Allow-Credentials` for the exact
+  app origin. The feature page records the CORS and proxy requirements.
+- A consumer that enables a cookie transport must register the CSRF policy;
+  the module cannot see the adapter's options, so the requirement is
+  documented and proven by the customized golden consumer rather than
+  enforced at construction.
+- The server default stays `bearer` while the Angular default is `cookie`: a
+  bearer-only module answers a cookie sign-in with a validation error naming
+  `transport`, so the mismatch is explicit rather than a token the browser
+  client silently discards.
+
+### Rejected alternatives
+
+- **Enforcing CSRF in the actor resolver.** It would need no consumer wiring
+  but moves a transport concern into the credential layer and cannot issue
+  the CSRF cookie; the pre-validation seam already runs after resolution with
+  the request in hand.
+- **Delivering the CSRF token in the sign-in body instead of a readable
+  cookie.** Works across sibling hosts without `Domain`, but the token then
+  lives in script state again and is lost on reload until `me` is asked; the
+  double-submit cookie is the shape the compatibility `csrf()` middleware and
+  the Angular interceptor already use.
+- **Rotating bearer sessions on TOTP confirmation too.** Correct in principle,
+  but it would sign native clients out unless they adopt the returned token;
+  deferred until a native consumer asks for it.
