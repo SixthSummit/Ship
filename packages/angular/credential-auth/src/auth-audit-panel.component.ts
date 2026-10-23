@@ -1,8 +1,8 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  inject,
   InjectionToken,
+  inject,
   type OnInit,
   signal,
 } from '@angular/core';
