@@ -80,12 +80,14 @@ module; `createHonoAdapter` projects `/auth/*`.
 | `auth.sign-out`, `auth.me` | `POST /auth/sign-out`, `GET /auth/me` | authenticated | current session |
 | `auth.sessions.list` / `.revoke` / `.revoke-all` | `GET /auth/sessions`, `POST /auth/sessions/revoke`, `/auth/sessions/revoke-all` | authenticated | `{ keepCurrent }` on revoke-all |
 | `auth.forgot-password` / `auth.reset-password` | `POST /auth/password/forgot`, `/auth/password/reset` | public | 202 always; reset clears the lock and signs every session out |
+| `auth.change-password` | `POST /auth/password/change` | authenticated | `{ currentPassword, newPassword, signOutOtherSessions? }`; password re-entry under the lockout policy; 200 `{ changed, revoked, session }` where `session` is the rotated current session (new bearer token, or a new cookie in `Set-Cookie`) and every other session is revoked unless `signOutOtherSessions: false`; `AUTH_INVALID_CREDENTIALS` 401, `AUTH_ACCOUNT_LOCKED` 423, `AUTH_PASSWORD_POLICY` 422 |
 | `auth.change-email` / `auth.confirm-email-change` | `POST /auth/email/change`, `/auth/email/confirm` | authenticated / public | password re-entry; mail to the new address |
 | `auth.totp.enrol` / `auth.totp.confirm` | `POST /auth/totp/enrol`, `/auth/totp/confirm` | authenticated | password re-entry; confirm returns the recovery codes once and, for a cookie session, the rotated `session` |
 
 Every flow writes an audit row (`register`, `sign-in`, `sign-in.locked`,
 `mfa.challenged`, `mfa.verify`, `mfa.recover`, `mfa.enrolled`,
-`password.reset`, `email.changed`, `session.revoke`, `sessions.revoke-all`, …)
+`password.reset`, `password.changed`, `email.changed`, `session.revoke`,
+`sessions.revoke-all`, …)
 with outcome, request id, ip and user agent, never a secret.
 
 ## 3. The actor provider
@@ -131,8 +133,10 @@ with `Set-Cookie: ship_session=ship_s_…; Path=/; Max-Age=<absolute lifetime>; 
 and a `session` without `token`; sign-out, revoking the current session and
 revoke-all answer with the cookie cleared; TOTP confirmation rotates a cookie
 session (the old token is revoked with reason `rotated`, a verified one is
-installed and returned as `session`). Idle expiry stays server-side: the
-resolver refuses an idle session whatever the cookie's `Max-Age` says.
+installed and returned as `session`), and a password change rotates the
+current session whatever its transport (a captured token is the same token
+the request carries) and revokes the others. Idle expiry stays server-side:
+the resolver refuses an idle session whatever the cookie's `Max-Age` says.
 
 ```ts
 export const auth = defineCredentialAuthModule({
@@ -180,6 +184,18 @@ to a request that has a session cookie but no CSRF cookie, and on every
 session-issuing operation, so a client always holds a token after a sign-in
 or a `GET /auth/me`. A bearer header always wins over a cookie, and a bearer
 request is never CSRF-checked.
+
+**The guard cannot be forgotten.** `credentialAuthentication({ sessions })`
+(and `credentialSessionCredentials({ sessions })`) with a cookie transport
+declares that it requires `credentialSessionCsrfPolicy()` under the `"*"`
+key, and `createHonoAdapter` refuses to construct without it
+(`SHIP_HONO_OPTIONS_INVALID`, naming the policy to register). A key may hold
+a list of policies that run in order, so the guard composes with a policy of
+your own: `"*": [myPolicy, credentialSessionCsrfPolicy({ auth })]`. A consumer
+that wraps the credential adapter in its own (to dispatch on several
+credential kinds) forwards `requires`, as the customized golden consumer
+does; `credentialSessionCsrfRequirement(sessions)` builds the same entry by
+hand.
 
 **A stale cookie** (revoked, expired, idle, cut off, malformed) resolves
 anonymously on a public operation and is refused on an authenticated one: the

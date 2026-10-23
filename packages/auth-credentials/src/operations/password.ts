@@ -3,6 +3,7 @@ import {
   defineOperation,
   operationFailure,
   publicAccess,
+  respond,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
 import { z } from "zod";
@@ -21,19 +22,42 @@ import {
   assertPasswordPolicy,
   audit,
   type CredentialAuthRuntime,
+  clearFailedAttempts,
+  currentSessionId,
+  issueSession,
   lockedFailure,
   lockRemainingSeconds,
   recordFailedAttempt,
+  requestTransport,
   sendCredentialMail,
+  sessionCookieHeaders,
+  sessionTokenView,
 } from "../runtime.js";
 import { normalizeEmail } from "../store.js";
-import { emailSchema, passwordSchema, tokenSchema } from "../views.js";
+import { emailSchema, passwordSchema, sessionTokenSchema, tokenSchema } from "../views.js";
 import { requireAccount } from "./session.js";
 
 const forgotBody = z.object({ email: emailSchema });
 const acceptedSchema = z.object({ accepted: z.literal(true) });
 const resetBody = z.object({ token: tokenSchema, password: passwordSchema });
 const resetSchema = z.object({ reset: z.literal(true) });
+const changePasswordBody = z.object({
+  currentPassword: passwordSchema,
+  newPassword: passwordSchema,
+  /** Defaults to `true`: every other session of the account is revoked. */
+  signOutOtherSessions: z.boolean().optional(),
+});
+const passwordChangedSchema = z.object({
+  changed: z.literal(true),
+  /** How many other sessions were revoked. */
+  revoked: z.number().int().nonnegative(),
+  /**
+   * The rotated current session, present when the request came through a
+   * credential session: a bearer client adopts the new token, a cookie
+   * client received it in `Set-Cookie`. The old token is revoked.
+   */
+  session: sessionTokenSchema.optional(),
+});
 const changeEmailBody = z.object({ password: passwordSchema, newEmail: emailSchema });
 const confirmBody = z.object({ token: tokenSchema });
 const emailChangedSchema = z.object({ email: z.string() });
@@ -139,6 +163,94 @@ export function definePasswordOperations<const TId extends string>(
         details: { sessionsRevoked: revoked },
       });
       return { reset: true as const };
+    },
+  });
+
+  const changePassword = defineOperation({
+    id: `${id}.change-password` as const,
+    transport: http.post(`${basePath}/password/change`),
+    input: { body: changePasswordBody },
+    output: { 200: passwordChangedSchema },
+    successStatus: 200,
+    errors: [authInvalidCredentials, authAccountLocked, authAccountDisabled, authPasswordPolicy],
+    access: authenticatedAccess(),
+    transaction: "none",
+    dependencies: { store: runtime.store },
+    handler: async ({ input, services, context }) => {
+      assertPasswordPolicy(runtime, input.body.newPassword);
+      const account = await requireAccount(services.store, context.actor.id);
+      const now = runtime.clock();
+      const remaining = lockRemainingSeconds(account, now);
+      if (remaining !== undefined) throw lockedFailure(remaining);
+      const credential = await services.store.findCredential(account.id);
+      const valid =
+        credential !== undefined &&
+        (await runtime.hasher.verify(input.body.currentPassword, credential.passwordHash));
+      if (!valid) {
+        const failure = await recordFailedAttempt(runtime, services.store, account, now);
+        await audit(runtime, services.store, context.requestId, {
+          event: "password.changed",
+          outcome: "failure",
+          accountId: account.id,
+          details: { reason: "wrong-password", attempts: failure.attempts },
+        });
+        if (failure.lockedUntil) {
+          throw lockedFailure(Math.ceil(runtime.policies.lockout.durationMs / 1000));
+        }
+        throw operationFailure(authInvalidCredentials);
+      }
+      await services.store.setCredential(account.id, {
+        passwordHash: await runtime.hasher.hash(input.body.newPassword),
+        algorithm: runtime.hasher.algorithm,
+        now,
+      });
+      await clearFailedAttempts(services.store, account, now);
+      const sessionId = currentSessionId(context.identity);
+      const signOutOthers = input.body.signOutOtherSessions !== false;
+      // A changed password is the moment to shed a stolen token: the other
+      // sessions go (by default) and the current one is rotated, whatever its
+      // transport, because a captured token is the same token this request
+      // carries. The session keeps its MFA state; nothing about the second
+      // factor changed.
+      const revoked = signOutOthers
+        ? await services.store.revokeSessions(account.id, {
+            now,
+            reason: "password-changed",
+            ...(sessionId !== undefined ? { except: sessionId } : {}),
+          })
+        : 0;
+      let rotated: Awaited<ReturnType<typeof issueSession>> | undefined;
+      if (sessionId !== undefined) {
+        const current = await services.store.findSession(sessionId);
+        rotated = await issueSession(
+          runtime,
+          services.store,
+          account,
+          current?.mfaState ?? "none",
+          context.requestId,
+          now,
+        );
+        await services.store.revokeSession(sessionId, { now, reason: "rotated" });
+      }
+      await audit(runtime, services.store, context.requestId, {
+        event: "password.changed",
+        outcome: "success",
+        accountId: account.id,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        details: {
+          sessionsRevoked: revoked,
+          ...(rotated ? { rotatedTo: rotated.session.id } : {}),
+        },
+      });
+      if (!rotated) return { changed: true as const, revoked };
+      const transport = requestTransport(runtime, context.requestId) ?? "bearer";
+      const body = {
+        changed: true as const,
+        revoked,
+        session: sessionTokenView(rotated, transport),
+      };
+      const headers = sessionCookieHeaders(runtime, rotated, transport, now);
+      return headers ? respond(200, body, { headers }) : body;
     },
   });
 
@@ -257,5 +369,11 @@ export function definePasswordOperations<const TId extends string>(
     },
   });
 
-  return Object.freeze({ forgotPassword, resetPassword, changeEmail, confirmEmailChange });
+  return Object.freeze({
+    forgotPassword,
+    resetPassword,
+    changePassword,
+    changeEmail,
+    confirmEmailChange,
+  });
 }

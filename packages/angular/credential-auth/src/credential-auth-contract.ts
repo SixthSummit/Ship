@@ -126,6 +126,27 @@ export interface ShipCredentialAuthContract {
       { readonly 200: { readonly reset: true } },
       'AUTH_TOKEN_INVALID' | 'AUTH_PASSWORD_POLICY' | 'AUTH_RATE_LIMITED'
     >;
+    readonly 'auth.change-password': CredentialAuthOperation<
+      {
+        readonly body: {
+          readonly currentPassword: string;
+          readonly newPassword: string;
+          readonly signOutOtherSessions?: boolean;
+        };
+      },
+      {
+        readonly 200: {
+          readonly changed: true;
+          readonly revoked: number;
+          /** The rotated current session; the old token is revoked. */
+          readonly session?: CredentialSessionToken;
+        };
+      },
+      | 'AUTH_INVALID_CREDENTIALS'
+      | 'AUTH_ACCOUNT_LOCKED'
+      | 'AUTH_ACCOUNT_DISABLED'
+      | 'AUTH_PASSWORD_POLICY'
+    >;
     readonly 'auth.change-email': CredentialAuthOperation<
       { readonly body: { readonly password: string; readonly newEmail: string } },
       Accepted,

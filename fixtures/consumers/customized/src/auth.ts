@@ -101,6 +101,9 @@ export function customizedCredentialAdapter(): HonoCredentialAdapter<CustomizedC
   const credentials = credentialSessionCredentials({ sessions: credentialSessionPolicy });
   return defineHonoCredentialAdapter({
     id: "http.customized",
+    // The cookie-reading adapter cannot be mounted without the CSRF guard;
+    // forwarding its requirement keeps that a construction-time failure here.
+    ...(credentials.requires ? { requires: credentials.requires } : {}),
     extract: async (request) => {
       const authorization = request.headers.get("authorization");
       if (authorization?.startsWith("ShipSession ")) return sessions.extract(request);

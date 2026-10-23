@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
-import type { HonoPreValidationPolicy } from "@sixthsummit/ship-hono";
+import {
+  definePreValidationPolicy,
+  type HonoPolicyRequirement,
+  type HonoPreValidationPolicy,
+} from "@sixthsummit/ship-hono";
 import { constantTimeEqualStrings } from "./crypto/tokens.js";
 import { InvalidCredentialAuthDefinitionError } from "./errors.js";
 
@@ -10,6 +14,8 @@ export const DEFAULT_SESSION_COOKIE_NAME = "ship_session";
 export const DEFAULT_CSRF_COOKIE_NAME = "ship_csrf";
 /** Matches the compatibility distribution's `csrf()` middleware and the Angular cookie capability default. */
 export const DEFAULT_CSRF_HEADER = "x-csrf-token";
+/** The id `credentialSessionCsrfPolicy()` carries, which the cookie-reading credential adapter requires under `"*"`. */
+export const CREDENTIAL_CSRF_POLICY_ID = "ship-credentials.csrf";
 
 /** HTTP methods that never change state and are therefore exempt from the CSRF check. */
 export const SAFE_HTTP_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -391,6 +397,32 @@ export interface CredentialSessionCsrfPolicyOptions {
 export function credentialSessionCsrfPolicy(
   options: CredentialSessionCsrfPolicyOptions,
 ): HonoPreValidationPolicy {
+  return definePreValidationPolicy(CREDENTIAL_CSRF_POLICY_ID, buildCsrfPolicy(options));
+}
+
+/**
+ * The policy requirement a credential adapter that reads the session cookie
+ * declares: `createHonoAdapter` refuses to construct unless
+ * `credentialSessionCsrfPolicy()` is registered under the `"*"` key, alone or
+ * in a list. Empty for a bearer-only policy. `credentialSessionCredentials()`
+ * declares it already; a consumer composing its own credential adapter over
+ * it forwards `requires`.
+ */
+export function credentialSessionCsrfRequirement(
+  sessions: CredentialSessionPolicy | undefined,
+): readonly HonoPolicyRequirement[] {
+  if (!sessions?.transports.includes("cookie")) return [];
+  return Object.freeze([
+    Object.freeze({
+      key: "*",
+      policyId: CREDENTIAL_CSRF_POLICY_ID,
+      message:
+        'credential auth sessions.transport "cookie" or "both" requires credentialSessionCsrfPolicy({ auth, trustedOrigins }) under the "*" key of createHonoAdapter({ preValidationPolicies }): without it a session cookie is accepted with no CSRF protection',
+    }),
+  ]);
+}
+
+function buildCsrfPolicy(options: CredentialSessionCsrfPolicyOptions): HonoPreValidationPolicy {
   const cookie = options.auth?.sessions?.cookie;
   if (!cookie) {
     throw new TypeError(
