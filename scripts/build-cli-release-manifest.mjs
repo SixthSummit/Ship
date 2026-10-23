@@ -21,6 +21,11 @@ const coreManifest = JSON.parse(
 const cliManifest = JSON.parse(
   await readFile(resolve(repositoryRoot, "packages/cli/package.json"), "utf8"),
 );
+const honoManifest = manifests.find(({ name }) => name === "@sixthsummit/ship-hono");
+const honoPeerRange = honoManifest?.peerDependencies?.hono;
+if (typeof honoPeerRange !== "string" || !honoPeerRange.startsWith("^")) {
+  throw new Error("@sixthsummit/ship-hono must declare hono as a caret peer dependency");
+}
 
 const manifest = {
   schemaVersion: 1,
@@ -28,7 +33,9 @@ const manifest = {
   packages: Object.fromEntries(manifests.map(({ name, version }) => [name, version])),
   dependencies: {
     "@hono/node-server": coreManifest.dependencies["@hono/node-server"],
-    hono: rootManifest.pnpm.overrides.hono,
+    // The scaffold owns the Hono copy: a caret range inside ship-hono's peer
+    // range, next to exact Ship pins, so the two cannot drift apart.
+    hono: honoPeerRange,
     zod: coreManifest.dependencies.zod,
   },
   devDependencies: {

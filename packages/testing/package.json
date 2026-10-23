@@ -74,16 +74,17 @@
     "@opentelemetry/api": "^1.10.0",
     "@testcontainers/postgresql": "^12.0.1",
     "drizzle-kit": "^0.31.10",
-    "drizzle-orm": "^0.45.2",
     "pg": "^8.16.3"
   },
   "peerDependencies": {
-    "@sixthsummit/ship-core": "workspace:^"
+    "@sixthsummit/ship-core": "workspace:^",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@sixthsummit/ship-core": "workspace:*",
     "@types/pg": "^8.15.6",
     "@types/ws": "^8.18.1",
+    "drizzle-orm": "^0.45.2",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },

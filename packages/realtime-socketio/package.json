@@ -28,12 +28,12 @@
   "dependencies": {
     "@opentelemetry/api": "^1.10.0",
     "@sixthsummit/ship-observability-otel": "workspace:^",
-    "ioredis": "^5.11.1",
     "socket.io": "^4.8.3"
   },
   "peerDependencies": {
     "@sixthsummit/ship-core": "workspace:^",
-    "@sixthsummit/ship-hono": "workspace:^"
+    "@sixthsummit/ship-hono": "workspace:^",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@opentelemetry/sdk-metrics": "^3.0.0",
@@ -42,6 +42,7 @@
     "@sixthsummit/ship-hono": "workspace:*",
     "@sixthsummit/ship-testing": "workspace:^",
     "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.11.1",
     "socket.io-client": "^4.8.3",
     "testcontainers": "^12.1.0",
     "tsx": "^4.20.3",

@@ -26,11 +26,11 @@
     "test:coverage": "vitest run --root ../.. packages/drizzle/src --exclude '**/*.integration.test.ts' --coverage"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.10.0",
-    "drizzle-orm": "^0.45.2"
+    "@opentelemetry/api": "^1.10.0"
   },
   "peerDependencies": {
-    "@sixthsummit/ship-core": "workspace:^"
+    "@sixthsummit/ship-core": "workspace:^",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@opentelemetry/sdk-metrics": "^3.0.0",
@@ -38,6 +38,7 @@
     "@sixthsummit/ship-hono": "workspace:^",
     "@sixthsummit/ship-testing": "workspace:^",
     "@types/pg": "^8.15.6",
+    "drizzle-orm": "^0.45.2",
     "pg": "^8.16.3",
     "tsx": "^4.20.3",
     "zod": "^4.3.6"
