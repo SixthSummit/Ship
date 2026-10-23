@@ -29,6 +29,7 @@ describe('operation response metadata', () => {
         'Idempotency-Key': 'create-1',
         'Idempotency-Replayed': 'true',
         'Idempotency-Result': 'replay',
+        Location: 'https://app.example.test/oauth?connected=true',
       })
     );
 
@@ -40,6 +41,7 @@ describe('operation response metadata', () => {
         'idempotency-key': 'create-1',
         'idempotency-replayed': 'true',
         'idempotency-result': 'replay',
+        location: 'https://app.example.test/oauth?connected=true',
         'retry-after': '12',
         'x-request-id': 'request-1',
       },
@@ -48,6 +50,7 @@ describe('operation response metadata', () => {
       etag: '"account-1"',
       contentType: 'application/json',
       contentDisposition: 'attachment; filename="report.pdf"',
+      location: 'https://app.example.test/oauth?connected=true',
       idempotencyKey: 'create-1',
       idempotencyReplayed: true,
       idempotencyResult: 'replay',

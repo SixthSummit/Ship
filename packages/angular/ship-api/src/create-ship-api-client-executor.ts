@@ -38,6 +38,7 @@ export interface ShipApiClientMetadata {
   readonly etag?: string;
   readonly contentType?: string;
   readonly contentDisposition?: string;
+  readonly location?: string;
 }
 
 export type ShipApiClientResult =
@@ -160,6 +161,11 @@ export function createShipApiClientExecutor<TContract extends OperationTypeContr
         }
         received = await pending;
       } catch (error: unknown) {
+        if (isRecord(error) && Reflect.get(error, 'code') === 'SHIP_CLIENT_REDIRECT_OPAQUE') {
+          throw new ProtocolError('The browser hid the declared redirect; navigate instead', {
+            reason: 'opaque-redirect',
+          });
+        }
         if (error instanceof ProtocolError || isShipApiClientError(error) || isAbortError(error)) {
           throw error;
         }
@@ -366,6 +372,7 @@ function normalizeMetadata(
   const etag = metadata.etag ?? headers['etag'];
   const contentType = metadata.contentType ?? headers['content-type'];
   const contentDisposition = metadata.contentDisposition ?? headers['content-disposition'];
+  const location = metadata.location ?? headers['location'];
   const idempotencyKey = headers['idempotency-key'];
   const idempotencyResult = headers['idempotency-result'];
   return {
@@ -375,6 +382,7 @@ function normalizeMetadata(
     ...(etag === undefined ? {} : { etag }),
     ...(contentType === undefined ? {} : { contentType }),
     ...(contentDisposition === undefined ? {} : { contentDisposition }),
+    ...(location === undefined ? {} : { location }),
     ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     ...(replayed === undefined ? {} : { idempotencyReplayed: replayed === 'true' }),
     ...(idempotencyResult === undefined ? {} : { idempotencyResult }),

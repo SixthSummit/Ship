@@ -73,6 +73,41 @@ describe("http transport declarations", () => {
     expect(transport.metadata).toMatchObject({ response, contentType });
   });
 
+  it("declares redirect representations without a content type on every method", () => {
+    const get = http.get("/oauth/callback", { response: "redirect" });
+    const post = http.post("/forms/submit", { response: "redirect" });
+    expect(get.metadata).toEqual({
+      method: "GET",
+      path: "/oauth/callback",
+      response: "redirect",
+      requestBody: { mode: "json" },
+    });
+    expect(post.metadata).toMatchObject({ method: "POST", response: "redirect" });
+    expect(get.metadata).not.toHaveProperty("contentType");
+    expect(isHttpTransport(get)).toBe(true);
+    expect(isHttpTransport(post)).toBe(true);
+    expect(Object.isFrozen(get.metadata)).toBe(true);
+  });
+
+  it("rejects redirect declarations that carry a content type", () => {
+    expect(() =>
+      http.get("/oauth/callback", { response: "redirect", contentType: "text/html" }),
+    ).toThrow(InvalidHttpTransportError);
+    expect(() =>
+      http.get("/oauth/callback", {
+        response: "redirect",
+        contentTypes: ["text/html", "text/plain"],
+      } as never),
+    ).toThrow(InvalidHttpTransportError);
+    const transport = http.get("/oauth/callback", { response: "redirect" });
+    expect(
+      isHttpTransport({
+        ...transport,
+        metadata: { ...transport.metadata, contentType: "text/html" },
+      } as typeof transport),
+    ).toBe(false);
+  });
+
   it("declares immutable alternative binary content types", () => {
     const transport = http.get("/export", {
       response: "binary",

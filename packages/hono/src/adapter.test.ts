@@ -2161,3 +2161,233 @@ function fakeAuthentication(): HonoAuthenticationOptions<string> {
     }),
   };
 }
+
+describe("declared HTTP redirects", () => {
+  const location = "https://app.example.test/oauth?connected=true";
+  const invalidState = operationError({
+    code: "OAUTH_STATE_INVALID",
+    status: 400,
+    message: "OAuth state is invalid",
+  });
+
+  function callbackOperation(
+    handler: (arguments_: {
+      readonly input: { readonly query: { readonly code: string; readonly state: string } };
+    }) => unknown,
+    options: {
+      readonly status?: 301 | 302 | 303 | 307 | 308;
+      readonly access?: OperationAccess;
+      readonly method?: "get" | "post";
+    } = {},
+  ) {
+    const status = options.status ?? 302;
+    const transport =
+      options.method === "post"
+        ? http.post("/oauth/callback", { response: "redirect" })
+        : http.get("/oauth/callback", { response: "redirect", queryParsing: "first-value" });
+    return defineOperation({
+      id: "fixtures.oauth-callback",
+      transport,
+      input: { query: z.object({ code: z.string().min(1), state: z.string().min(1) }) },
+      output: { [status]: z.undefined() } as Record<302, z.ZodUndefined>,
+      successStatus: status as 302,
+      errors: [invalidState],
+      access: options.access ?? publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: handler as never,
+    });
+  }
+
+  const query = "?code=code-1&state=state-1";
+
+  it.each([
+    301, 302, 303, 307, 308,
+  ] as const)("serializes an empty %s with Location and the request id and no content type", async (status) => {
+    const operation = callbackOperation(
+      () => respond(status, undefined, { headers: { Location: location } }),
+      { status },
+    );
+    const response = await createHonoAdapter(fixtureApp(operation)).request(
+      `/oauth/callback${query}`,
+      { headers: { "x-request-id": `redirect-${status}` } },
+    );
+
+    expect(response.status).toBe(status);
+    expect(response.headers.get("location")).toBe(location);
+    expect(response.headers.get("x-request-id")).toBe(`redirect-${status}`);
+    expect(response.headers.get("content-type")).toBeNull();
+    expect(response.headers.get("x-ship-cache")).toBeNull();
+    expect(response.headers.get("cache-control")).toBeNull();
+    expect(await response.text()).toBe("");
+  });
+
+  it("redirects after a POST with a declared 303", async () => {
+    const operation = callbackOperation(
+      () => respond(303, undefined, { headers: { Location: "/oauth/done" } }),
+      { status: 303, method: "post" },
+    );
+    const response = await createHonoAdapter(fixtureApp(operation)).request(
+      `/oauth/callback${query}`,
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/oauth/done");
+    expect(await response.text()).toBe("");
+  });
+
+  it("keeps safe operation headers on a redirect and rejects reserved ones", async () => {
+    const withHeaders = callbackOperation(() =>
+      respond(302, undefined, {
+        headers: { Location: location, "Cache-Control": "no-store", "X-OAuth-Provider": "google" },
+      }),
+    );
+    const response = await createHonoAdapter(fixtureApp(withHeaders)).request(
+      `/oauth/callback${query}`,
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-oauth-provider")).toBe("google");
+
+    const reserved = callbackOperation(() =>
+      respond(302, undefined, {
+        headers: { Location: location, "Content-Type": "text/html" },
+      }),
+    );
+    const rejected = await createHonoAdapter(fixtureApp(reserved)).request(
+      `/oauth/callback${query}`,
+    );
+    expect(rejected.status).toBe(500);
+    expect(rejected.headers.get("location")).toBeNull();
+  });
+
+  it("reads a mixed scalar and bracket callback query by its first scalar value", async () => {
+    const operation = callbackOperation(({ input: { query: parsed } }) =>
+      respond(302, undefined, {
+        headers: {
+          Location: `https://app.example.test/oauth?code=${parsed.code}&state=${parsed.state}`,
+        },
+      }),
+    );
+    const response = await createHonoAdapter(fixtureApp(operation)).request(
+      "/oauth/callback?code=first&code=second&code%5B%5D=third&state%5Bextra%5D=x&state=s1&scope=email",
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.test/oauth?code=first&state=s1",
+    );
+  });
+
+  it("lets the handler answer a failure redirect while every other failure stays JSON", async () => {
+    const operation = callbackOperation(({ input: { query: parsed } }) => {
+      if (parsed.state === "revoked") throw operationFailure(invalidState);
+      if (parsed.state !== "state-1") {
+        return respond(302, undefined, {
+          headers: { Location: "https://app.example.test/oauth?error=invalid_state" },
+        });
+      }
+      return respond(302, undefined, { headers: { Location: location } });
+    });
+    const app = createHonoAdapter(fixtureApp(operation));
+
+    const failureRedirect = await app.request("/oauth/callback?code=code-1&state=tampered");
+    expect(failureRedirect.status).toBe(302);
+    expect(failureRedirect.headers.get("location")).toBe(
+      "https://app.example.test/oauth?error=invalid_state",
+    );
+    expect(await failureRedirect.text()).toBe("");
+
+    const declared = await app.request("/oauth/callback?code=code-1&state=revoked", {
+      headers: { "x-request-id": "declared-1" },
+    });
+    expect(declared.status).toBe(400);
+    expect(declared.headers.get("location")).toBeNull();
+    expect(declared.headers.get("content-type")).toMatch(/^application\/json/u);
+    expect(declared.headers.get("x-request-id")).toBe("declared-1");
+    expect(await declared.json()).toMatchObject({
+      success: false,
+      error: { code: "OAUTH_STATE_INVALID", message: "OAuth state is invalid" },
+    });
+
+    const validation = await app.request("/oauth/callback?state=state-1");
+    expect(validation.status).toBe(400);
+    expect(validation.headers.get("location")).toBeNull();
+    expect(await validation.json()).toMatchObject({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        details: { issues: [{ path: ["query", "code"] }] },
+      },
+    });
+
+    const missing = await app.request("/oauth/callback?code=code-1&state=state-1", {
+      method: "POST",
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("location")).toBeNull();
+  });
+
+  it("answers an unauthenticated protected redirect with the JSON 401 envelope", async () => {
+    const operation = callbackOperation(
+      () => respond(302, undefined, { headers: { Location: location } }),
+      { access: authenticatedAccess() },
+    );
+    const app = createHonoAdapter(fixtureApp(operation), { auth: fakeAuthentication() });
+
+    const anonymous = await app.request(`/oauth/callback${query}`);
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers.get("location")).toBeNull();
+    expect(await anonymous.json()).toMatchObject({
+      success: false,
+      error: { code: "AUTHENTICATION_ERROR" },
+    });
+
+    const authenticated = await app.request(`/oauth/callback${query}`, {
+      headers: { authorization: "Bearer read" },
+    });
+    expect(authenticated.status).toBe(302);
+    expect(authenticated.headers.get("location")).toBe(location);
+  });
+
+  it.each([
+    ["a protocol-relative URL", "//evil.example"],
+    ["a backslash protocol-relative URL", "/\\evil.example"],
+    ["a javascript: URL", "javascript:alert(1)"],
+    ["embedded credentials", "https://user:pass@app.example.test/"],
+    ["a control character", "https://app.example.test/\u0000"],
+  ])("answers a safe 500 without Location for %s", async (_name, unsafe) => {
+    const observer = vi.fn();
+    const operation = callbackOperation(() =>
+      respond(302, undefined, { headers: { Location: unsafe } }),
+    );
+    const response = await createHonoAdapter(fixtureApp(operation), {
+      onUnexpectedError: observer,
+    }).request(`/oauth/callback${query}`, { headers: { "x-request-id": "unsafe-1" } });
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-request-id")).toBe("unsafe-1");
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: "INTERNAL_SERVER_ERROR" },
+    });
+    expect(observer).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a safe 500 when the handler returns a body or no Location", async () => {
+    for (const handler of [
+      () => respond(302, { ok: true } as never, { headers: { Location: location } }),
+      () => respond(302, undefined),
+      () => undefined,
+    ]) {
+      const response = await createHonoAdapter(fixtureApp(callbackOperation(handler))).request(
+        `/oauth/callback${query}`,
+      );
+      expect(response.status).toBe(500);
+      expect(response.headers.get("location")).toBeNull();
+      expect(await response.json()).toMatchObject({ error: { code: "INTERNAL_SERVER_ERROR" } });
+    }
+  });
+});

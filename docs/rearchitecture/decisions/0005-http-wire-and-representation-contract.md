@@ -84,3 +84,89 @@ Rejected because silent media coercion makes client mistakes ambiguous and weake
 Streaming responses are specified by [ADR 0016](0016-streaming-response-representation.md);
 declared realtime publication is specified by [ADR 0017](0017-declared-realtime-publication.md).
 These extend the original unary contract without making streams ordinary JSON results.
+
+## Addendum 2026-10-22: declared 3xx redirect results (SAPI-653)
+
+This addendum adds a fourth unary representation, `redirect`, to the accepted
+decision. The JSON failure envelope, request-id ownership, header ownership
+and body limits are unchanged.
+
+### Context
+
+The original decision allowed only 2xx success statuses and the `json`, `text`
+and `binary` representations. A compatibility route such as an OAuth callback
+answers an empty `302` with a `Location` header after verifying signed state
+and exchanging a provider code. Projecting that route as a `200` JSON operation
+and rewriting it to a `302` in the adapter would make the generated contract and
+OpenAPI dishonest, and the strict query policy rejected the mixed scalar and
+bracket query parameters such callbacks receive (SAPI-653, Vault Drive
+Phase 4).
+
+### Decision
+
+- `http.<method>(path, { response: "redirect" })` declares a bodiless
+  redirect. The operation's output map may contain only `301`, `302`, `303`,
+  `307` and `308`; a 3xx output on any other transport, a 2xx output on a
+  redirect transport, and a `successStatus` outside the declared redirect
+  statuses are definition diagnostics. A redirect transport may not declare a
+  content type.
+- Every redirect output schema must accept `undefined` and produce
+  `undefined`. `defineOperation` checks this synchronously at definition time
+  (`SHIP_OPERATION_OUTPUT_INVALID`); the executor re-checks every result, which
+  also covers asynchronous schemas.
+- The handler returns `respond(status, undefined, { headers: { Location } })`.
+  The executor validates the result before any transport sees it: the body
+  must be absent and `Location` must be a root-relative path or an absolute
+  `http(s)` URL with no credentials, no leading or trailing whitespace and no
+  control characters. Protocol-relative (`//`, `/\`) and non-HTTP schemes are
+  rejected. CR/LF is rejected by `respond()` header normalization. An invalid
+  redirect is an unexpected failure, so HTTP answers the safe `500` envelope
+  without a `Location` header.
+- The Hono adapter serializes a redirect as the declared status, the
+  `Location` header, `X-Request-Id`, any safe operation headers, no entity
+  body, no `Content-Type` and no cache headers. Every failure on a redirect
+  route, declared or framework-owned, remains the JSON envelope. A failure
+  redirect (sending the browser back with `?error=...`) is a handler decision
+  expressed as an ordinary redirect result.
+- `queryParsing: "first-value"` is an explicit per-operation query policy for
+  callbacks that must preserve the compatibility `c.req.query()` semantics:
+  each exact key takes its first decoded value and bracket keys stay literal,
+  distinct keys. The default remains strict. The policy is recorded in the
+  client contract and as `x-ship-query-parsing` in OpenAPI.
+- `ship-contract` projects an empty 3xx success with a required `Location`
+  header (`format: uri-reference`) and no content. The Fetch client sends
+  `redirect: "manual"`, validates the 3xx the same way the server does, and
+  exposes `metadata.location`. A browser that answers with an opaque redirect
+  yields `SHIP_CLIENT_REDIRECT_OPAQUE`; the client never fabricates a status.
+  ShipAngular exposes `location` on `ResponseMetadata` and reports the opaque
+  case as `ProtocolError` with reason `opaque-redirect`, so applications
+  navigate to the endpoint instead of calling it from script.
+
+### Evidence
+
+Kernel definition and executor suites cover every redirect status, the
+Location rejection matrix, body, terse-return and undeclared-status failures,
+and handler-chosen failure redirects next to declared JSON failures. The Hono
+matrix covers serialization per status, `POST` to `303`, header pass-through
+and reserved-header rejection, the mixed scalar/bracket first-value callback
+query, JSON failures without `Location`, the 401 envelope on a protected
+redirect and the safe 500 for every unsafe `Location`. A parity test proves the
+kernel projection answers the same status, `Location`, empty body and absent
+content type as the compatibility `c.redirect()` + `c.req.query()` callback
+for nine recorded query shapes. The contract suite proves truthful OpenAPI,
+manual-redirect client behaviour, opaque-redirect reporting and
+protocol-invalid 3xx rejection; ShipAngular's unit, type and packed
+conformance fixtures cover the client result and the opaque-redirect protocol
+failure.
+
+### Consequences
+
+- A redirect is a declared, validated operation result rather than an adapter
+  rewrite, so direct execution, HTTP, OpenAPI and clients agree on it.
+- The consumer gate remains the Vault Drive calendar callback (SAPI-138,
+  SAPI-443): mapping it behind a default-off selector with exact
+  selected-versus-compat `Location`/status/header parity and replay safety is
+  consumer work, not part of this addendum.
+- Browser flows that need the navigation to complete must send the browser to
+  the endpoint; calling a redirect operation through Fetch in a browser is an
+  explicit protocol failure, not a hidden success.
