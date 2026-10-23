@@ -1414,6 +1414,12 @@ describe("customized transactional mail", () => {
     const app = createCustomizedApplication(fixtureInfrastructure());
     expect(app.graph.mailers).toEqual([
       {
+        id: "auth.mailer",
+        moduleId: "auth",
+        from: "Portfolio <auth@example.test>",
+        messages: ["changeEmail", "resetPassword", "verifyEmail"],
+      },
+      {
         id: "reports.mailer",
         moduleId: "reports",
         from: "Portfolio Reports <reports@example.test>",
@@ -1424,11 +1430,23 @@ describe("customized transactional mail", () => {
       moduleId: "mail",
       trigger: { kind: "enqueue" },
       effects: ["ship.mail.provider"],
-      operations: { enqueuedBy: ["reports.email"] },
+      operations: {
+        enqueuedBy: [
+          "auth.change-email",
+          "auth.forgot-password",
+          "auth.register",
+          "auth.resend-verification",
+          "reports.email",
+        ],
+      },
     });
     const contract = projectClientContract(app);
-    expect(contract.mailers).toEqual({ "reports.mailer": { messages: ["digestReady"] } });
+    expect(contract.mailers).toEqual({
+      "auth.mailer": { messages: ["changeEmail", "resetPassword", "verifyEmail"] },
+      "reports.mailer": { messages: ["digestReady"] },
+    });
     expect(JSON.stringify(contract)).not.toContain("reports@example.test");
+    expect(JSON.stringify(contract)).not.toContain("auth@example.test");
   });
 
   it("enqueues one delivery per idempotency key from the operation and refuses other tenants", async () => {
@@ -1517,9 +1535,25 @@ describe("customized transactional mail", () => {
     expect(list).toMatchObject({
       ok: true,
       data: {
-        mailers: [{ id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] }],
+        mailers: [
+          {
+            id: "auth.mailer",
+            messages: [
+              { name: "verifyEmail", hasSample: true },
+              { name: "resetPassword", hasSample: true },
+              { name: "changeEmail", hasSample: true },
+            ],
+          },
+          { id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] },
+        ],
       },
     });
+    const subjects: Record<string, string> = {
+      "auth.mailer/changeEmail": "Confirm your new Portfolio email",
+      "auth.mailer/resetPassword": "Reset your Portfolio password",
+      "auth.mailer/verifyEmail": "Verify your email for Portfolio",
+      "reports.mailer/digestReady": "Portfolio digest for 2026-09-18",
+    };
     if (!list.ok) throw new Error("preview list unexpectedly failed");
     for (const mailer of list.data.mailers) {
       for (const message of mailer.messages) {
@@ -1530,7 +1564,7 @@ describe("customized transactional mail", () => {
         );
         expect(rendered).toMatchObject({
           ok: true,
-          data: { subject: "Portfolio digest for 2026-09-18" },
+          data: { subject: subjects[`${mailer.id}/${message.name}`] },
         });
       }
     }
@@ -1600,11 +1634,11 @@ describe("credential auth beside the session directory", () => {
 
     // The credential session resolves to an actor with the analyst role's slugs, so the
     // tenant read behaves exactly as it does for a directory session.
-    const summary = await http.request("/tenants/acme/portfolio?states=open", {
+    const summary = await http.request("/tenants/acme/portfolio?states[]=open", {
       headers: { authorization: `Bearer ${session.session.token}` },
     });
     expect(summary.status).toBe(200);
-    const denied = await http.request("/tenants/beta/portfolio?states=open", {
+    const denied = await http.request("/tenants/beta/portfolio?states[]=open", {
       headers: { authorization: `Bearer ${session.session.token}` },
     });
     expect(denied.status).toBe(403);

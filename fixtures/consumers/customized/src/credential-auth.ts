@@ -60,6 +60,8 @@ export function createCredentialAuthModule(definition: {
     store: definition.store,
     mailer: authMailer,
     mail: definition.mail,
+    // The sender enqueues through the job backend `portfolio` exports.
+    imports: ["portfolio"],
     links: {
       verifyEmail: (token) => `${APP_URL}/verify/${token}`,
       resetPassword: (token) => `${APP_URL}/reset/${token}`,

@@ -64,7 +64,8 @@ export const auth = defineCredentialAuthModule({
 ```
 
 The module declares `auth.mailer`, provides and exports the store token, and
-imports the mail module (`mailModule`, default `mail`). Mount it like any
+imports the modules that export the job backend behind the sender (`imports`,
+default `["mail"]`; the customized consumer passes `["portfolio"]`). Mount it like any
 module; `createHonoAdapter` projects `/auth/*`.
 
 | Operation | Transport | Access | Result |

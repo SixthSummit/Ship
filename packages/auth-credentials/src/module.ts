@@ -32,8 +32,12 @@ export interface CredentialAuthModuleOptions<
   readonly mailer: CredentialAuthMailer;
   /** `delivery.dependency` from `defineMailDelivery({ mailers: [mailer, ...] })`. */
   readonly mail: DependencyToken<unknown, MailSender<readonly AnyMailer[]>>;
-  /** The module that composes the `mail.deliver` job (imported for the sender). Defaults to `mail`. */
-  readonly mailModule?: string;
+  /**
+   * Modules this one imports: the one exporting the job backend the mail
+   * sender enqueues through (`jobBackendDependency()`), and the one composing
+   * the `mail.deliver` job if different. Defaults to `["mail"]`.
+   */
+  readonly imports?: readonly string[];
   /** Builds the single-use links the mails carry from a token. */
   readonly links: CredentialAuthLinks;
   /** Keys that seal TOTP secrets at rest. */
@@ -52,7 +56,7 @@ export interface CredentialAuthModuleOptions<
  * Composes every credential flow as declared operations on one module. The
  * module declares the mailer, provides and exports the store token (so the
  * console extension and application modules can bind it) and imports the
- * mail module for the typed sender.
+ * modules that export the job backend behind the typed mail sender.
  */
 export function defineCredentialAuthModule<
   const TId extends string = typeof DEFAULT_CREDENTIAL_AUTH_MODULE_ID,
@@ -105,7 +109,7 @@ export function defineCredentialAuthModule<
     id,
     operations,
     providers: [valueProvider(runtime.store, options.store)],
-    imports: [options.mailModule ?? "mail"],
+    imports: [...(options.imports ?? ["mail"])],
     exports: [runtime.store],
     mailers: [options.mailer],
   });
@@ -213,6 +217,17 @@ function assertOptions(options: unknown): asserts options is CredentialAuthModul
       "SHIP_AUTH_OPTIONS_INVALID",
       "credential auth hasher must implement hash, verify and needsRehash",
       { field: "hasher" },
+    );
+  }
+  const imports = Reflect.get(options, "imports");
+  if (
+    imports !== undefined &&
+    (!Array.isArray(imports) || imports.some((item) => typeof item !== "string"))
+  ) {
+    throw new InvalidCredentialAuthDefinitionError(
+      "SHIP_AUTH_OPTIONS_INVALID",
+      "credential auth imports must be an array of module ids",
+      { field: "imports" },
     );
   }
   const roles = Reflect.get(options, "defaultRoles");
