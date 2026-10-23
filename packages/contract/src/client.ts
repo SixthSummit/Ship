@@ -906,7 +906,8 @@ function assertContract(contract: ClientContract): void {
     typeof contract.fingerprint !== "string" ||
     !/^sha256:[a-f0-9]{64}$/u.test(contract.fingerprint) ||
     !Array.isArray(contract.operations) ||
-    (contract.channels !== undefined && !isRecord(contract.channels))
+    (contract.channels !== undefined && !isRecord(contract.channels)) ||
+    (contract.attachments !== undefined && !isRecord(contract.attachments))
   ) {
     throw invalidContract("client contract must be a Ship client contract with schemaVersion 1");
   }
@@ -925,7 +926,8 @@ function assertContract(contract: ClientContract): void {
       (operation.transaction !== "none" &&
         operation.transaction !== "read" &&
         operation.transaction !== "write") ||
-      (operation.publishes !== undefined && !Array.isArray(operation.publishes))
+      (operation.publishes !== undefined && !Array.isArray(operation.publishes)) ||
+      (operation.attachments !== undefined && !Array.isArray(operation.attachments))
     ) {
       throw invalidContract("client contract contains an invalid or duplicate operation");
     }

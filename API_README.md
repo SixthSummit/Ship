@@ -42,6 +42,7 @@ depending on an agent prompt or framework-specific base class.
 | `@sixthsummit/ship-jobs-bullmq` | Optional BullMQ jobs backend |
 | `@sixthsummit/ship-realtime-socketio` | Socket.IO + Redis realtime gateway |
 | `@sixthsummit/ship-push` | Optional encrypted VAPID Web Push delivery |
+| `@sixthsummit/ship-storage` | Declared managed storage: signed uploads, variants, durable purge; disk, S3/R2, GCS adapters |
 | `@sixthsummit/ship-webhooks` | Provider webhook signature verifiers |
 | `@sixthsummit/ship-observability-otel` | Optional OpenTelemetry integration |
 | `@sixthsummit/ship-testing` | Parity fixtures and disposable PostgreSQL support |

@@ -16,6 +16,7 @@ export const SHIP_API_PACKAGE_DIRECTORIES = Object.freeze([
   "mail",
   "jobs-bullmq",
   "schema-lint",
+  "storage",
   "mcp-server",
   "claude-plugin",
   "core",

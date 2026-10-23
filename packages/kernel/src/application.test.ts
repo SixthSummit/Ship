@@ -125,6 +125,7 @@ describe("compileApp", () => {
           providers: ["accounts.repository"],
           exports: ["accounts.repository"],
           channels: [],
+          attachments: [],
           mailers: [],
         },
         {
@@ -134,6 +135,7 @@ describe("compileApp", () => {
           providers: ["platform.clock"],
           exports: ["platform.clock"],
           channels: [],
+          attachments: [],
           mailers: [],
         },
       ],
@@ -169,6 +171,7 @@ describe("compileApp", () => {
       outboxes: [],
       channels: [],
       jobs: [],
+      attachments: [],
       mailers: [],
     });
 

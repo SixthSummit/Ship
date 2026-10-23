@@ -6,6 +6,8 @@ import type {
   ProviderOperationActor,
   SystemOperationActor,
 } from "./actor.js";
+import type { AnyAttachment } from "./attachment.js";
+import { isAttachment } from "./attachment.js";
 import type { CacheInvalidation, CacheInvalidationDeclaration, OperationCache } from "./cache.js";
 import { isCacheInvalidationList, isOperationCache, normalizeCacheInvalidations } from "./cache.js";
 import type {
@@ -295,6 +297,13 @@ export interface OperationDefinition<
    * only the entries a tenant-scoped read stored for the derived tenant.
    */
   readonly invalidates?: readonly CacheInvalidationDeclaration<InferOperationInput<TInput>>[];
+  /**
+   * Managed attachments this operation attaches, detaches, lists or resolves
+   * through bound `attachment.binding` tokens. The executor hands the handler
+   * a capability scoped to the running transaction; `attach` and `detach`
+   * require `transaction: "write"` so the purge intent commits with the record.
+   */
+  readonly attachments?: readonly AnyAttachment[];
   readonly handler: OperationHandler<
     TInput,
     TOutput,
@@ -334,6 +343,7 @@ export interface Operation<
   readonly kind: "ship.operation";
   readonly effects: TEffects;
   readonly publishes: readonly AnyChannel[];
+  readonly attachments: readonly AnyAttachment[];
   /** Declared `invalidates` entries in their compiled `{ tag, scope, tenant? }` form. */
   readonly invalidates?: readonly CacheInvalidation<InferOperationInput<TInput>>[];
 }
@@ -355,6 +365,7 @@ export interface AnyOperation {
   readonly cache?: OperationCache<never>;
   readonly invalidates?: readonly CacheInvalidation<never>[];
   readonly publishes: readonly AnyChannel[];
+  readonly attachments: readonly AnyAttachment[];
   readonly handler: (...arguments_: never[]) => unknown;
 }
 
@@ -378,6 +389,8 @@ export type OperationDefinitionDiagnosticCode =
   | "SHIP_OPERATION_INVALIDATES_INVALID"
   | "SHIP_OPERATION_PUBLISH_INVALID"
   | "SHIP_OPERATION_PUBLISH_DUPLICATE"
+  | "SHIP_OPERATION_ATTACHMENT_INVALID"
+  | "SHIP_OPERATION_ATTACHMENT_DUPLICATE"
   | "SHIP_OPERATION_HANDLER_INVALID";
 
 export class InvalidOperationDefinitionError extends Error {
@@ -469,6 +482,7 @@ export function defineOperation<
       ? { invalidates: normalizeCacheInvalidations(declaredInvalidates) }
       : {}),
     publishes: Object.freeze([...(definition.publishes ?? [])]),
+    attachments: Object.freeze([...(definition.attachments ?? [])]),
     ...(definition.transport
       ? {
           transport: Object.freeze({
@@ -580,6 +594,7 @@ function assertOperationDefinition(
   assertDependencies(Reflect.get(definition, "dependencies"), operationId);
   assertEffects(Reflect.get(definition, "effects"), operationId);
   assertPublishes(Reflect.get(definition, "publishes"), operationId);
+  assertAttachments(Reflect.get(definition, "attachments"), operationId);
 
   if (
     transport !== undefined &&
@@ -783,6 +798,33 @@ function assertPublishes(
       );
     }
     ids.add(channel.id);
+  }
+}
+
+function assertAttachments(
+  value: unknown,
+  operationId: string,
+): asserts value is readonly AnyAttachment[] | undefined {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || !value.every((attachment) => isAttachment(attachment))) {
+    fail(
+      "SHIP_OPERATION_ATTACHMENT_INVALID",
+      "attachments must contain only defineAttachment() results",
+      operationId,
+      "attachments",
+    );
+  }
+  const ids = new Set<string>();
+  for (const attachment of value) {
+    if (ids.has(attachment.id)) {
+      fail(
+        "SHIP_OPERATION_ATTACHMENT_DUPLICATE",
+        `duplicate operation attachment ${JSON.stringify(attachment.id)}`,
+        operationId,
+        "attachments",
+      );
+    }
+    ids.add(attachment.id);
   }
 }
 

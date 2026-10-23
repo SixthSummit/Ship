@@ -1,0 +1,85 @@
+{
+  "name": "@sixthsummit/ship-storage",
+  "version": "0.0.0",
+  "description": "Declared managed storage for Ship applications: attachment capability module, signed upload intents, variants, durable purge, and GCS / S3 / R2 / local-disk adapters",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./disk": {
+      "types": "./lib/disk.d.ts",
+      "import": "./lib/disk.js",
+      "default": "./lib/disk.js"
+    },
+    "./s3": {
+      "types": "./lib/s3.d.ts",
+      "import": "./lib/s3.js",
+      "default": "./lib/s3.js"
+    },
+    "./gcs": {
+      "types": "./lib/gcs.d.ts",
+      "import": "./lib/gcs.js",
+      "default": "./lib/gcs.js"
+    },
+    "./hono": {
+      "types": "./lib/hono.d.ts",
+      "import": "./lib/hono.js",
+      "default": "./lib/hono.js"
+    },
+    "./image": {
+      "types": "./lib/image.d.ts",
+      "import": "./lib/image.js",
+      "default": "./lib/image.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/storage/src --exclude '**/*.integration.test.ts'",
+    "test:coverage": "vitest run --root ../.. packages/storage/src --exclude '**/*.integration.test.ts' --coverage"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^",
+    "@sixthsummit/ship-hono": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@sixthsummit/ship-hono": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-drizzle": "workspace:^",
+    "@sixthsummit/ship-hono": "workspace:*",
+    "@sixthsummit/ship-testing": "workspace:^",
+    "@types/pg": "^8.15.6",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.16.3",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/storage"
+  }
+}

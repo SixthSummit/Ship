@@ -1,5 +1,6 @@
 import { contractSchema } from "@sixthsummit/ship-contract/schema";
 import {
+  type AttachmentLedger,
   type CacheBackend,
   cacheBackendDependency,
   createTenantScopeAuthority,
@@ -29,6 +30,8 @@ import {
   permission,
   REALTIME_PUBLICATION_MODULE_ID,
   type RealtimePublishBackend,
+  STORAGE_MODULE_ID,
+  type StorageAdapter,
   TenantCapabilityError,
   type UnitOfWork,
   unitOfWorkDependency,
@@ -37,7 +40,14 @@ import {
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
 import { defineMailDelivery, defineMailPreview } from "@sixthsummit/ship-mail";
+import {
+  createPassthroughImageProcessor,
+  defineStorageModule,
+  type ImageProcessor,
+} from "@sixthsummit/ship-storage";
+import { storageHttpTransports } from "@sixthsummit/ship-storage/hono";
 import { z } from "zod";
+import { defineProjectPhotoOperations, projectPhoto } from "./attachments.js";
 import {
   notificationDelivered,
   projectActivity,
@@ -353,6 +363,16 @@ export interface CustomizedInfrastructure {
   readonly webhookSecrets: WebhookSecrets;
   readonly jobs: JobBackend;
   readonly locks: LockProvider;
+  /** Object storage for the declared `portfolio.photo` attachment. */
+  readonly storage: StorageAdapter;
+  /** Intent, object and purge bookkeeping for managed storage. */
+  readonly attachmentLedger: AttachmentLedger;
+  /** Durable storage for object purge intents recorded when a photo is removed. */
+  readonly purgeOutbox: OutboxBackend;
+  /** Renders the declared `thumb` variant; a passthrough encoder keeps tests native-free. */
+  readonly imageProcessor?: ImageProcessor;
+  /** How long a completed upload may stay unattached before the sweep purges it. */
+  readonly unattachedGraceMs?: number;
   /** Transactional mail: the provider adapter, the send ledger and the non-production guard. */
   readonly mailProvider: MailProvider;
   readonly mailLedger: MailLedger;
@@ -585,6 +605,34 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
     tenantAccessDenied,
     clock,
   });
+  // Managed storage: the portfolio module declares the attachment and owns
+  // the operations that attach, remove and list photos; the framework module
+  // owns intents, completion, the sweep, variants and the durable purge.
+  const photos = defineProjectPhotoOperations({
+    portfolioUnitOfWork,
+    authorizeTenant,
+    tenantAccessDenied,
+  });
+  const storage = defineStorageModule({
+    attachments: [projectPhoto],
+    adapter: infrastructure.storage,
+    ledger: infrastructure.attachmentLedger,
+    outbox: infrastructure.purgeOutbox,
+    transports: storageHttpTransports({ basePath: "/storage" }),
+    variants: {
+      processor: infrastructure.imageProcessor ?? createPassthroughImageProcessor(),
+      jobs,
+      cache,
+    },
+    sweep: {
+      trigger: { kind: "interval", everyMs: 5 * 60_000 },
+      ...(infrastructure.unattachedGraceMs !== undefined
+        ? { unattachedGraceMs: infrastructure.unattachedGraceMs }
+        : {}),
+    },
+    purge: { batchSize: DISPATCH_BATCH_SIZE },
+    clock,
+  });
   // One retention sweep covers job runs and both outboxes; no outbox cleanup
   // operation is composed separately. The webhook event store keeps its own
   // `payments.webhook-cleanup` operation (`defineWebhookCleanup`), which the
@@ -597,14 +645,14 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
   const management = defineJobManagement({ clock });
   const portfolioModule = defineModule({
     id: "portfolio",
-    operations: [summary],
+    operations: [summary, photos.attach, photos.remove, photos.list],
     providers: [
       valueProvider(portfolioUnitOfWork, unitOfWork),
       valueProvider(portfolioCache, cache),
       valueProvider(jobBackendDependency(), jobs),
       valueProvider(lockProviderDependency(), locks),
     ],
-    imports: [],
+    imports: [STORAGE_MODULE_ID],
     exports: [
       portfolioUnitOfWork,
       portfolioCache,
@@ -612,6 +660,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       lockProviderDependency(),
     ],
     channels: [projectActivity],
+    attachments: [projectPhoto],
   });
   const reportsModule = defineModule({
     id: "reports",
@@ -684,8 +733,11 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       paymentsModule,
       messagingModule,
       jobsModule,
+      storage,
       mailModule,
     ],
     runtime: { workers: { mode: "api" } },
   });
 }
+
+export { projectPhoto };

@@ -40,7 +40,8 @@
       "@sixthsummit/ship-angular/realtime": ["./realtime/src/public-api.ts"],
       "@sixthsummit/ship-angular/forms": ["./forms/src/public-api.ts"],
       "@sixthsummit/ship-angular/query": ["./query/src/public-api.ts"],
-      "@sixthsummit/ship-angular/push": ["./push/src/public-api.ts"]
+      "@sixthsummit/ship-angular/push": ["./push/src/public-api.ts"],
+      "@sixthsummit/ship-angular/storage": ["./storage/src/public-api.ts"]
     }
   },
   "include": ["src/**/*.ts"],

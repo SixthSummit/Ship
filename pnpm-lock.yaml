@@ -786,6 +786,33 @@ importers:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
 
+  packages/storage:
+    devDependencies:
+      '@sixthsummit/ship-core':
+        specifier: workspace:*
+        version: link:../kernel
+      '@sixthsummit/ship-drizzle':
+        specifier: workspace:^
+        version: link:../drizzle
+      '@sixthsummit/ship-hono':
+        specifier: workspace:*
+        version: link:../hono
+      '@sixthsummit/ship-testing':
+        specifier: workspace:^
+        version: link:../testing
+      '@types/pg':
+        specifier: ^8.15.6
+        version: 8.15.6
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.0)
+      pg:
+        specifier: ^8.16.3
+        version: 8.23.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.6.7
+
   packages/testing:
     dependencies:
       '@opentelemetry/api':

@@ -9,6 +9,8 @@ export default defineConfig({
         './operations/src/public-api.ts',
         import.meta.url
       ).pathname,
+      '@sixthsummit/ship-angular/upload': new URL('./upload/src/public-api.ts', import.meta.url)
+        .pathname,
     },
   },
   test: {
@@ -40,6 +42,7 @@ export default defineConfig({
       'socket/src/**/*.spec.ts',
       'realtime/src/**/*.test.ts',
       'push/src/**/*.test.ts',
+      'storage/src/**/*.test.ts',
       'realtime/src/**/*.spec.ts',
       'forms/src/**/*.test.ts',
       'forms/src/**/*.spec.ts',
@@ -69,6 +72,7 @@ export default defineConfig({
         'socket/src/**/*.ts',
         'realtime/src/**/*.ts',
         'push/src/**/*.ts',
+        'storage/src/**/*.ts',
         'forms/src/**/*.ts',
         'testing/src/**/*.ts',
         'cli/migrations/**/*.js',

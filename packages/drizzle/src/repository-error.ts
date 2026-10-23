@@ -15,6 +15,7 @@ export type DrizzleRepositoryErrorCode =
   | "SHIP_DRIZZLE_LOCK_INVALID"
   | "SHIP_DRIZZLE_JOB_BACKEND_INVALID"
   | "SHIP_DRIZZLE_JOB_LEASE_STALE"
+  | "SHIP_DRIZZLE_STORAGE_LEDGER_INVALID"
   | "SHIP_DRIZZLE_MAIL_LEDGER_INVALID";
 
 export class DrizzleRepositoryError extends Error {

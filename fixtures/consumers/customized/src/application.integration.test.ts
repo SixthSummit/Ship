@@ -16,6 +16,7 @@ import {
   runJobOnce,
 } from "@sixthsummit/ship-testing/jobs";
 import { type PostgresTestDb, setupPostgresTestDb } from "@sixthsummit/ship-testing/postgres";
+import { createInMemoryStorageAdapter } from "@sixthsummit/ship-testing/storage";
 import { stripeSignatureHeader } from "@sixthsummit/ship-webhooks/stripe";
 import { twilioSignatureHeader } from "@sixthsummit/ship-webhooks/twilio";
 import { sql } from "drizzle-orm";
@@ -25,6 +26,7 @@ import type { SessionDirectory } from "./auth.js";
 import type { PaymentEventSink, ReportNotifier } from "./effects.js";
 import { createCustomizedHttpApplication } from "./http.js";
 import {
+  createAttachmentLedger,
   createCacheInvalidationOutbox,
   createIdempotencyStore,
   createMailLedger,
@@ -32,6 +34,7 @@ import {
   createPortfolioUnitOfWork,
   createRealtimePublicationOutbox,
   createReportsOutbox,
+  createStoragePurgeOutbox,
   createWebhookEventStore,
 } from "./repository.js";
 import {
@@ -41,6 +44,9 @@ import {
   projects,
   reportRequests,
   reportsOutboxTable,
+  storageIntents,
+  storageObjects,
+  storagePurges,
   webhookEventsTable,
   workItems,
 } from "./schema.js";
@@ -75,6 +81,7 @@ describe("customized packed application", () => {
   const twilioToken = "twilio-auth-token";
   /** Real time plus a test-controlled offset so dispatch and retention share one clock. */
   const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
   const infrastructure = () => ({
     unitOfWork: createPortfolioUnitOfWork(database.db),
     notifier,
@@ -91,6 +98,10 @@ describe("customized packed application", () => {
     clock: clock.now,
     jobs: createInMemoryJobBackend(),
     locks: createInMemoryLockProvider(),
+    storage,
+    attachmentLedger: createAttachmentLedger(database.db),
+    purgeOutbox: createStoragePurgeOutbox(database.db),
+    unattachedGraceMs: 60_000,
     mailProvider,
     mailLedger: createMailLedger(database.db),
     scheduledTenants: ["acme"],
@@ -628,5 +639,151 @@ describe("customized packed application", () => {
     await expect(
       infra.mailLedger.list({ recipient: "owner@real-customer.example", limit: 10 }),
     ).resolves.toHaveLength(1);
+  });
+});
+
+describe("customized managed storage against PostgreSQL", () => {
+  let database: PostgresTestDb<typeof portfolioSchema>;
+  const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
+  const projectId = acmeProjectId;
+
+  beforeAll(async () => {
+    database = await setupPostgresTestDb(portfolioSchema);
+  });
+
+  afterAll(async () => {
+    await database.cleanup();
+  });
+
+  function build() {
+    const infrastructure = {
+      unitOfWork: createPortfolioUnitOfWork(database.db),
+      notifier: { adapter: "recording", send: vi.fn(async () => undefined) } as ReportNotifier,
+      outbox: createReportsOutbox(database.db),
+      idempotency: createIdempotencyStore(database.db),
+      cache: createInMemoryCacheBackend(),
+      cacheOutbox: createCacheInvalidationOutbox(database.db),
+      realtime: createInMemoryRealtimeBackend({ channels: publishedChannels }),
+      realtimeOutbox: createRealtimePublicationOutbox(database.db),
+      paymentSink: {
+        adapter: "recording",
+        record: vi.fn(async () => undefined),
+      } as PaymentEventSink,
+      paymentsOutbox: createPaymentsOutbox(database.db),
+      webhookEvents: createWebhookEventStore(database.db),
+      webhookSecrets: { stripe: webhookSecret("whsec_x"), twilio: webhookSecret("twilio") },
+      clock: clock.now,
+      jobs: createInMemoryJobBackend(),
+      locks: createInMemoryLockProvider(),
+      storage,
+      attachmentLedger: createAttachmentLedger(database.db),
+      purgeOutbox: createStoragePurgeOutbox(database.db),
+      unattachedGraceMs: 60_000,
+      mailProvider: logMailProvider(),
+      mailLedger: createMailLedger(database.db),
+      scheduledTenants: ["acme"],
+    };
+    const { application, http } = createCustomizedHttpApplication(infrastructure, sessions);
+    const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
+      projectClientContract(application),
+      {
+        baseUrl: "https://golden.example.test",
+        headers: { authorization: "ShipSession publisher-token" },
+        fetch: async (input, init) => http.request(input, init),
+      },
+    );
+    return { application, http, client, infrastructure };
+  }
+
+  it("commits the detachment and the purge intent together, then deletes the object on dispatch", async () => {
+    const { application, client } = build();
+    const bytes = new TextEncoder().encode("png-bytes");
+    const intent = await client.call("ship-storage.create-intent", {
+      body: { attachment: "portfolio.photo", contentType: "image/png", size: bytes.byteLength },
+    });
+    expect(intent).toMatchObject({ ok: true, status: 201 });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    expect(complete).toMatchObject({ ok: true, status: 200 });
+    if (!complete.ok) throw new Error("completion failed");
+    expect(await database.db.select().from(storageObjects)).toMatchObject([
+      { id: complete.data.objectId, status: "uploaded", attachmentId: "portfolio.photo" },
+    ]);
+
+    const attached = await client.call("portfolio.attach-photo", {
+      params: { tenantId: "acme", projectId },
+      body: { objectId: complete.data.objectId },
+    });
+    expect(attached).toMatchObject({ ok: true, status: 201, data: { count: 1 } });
+    expect(await database.db.select().from(storageObjects)).toMatchObject([
+      { status: "attached", ownerId: `acme/${projectId}` },
+    ]);
+
+    const removed = await client.call("portfolio.remove-photo", {
+      params: { tenantId: "acme", projectId, objectId: complete.data.objectId },
+    });
+    expect(removed).toMatchObject({ ok: true, data: { removed: true } });
+    const purgeRows = await database.db.select().from(storagePurges);
+    expect(purgeRows).toMatchObject([{ objectId: complete.data.objectId, purgedAt: null }]);
+    const purgeIntents = (await database.db.select().from(reportsOutboxTable)).filter(
+      (row) => row.outboxId === "ship-storage.purge",
+    );
+    expect(purgeIntents).toMatchObject([
+      {
+        intentId: "purge-object",
+        status: "pending",
+        payload: { objectId: complete.data.objectId },
+      },
+    ]);
+    expect(storage.keys()).toEqual([intent.data.objectKey]);
+
+    const executor = createExecutor(application);
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { claimed: 1, completed: 1 } });
+    expect(storage.keys()).toEqual([]);
+    expect(await database.db.select().from(storagePurges)).toMatchObject([
+      { objectId: complete.data.objectId, attempts: 1 },
+    ]);
+    expect((await database.db.select().from(storagePurges))[0]?.purgedAt).not.toBeNull();
+    // A replayed dispatch finds nothing to claim and the purge row unchanged.
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { claimed: 0 } });
+  });
+
+  it("abandons an induced orphan intent on sweep and fences its late completion", async () => {
+    const { application, client } = build();
+    const intent = await client.call("ship-storage.create-intent", {
+      body: { attachment: "portfolio.photo", contentType: "image/webp", size: 4 },
+    });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(
+      await storage.upload(
+        intent.data.upload.url,
+        new TextEncoder().encode("webp"),
+        intent.data.upload.headers,
+      ),
+    ).toBe(200);
+    clock.offsetMs += 16 * 60_000;
+    const executor = createExecutor(application);
+    await expect(
+      runJobOnce(application, "ship-storage.sweep", {}, { executor }),
+    ).resolves.toMatchObject({ ok: true, data: { abandoned: 1 } });
+    expect(await database.db.select().from(storageIntents)).toContainEqual(
+      expect.objectContaining({ id: intent.data.intentId, status: "abandoned" }),
+    );
+    expect(storage.keys()).not.toContain(intent.data.objectKey);
+    const late = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    expect(late).toMatchObject({ ok: false, status: 410, error: { code: "INTENT_EXPIRED" } });
+    clock.offsetMs = 0;
   });
 });

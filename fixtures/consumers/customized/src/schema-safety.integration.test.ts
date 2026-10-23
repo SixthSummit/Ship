@@ -46,7 +46,7 @@ describe("schema safety", () => {
     );
     await migrate(drizzle(database.pool), { migrationsFolder: migrationsDir });
     expect(await migrationsStatus({ client: database.pool, migrationsDir })).toEqual({
-      applied: 2,
+      applied: 3,
       pending: [],
     });
   });

@@ -31,6 +31,7 @@ const PACKAGE_DIRECTORIES = new Map([
   ["@sixthsummit/ship-jobs-bullmq", "jobs-bullmq"],
   ["@sixthsummit/ship-schema-lint", "schema-lint"],
   ["@sixthsummit/ship-mail", "mail"],
+  ["@sixthsummit/ship-storage", "storage"],
 ]);
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");

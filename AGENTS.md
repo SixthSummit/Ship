@@ -18,6 +18,7 @@ ShipAPI is a pnpm workspace containing an operation-oriented application kernel 
 | `packages/realtime-socketio` / `@sixthsummit/ship-realtime-socketio` | Socket.IO + Redis gateway for kernel channels (`defineChannel`); wire protocol in `docs/v4/realtime.md` |
 | `packages/jobs-bullmq`, `packages/webhooks` | Optional jobs backend and provider webhook verifiers |
 | `packages/push` / `@sixthsummit/ship-push` | Optional VAPID Web Push sender; apps own subscription storage and delivery jobs |
+| `packages/storage` / `@sixthsummit/ship-storage` | Declared managed storage: attachment module with signed upload intents, fenced completion, orphan sweep, lazy variants and durable purge; disk, S3/R2 and GCS adapters (`defineAttachment` lives in the kernel) |
 | `packages/mail` / `@sixthsummit/ship-mail` | Declared transactional mail: `defineMailDelivery` on the jobs capability, typed sender, send ledger, allowlist interceptor, previews, log + Resend adapters (`defineMailer` lives in the kernel; ADR-0023, `docs/v4/features/mail.md`) |
 | `packages/schema-lint` / `@sixthsummit/ship-schema-lint` | Migration linter for the production column rules, canonical schema snapshot check, gated release preset and boot-time guard; see `docs/v4/features/schema-safety.md` |
 | `packages/testing`, `packages/cli` | Parity/integration harness and graph/contract tooling |
@@ -258,3 +259,14 @@ Tooling tips:
 - Don't spin long-running processes (`npm run dev`, `tsx watch`, etc.) — they stall the agent loop. Use `ship-api dev` only when the user explicitly asks; otherwise leave it to them.
 - For UI/integration verification, ask the user to verify in their browser; don't claim "tested" without evidence.
 - The plugin's MCP `execute_route` tool is the right way to drive routes during agent-iteration; pre-flight schema validation surfaces schema errors _as_ schema errors, not as opaque 500s.
+
+<!-- BEGIN:turborepo-agent-rules -->
+
+# This is NOT the Turborepo you know
+
+Turborepo configuration, task behavior, and CLI commands can vary between installed versions and may differ from your training data. Resolve the `turbo` package from this file's directory or relevant workspace; in monorepos, it may not be visible from the repository root. For example, run `node -p "require.resolve('turbo/package.json')"` from a workspace that depends on `turbo`.
+
+Read `docs/README.md` inside that installed package first, then read the relevant pages from its `docs/` directory before changing Turborepo configuration or commands. Heed deprecation notices. These bundled docs match the installed package version and are available without network access.
+
+This block is written and re-added by `turbo` before repository-scoped commands when an AI agent is detected. In the Turborepo source repository, its template is defined in `crates/turborepo-cli/src/cli/agent_guidance.rs`. Removing the managed block while updates are enabled means a later qualifying invocation will add it again. Set `"agentGuidance": false` in the root `turbo.json` or `turbo.jsonc` to opt out; this does not remove an existing block. Keep the block committed with your work to avoid an uncommitted change on the next agent invocation.
+<!-- END:turborepo-agent-rules -->
