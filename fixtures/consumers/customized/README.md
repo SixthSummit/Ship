@@ -64,6 +64,16 @@ application exercises:
   operation, while an SRE retries a dead-lettered delivery run, pauses and
   resumes the job through the PostgreSQL control table, and replays a stored
   Stripe receipt without touching SQL; and
+- first-party credential auth (`@sixthsummit/ship-auth-credentials`, ADR-0025)
+  beside the session directory: a composite credential adapter accepts both
+  `ShipSession` tokens and `Bearer ship_s_…` sessions and resolves the same
+  actor contract; `/auth/*` composes register, verification mail through the
+  one `mail.deliver` job, sign-in with lockout, TOTP enrolment and challenge,
+  recovery codes, sessions with revoke-all, password reset and change-email
+  over the seven package-owned tables (migration `0004_credential_auth`); the
+  `sre` role must enrol in TOTP before its session reaches the console, and the
+  console's auth-audit panel (extension seam) lists the audit rows an SRE
+  reads; and
 - constructor injection that selects the notification, outbox, webhook event,
   job backend, lock, storage, ledger and idempotency adapters at composition
   time and keeps unit tests network-free through the in-memory backends from

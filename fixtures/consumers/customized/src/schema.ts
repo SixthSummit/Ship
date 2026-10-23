@@ -1,3 +1,4 @@
+import { shipAuthTables } from "@sixthsummit/ship-auth-credentials/drizzle";
 import {
   shipIdempotencyTable,
   shipJobControlTable,
@@ -50,6 +51,25 @@ export const storageIntents = shipStorageIntentsTable();
 export const storageObjects = shipStorageObjectsTable();
 export const storagePurges = shipStoragePurgesTable();
 export const mailSendsTable = shipMailSendsTable();
+/** Credential auth: accounts, credentials, tokens, MFA secrets, recovery codes, sessions, audit (ADR-0025). */
+export const {
+  authAccounts,
+  authCredentials,
+  authTokens,
+  authMfaSecrets,
+  authRecoveryCodes,
+  authSessions,
+  authAuditEvents,
+} = shipAuthTables();
+export const authTables = {
+  authAccounts,
+  authCredentials,
+  authTokens,
+  authMfaSecrets,
+  authRecoveryCodes,
+  authSessions,
+  authAuditEvents,
+};
 
 export const portfolioSchema = {
   projects,
@@ -65,4 +85,5 @@ export const portfolioSchema = {
   storageObjects,
   storagePurges,
   mailSendsTable,
+  ...authTables,
 };

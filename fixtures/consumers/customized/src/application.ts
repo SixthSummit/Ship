@@ -1,3 +1,10 @@
+import type {
+  CredentialStore,
+  RequestClientRegistry,
+  SecretKeyRing,
+} from "@sixthsummit/ship-auth-credentials";
+import { createInMemoryCredentialStore } from "@sixthsummit/ship-auth-credentials";
+import { credentialAuthConsoleExtension } from "@sixthsummit/ship-auth-credentials/console";
 import { defineConsoleModule } from "@sixthsummit/ship-console";
 import { contractSchema } from "@sixthsummit/ship-contract/schema";
 import {
@@ -55,6 +62,7 @@ import {
   publishedChannels,
   reportRequested,
 } from "./channels.js";
+import { authMailer, createCredentialAuthModule } from "./credential-auth.js";
 import type { PaymentEventSink, ReportNotifier } from "./effects.js";
 import { defineReportJobs } from "./jobs.js";
 import { reportsMailer } from "./mail.js";
@@ -378,6 +386,16 @@ export interface CustomizedInfrastructure {
   readonly mailProvider: MailProvider;
   readonly mailLedger: MailLedger;
   readonly mailInterceptor?: MailInterceptor;
+  /**
+   * Credential auth (ADR-0025): accounts, sessions, MFA secrets and the audit
+   * log. Defaults to the in-memory store so existing compositions (the
+   * capacity harness) keep working; production binds the Drizzle store.
+   */
+  readonly credentialStore?: CredentialStore;
+  /** Key ring sealing TOTP secrets; defaults to the development ring. */
+  readonly authSecrets?: SecretKeyRing;
+  /** Shared with the HTTP credential adapter so sessions and audit rows carry ip and user agent. */
+  readonly authClients?: RequestClientRegistry;
   /** Tenants the scheduled digest job fans out to. */
   readonly scheduledTenants?: readonly string[];
   readonly digestRecipient?: string;
@@ -568,11 +586,11 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
   // provider once per idempotency key. The interceptor is only bound outside
   // production so staging never emails a real customer.
   const mail = defineMailDelivery({
-    mailers: [reportsMailer],
+    mailers: [reportsMailer, authMailer],
     ...(infrastructure.mailInterceptor ? { interceptor: infrastructure.mailInterceptor } : {}),
     clock,
   });
-  const mailPreview = defineMailPreview({ mailers: [reportsMailer] });
+  const mailPreview = defineMailPreview({ mailers: [reportsMailer, authMailer] });
   const email = defineOperation({
     id: "reports.email",
     transport: http.post("/tenants/:tenantId/report-emails"),
@@ -632,6 +650,16 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
         : {}),
     },
     purge: { batchSize: DISPATCH_BATCH_SIZE },
+    clock,
+  });
+  // First-party credential auth beside the session directory: register,
+  // verify, sign in (with lockout and TOTP), sessions and recovery as declared
+  // operations under `/auth/*`; the store token is exported for the console.
+  const credentialAuth = createCredentialAuthModule({
+    store: infrastructure.credentialStore ?? createInMemoryCredentialStore(),
+    mail: mail.dependency,
+    ...(infrastructure.authSecrets ? { secrets: infrastructure.authSecrets } : {}),
+    ...(infrastructure.authClients ? { clients: infrastructure.authClients } : {}),
     clock,
   });
   // One retention sweep covers job runs and both outboxes; no outbox cleanup
@@ -730,7 +758,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
   // unit of work) and never widens what `ship.jobs:manage` or
   // `ship.webhooks:replay` holders may do.
   const consoleModule = defineConsoleModule({
-    imports: ["portfolio", "reports", "payments"],
+    imports: ["portfolio", "reports", "payments", credentialAuth.id],
     jobs: true,
     outboxes: [reportsOutbox, paymentsOutbox],
     webhooks: {
@@ -739,6 +767,8 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       unitOfWork: portfolioUnitOfWork,
     },
     realtime: { backend: realtime, channels: [...publishedChannels, projectActivity] },
+    // The auth-audit panel lands through the extension seam: same `console.operate` slug.
+    extensions: [credentialAuthConsoleExtension({ clock })],
     clock,
   });
   return defineApp({
@@ -754,6 +784,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       consoleModule,
       storage,
       mailModule,
+      credentialAuth,
     ],
     runtime: { workers: { mode: "api" } },
   });

@@ -1,3 +1,5 @@
+import type { CredentialStore } from "@sixthsummit/ship-auth-credentials";
+import { createDrizzleCredentialStore } from "@sixthsummit/ship-auth-credentials/drizzle";
 import type {
   AttachmentLedger,
   IdempotencyStore,
@@ -29,6 +31,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { publishedChannels } from "./channels.js";
 import { paymentsOutbox, reportsOutbox } from "./outbox.js";
 import {
+  authTables,
   idempotencyKeys,
   jobControl,
   jobRuns,
@@ -172,6 +175,13 @@ export function createIdempotencyStore(
   database: NodePgDatabase<typeof portfolioSchema>,
 ): IdempotencyStore {
   return createDrizzleIdempotencyStore({ database, table: idempotencyKeys });
+}
+
+/** The credential store over the seven package-owned auth tables. */
+export function createCredentialStore(
+  database: NodePgDatabase<typeof portfolioSchema>,
+): CredentialStore {
+  return createDrizzleCredentialStore({ database, tables: authTables });
 }
 
 export function createMailLedger(database: NodePgDatabase<typeof portfolioSchema>): MailLedger {

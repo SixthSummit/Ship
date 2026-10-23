@@ -634,9 +634,7 @@
         "ship_storage_intents_key_unique": {
           "name": "ship_storage_intents_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "key"
-          ]
+          "columns": ["key"]
         }
       },
       "policies": {},
@@ -762,9 +760,7 @@
         "ship_storage_objects_key_unique": {
           "name": "ship_storage_objects_key_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "key"
-          ]
+          "columns": ["key"]
         }
       },
       "policies": {},
@@ -953,12 +949,8 @@
           "name": "work_items_project_id_projects_id_fk",
           "tableFrom": "work_items",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
