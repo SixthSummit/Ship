@@ -7,7 +7,7 @@
 
 ## Context
 
-The production schema rules are standing instructions: never remove, rename or retype a production column; additive is not the same as non-blocking; data backfills do not run inside the DDL transaction; migrations are a gated release step from CI, never a boot step. They were enforced by review. Review catches most of it and none of it reliably, and every consumer that moved migrations out of boot wrote the same release step again: Vault Drive (SAPI-148, done), Tortlink (SAPI-184), Sales Twin (SAPI-221) and AFHC (SAPI-270) each carry that ticket.
+The production schema rules are standing instructions: never remove, rename or retype a production column; additive is not the same as non-blocking; data backfills do not run inside the DDL transaction; migrations are a gated release step from CI, never a boot step. They were enforced by review. Review catches most of it and none of it reliably, and every consumer that moved migrations out of boot wrote the same release step again: four consumers (SAPI-148, done; SAPI-184; SAPI-221; SAPI-270) each carry that ticket.
 
 Rails solved this with `strong_migrations`, which refuses the unsafe statement and prints the safe recipe, and with `db:migrate` as a release step whose schema dump CI diffs. Drizzle has `drizzle-kit generate` and `migrate`, a journal and a schema snapshot of its own, but nothing that refuses an unsafe migration, nothing that compares the physical database with what the migrations should have produced, and nothing that stops `migrate()` from being called at boot.
 
