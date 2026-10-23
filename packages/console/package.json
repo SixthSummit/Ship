@@ -34,7 +34,7 @@
     "@sixthsummit/ship-core": "workspace:*",
     "@sixthsummit/ship-hono": "workspace:*",
     "@sixthsummit/ship-testing": "workspace:^",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=22"
