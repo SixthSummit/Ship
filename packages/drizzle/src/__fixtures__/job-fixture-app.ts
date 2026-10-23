@@ -85,6 +85,12 @@ export async function createFixtureRuntime(options: FixtureRuntimeOptions): Prom
   stop(): Promise<void>;
 }> {
   const pool = new pg.Pool({ connectionString: options.databaseUrl, max: 8 });
+  // Without a pool-level `error` listener, a connection the server terminates
+  // (57P01 when the container stops, a reset under load) is an unhandled
+  // 'error' event that kills the worker process.
+  pool.on("error", (error) => {
+    process.stderr.write(`[job-fixture ${options.workerName}] pg pool: ${error.message}\n`);
+  });
   const database = drizzle(pool, { schema: fixtureSchema });
   const record = async (event: FixtureEvent) => {
     await database.insert(fixtureEvents).values(event);
