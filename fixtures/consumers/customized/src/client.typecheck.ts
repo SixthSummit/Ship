@@ -59,3 +59,28 @@ channels["portfolio.activity"].payload.itemCount satisfies number;
 channels["reports.unknown"];
 
 void verifyClientContract;
+
+// Attachment policies are part of the typed contract, carrying no provider detail.
+type Attachments = ApplicationContractOf<typeof application>["attachments"];
+declare const attachments: Attachments;
+attachments["portfolio.photo"].cardinality satisfies "many";
+attachments["portfolio.photo"].visibility satisfies "private";
+attachments["portfolio.photo"].variants satisfies "thumb";
+// @ts-expect-error attachment ids stay exact
+attachments["portfolio.unknown"];
+
+async function verifyStorageContract(): Promise<void> {
+  const intent = await client.call("ship-storage.create-intent", {
+    body: { attachment: "portfolio.photo", contentType: "image/png", size: 12 },
+  });
+  if (intent.ok) intent.data.upload.url satisfies string;
+  const complete = await client.call("ship-storage.complete", {
+    params: { intentId: "intent-1" },
+  });
+  if (complete.ok) complete.data.objectId satisfies string;
+  const photos = await client.call("portfolio.photos", {
+    params: { tenantId: "acme", projectId: "project-1" },
+  });
+  if (photos.ok) photos.data.photos[0]?.thumb satisfies string | null | undefined;
+}
+void verifyStorageContract;

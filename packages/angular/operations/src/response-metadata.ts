@@ -7,6 +7,8 @@ export interface ResponseMetadata {
   readonly etag?: string;
   readonly contentType?: string;
   readonly contentDisposition?: string;
+  /** `Location` of a declared redirect result (3xx) when the runtime exposes it. */
+  readonly location?: string;
   readonly idempotencyKey?: string;
   readonly idempotencyReplayed?: boolean;
   readonly idempotencyResult?: string;
@@ -50,6 +52,7 @@ export function responseMetadataFromHeaders(
   const etag = read('etag');
   const contentType = read('content-type');
   const contentDisposition = read('content-disposition');
+  const location = read('location');
   const idempotencyKey = read(headerNames.idempotencyKey);
   const idempotencyReplayed = replayed === undefined ? undefined : replayed === 'true';
   const idempotencyResult = read(headerNames.idempotencyResult);
@@ -61,6 +64,7 @@ export function responseMetadataFromHeaders(
     ...(etag === undefined ? {} : { etag }),
     ...(contentType === undefined ? {} : { contentType }),
     ...(contentDisposition === undefined ? {} : { contentDisposition }),
+    ...(location === undefined ? {} : { location }),
     ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     ...(idempotencyReplayed === undefined ? {} : { idempotencyReplayed }),
     ...(idempotencyResult === undefined ? {} : { idempotencyResult }),

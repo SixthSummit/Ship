@@ -8,8 +8,10 @@ import type {
   JobExecutionOutcome,
   JobHealth,
   JobIntervalTrigger,
+  JobIntrospection,
   JobRetention,
   JobRun,
+  JobRunQuery,
   JobRuntimeBinding,
   JobRuntimeDeclaration,
   JobScheduleTrigger,
@@ -25,6 +27,7 @@ import {
   type ClaimedRun,
   createDrizzleJobRunStore,
   type JobRunStore,
+  type ShipJobControlTable,
   type ShipJobRunsTable,
   type ShipJobStateTable,
   shipJobRunsTable,
@@ -43,6 +46,12 @@ export interface DrizzleJobBackendOptions<TSchema extends Record<string, unknown
   readonly table?: ShipJobRunsTable;
   /** Defaults to `shipJobStateTable()`; pass the same instance used in migrations. */
   readonly stateTable?: ShipJobStateTable;
+  /**
+   * Opt-in operator control state (`shipJobControlTable()`), the durable home
+   * of pause/resume. Without it `backend.introspection` exposes no
+   * `pause`/`resume` and no existing table changes shape.
+   */
+  readonly controlTable?: ShipJobControlTable;
   /**
    * The `LockProvider` single-runner jobs should bind (`lockProviderDependency()`).
    * Defaults to `advisoryLockProvider(database)`; exposed as `backend.lockProvider`.
@@ -68,8 +77,10 @@ export interface DrizzleJobBackend extends JobBackend {
   readonly adapter: "drizzle";
   readonly table: ShipJobRunsTable;
   readonly stateTable: ShipJobStateTable;
+  readonly controlTable?: ShipJobControlTable;
   readonly lockProvider: LockProvider;
   readonly metrics: JobMetrics;
+  readonly introspection: JobIntrospection;
 }
 
 /**
@@ -92,7 +103,7 @@ export function createDrizzleJobBackend<TSchema extends Record<string, unknown>>
   const clock = options.clock ?? (() => new Date());
   const lockProvider = options.lockProvider ?? advisoryLockProvider(database, { clock });
   const metrics = createDrizzleJobMetrics(options.meterProvider);
-  const store = createDrizzleJobRunStore(database, table, stateTable);
+  const store = createDrizzleJobRunStore(database, table, stateTable, options.controlTable);
   const core = createJobBackendOverStore(store, {
     pollIntervalMs: options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
     maxQueueDepth: options.queueDepthLimit ?? DEFAULT_QUEUE_DEPTH_LIMIT,
@@ -106,8 +117,10 @@ export function createDrizzleJobBackend<TSchema extends Record<string, unknown>>
     adapter: "drizzle" as const,
     table,
     stateTable,
+    ...(options.controlTable ? { controlTable: options.controlTable } : {}),
     lockProvider,
     metrics,
+    introspection: core.introspection as JobIntrospection,
   });
 }
 
@@ -130,7 +143,7 @@ export interface JobBackendCoreOptions {
 export function createJobBackendOverStore(
   store: JobRunStore,
   options: JobBackendCoreOptions,
-): JobBackend {
+): JobBackend & { readonly introspection: JobIntrospection } {
   const { metrics, clock } = options;
   const budget: JobConcurrencyBudget = Object.freeze({
     maxInFlight: options.maxInFlight,
@@ -262,11 +275,13 @@ export function createJobBackendOverStore(
       .filter((job) => job.trigger.kind === "schedule" || job.trigger.kind === "interval")
       .map((job) => job.id);
     if (scheduled.length > 0) await store.tick(scheduled, now, nextOccurrence);
+    const paused = store.setPaused ? new Set(await store.listPaused()) : undefined;
     let claimedAny = false;
     for (const job of [...declarations.values()].sort((left, right) =>
       left.id.localeCompare(right.id),
     )) {
       if (quitting) break;
+      if (paused?.has(job.id)) continue;
       const capacity = Math.min(
         job.concurrency.max - active(job.id),
         workerBudget.maxInFlight - inFlight.size,
@@ -445,10 +460,34 @@ export function createJobBackendOverStore(
     return store.cleanup(retention, DEFAULT_JOB_RETENTION, now);
   };
 
+  const setPaused = store.setPaused?.bind(store);
+  const introspection: JobIntrospection = Object.freeze({
+    kind: "ship.job-introspection" as const,
+    declarations: () => Object.freeze([...declarations.values()]),
+    listRuns: (query: JobRunQuery) => store.listRuns(query, clock()),
+    getRun: (runId: string) => store.getRun(runId, clock()),
+    listSchedules: () => store.listSchedules(),
+    listPaused: () => store.listPaused(),
+    ...(setPaused
+      ? {
+          pause: async (jobId: string) => {
+            declaration(jobId);
+            await setPaused(jobId, true, clock());
+          },
+          resume: async (jobId: string) => {
+            declaration(jobId);
+            await setPaused(jobId, false, clock());
+            if (loop) wake();
+          },
+        }
+      : {}),
+  });
+
   return Object.freeze({
     kind: "ship.job-backend" as const,
     adapter: "drizzle" as const,
     concurrencyBudget: budget,
+    introspection,
     attach: (value: JobRuntimeBinding) => {
       if (quitting && loop) {
         throw new DrizzleRepositoryError(
@@ -512,12 +551,12 @@ function assertOptions(
       { field: "database" },
     );
   }
-  for (const field of ["table", "stateTable"] as const) {
+  for (const field of ["table", "stateTable", "controlTable"] as const) {
     const value = Reflect.get(options, field);
     if (value !== undefined && (typeof value !== "object" || value === null)) {
       throw new DrizzleRepositoryError(
         "SHIP_DRIZZLE_JOB_BACKEND_INVALID",
-        `${field} must be created with shipJobRunsTable() / shipJobStateTable()`,
+        `${field} must be created with shipJobRunsTable() / shipJobStateTable() / shipJobControlTable()`,
         { field },
       );
     }

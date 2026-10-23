@@ -122,6 +122,26 @@ class FakeQueue {
   async getFailed(start: number, end: number) {
     return [...this.jobs.values()].filter((job) => job.state === "failed").slice(start, end + 1);
   }
+  paused = false;
+  async getJobs(types: string[], start: number, end: number) {
+    return [...this.jobs.values()]
+      .filter((job) => types.includes(job.state))
+      .sort((left, right) => right.timestamp - left.timestamp)
+      .slice(start, end + 1);
+  }
+  async isPaused() {
+    return this.paused;
+  }
+  async pause() {
+    this.paused = true;
+  }
+  async resume() {
+    this.paused = false;
+  }
+  async getJobScheduler(id: string) {
+    const scheduler = this.schedulers.get(id);
+    return scheduler ? { id, next: FakeQueue.now + 60_000 } : undefined;
+  }
   async clean(grace: number, _limit: number, type: string) {
     const removed: string[] = [];
     for (const job of this.jobs.values()) {
@@ -433,6 +453,63 @@ describe("createBullmqJobBackend", () => {
     }
     await Promise.all(runs);
     expect(peak).toBe(2);
+  });
+
+  it("exposes introspection over BullMQ: runs, detail, schedulers, pause and resume", async () => {
+    const backend = attach(
+      createBullmqJobBackend({ connection: {}, clock: () => new Date(FakeQueue.now) }),
+    );
+    expect(backend.introspection.declarations().map((job) => job.id)).toEqual([
+      "reports.digest",
+      "reports.render",
+    ]);
+    await backend.enqueue("reports.render", { a: 1 });
+    FakeQueue.now += 1_000;
+    await backend.enqueue("reports.render", { a: 2 }, { delayMs: 5_000 });
+    const queue = FakeQueue.instances.get("reports.render") as FakeQueue;
+    const failed = queue.jobs.get("1") as FakeJob;
+    failed.state = "failed";
+    failed.failedReason = "Error: boom";
+
+    const runs = await backend.introspection.listRuns({ limit: 10 });
+    expect(runs.map((run) => [run.runId, run.status])).toEqual([
+      ["reports.render/2", "delayed"],
+      ["reports.render/1", "failed"],
+    ]);
+    expect(
+      await backend.introspection.listRuns({
+        jobId: "reports.render",
+        status: "failed",
+        limit: 10,
+      }),
+    ).toMatchObject([{ runId: "reports.render/1", lastError: "Error: boom" }]);
+    expect(await backend.introspection.listRuns({ jobId: "reports.unknown", limit: 10 })).toEqual(
+      [],
+    );
+    expect(await backend.introspection.listRuns({ status: "discarded", limit: 10 })).toEqual([]);
+    expect(await backend.introspection.getRun("reports.render/2")).toMatchObject({
+      status: "delayed",
+      input: { a: 2 },
+    });
+    expect(await backend.introspection.getRun("reports.render/missing")).toBeUndefined();
+
+    expect(await backend.introspection.listSchedules()).toEqual([]);
+    await backend.schedule("reports.digest", { kind: "schedule", cron: "0 * * * *", tz: "UTC" });
+    expect(await backend.introspection.listSchedules()).toEqual([
+      {
+        jobId: "reports.digest",
+        trigger: { kind: "schedule", cron: "0 * * * *", tz: "UTC" },
+        nextAt: new Date(FakeQueue.now + 60_000),
+      },
+    ]);
+
+    expect(await backend.introspection.listPaused()).toEqual([]);
+    await backend.introspection.pause?.("reports.render");
+    expect(queue.paused).toBe(true);
+    expect(await backend.introspection.listPaused()).toEqual(["reports.render"]);
+    await backend.introspection.resume?.("reports.render");
+    expect(await backend.introspection.listPaused()).toEqual([]);
+    await expect(backend.introspection.pause?.("reports.unknown")).rejects.toThrow(/knows no job/u);
   });
 
   it("reports health, lists failures and supports retry, discard and cleanup", async () => {

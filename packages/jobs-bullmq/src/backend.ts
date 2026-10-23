@@ -10,11 +10,14 @@ import type {
   JobHealth,
   JobHealthEntry,
   JobIntervalTrigger,
+  JobIntrospection,
   JobResultObservation,
   JobRun,
+  JobRunQuery,
   JobRunStatus,
   JobRuntimeBinding,
   JobRuntimeDeclaration,
+  JobScheduleState,
   JobScheduleTrigger,
   JobWorkerMode,
 } from "@sixthsummit/ship-core";
@@ -443,6 +446,74 @@ export function createBullmqJobBackend(options: BullmqJobBackendOptions): Bullmq
     return snapshot;
   };
 
+  const stateOf = async (job: Job<BullmqJobData>): Promise<JobRunStatus> =>
+    runStatus(await job.getState());
+
+  const introspection: JobIntrospection = Object.freeze({
+    kind: "ship.job-introspection" as const,
+    declarations: () => Object.freeze([...declarations.values()]),
+    listRuns: async (query: JobRunQuery): Promise<readonly JobRun[]> => {
+      const jobIds = query.jobId ? [query.jobId] : [...declarations.keys()].sort();
+      const runs: JobRun[] = [];
+      for (const jobId of jobIds) {
+        if (!declarations.has(jobId)) continue;
+        const bullJobs = await queue(jobId).getJobs(
+          query.status ? bullTypes(query.status) : [...ALL_BULL_TYPES],
+          0,
+          Math.max(0, query.limit - 1),
+          false,
+        );
+        for (const bullJob of bullJobs) {
+          const status = await stateOf(bullJob as Job<BullmqJobData>);
+          if (query.status && status !== query.status) continue;
+          runs.push(toRun(jobId, bullJob as Job<BullmqJobData>, status));
+        }
+      }
+      return Object.freeze(
+        runs
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+          .slice(0, query.limit),
+      );
+    },
+    getRun: async (runId: string): Promise<JobRun | undefined> => {
+      const found = await findRun(runId);
+      return found ? toRun(found.jobId, found.job, await stateOf(found.job)) : undefined;
+    },
+    listSchedules: async (): Promise<readonly JobScheduleState[]> => {
+      const schedules: JobScheduleState[] = [];
+      for (const job of [...declarations.values()].sort((left, right) =>
+        left.id.localeCompare(right.id),
+      )) {
+        if (job.trigger.kind !== "schedule" && job.trigger.kind !== "interval") continue;
+        const scheduler = await queue(job.id).getJobScheduler(SCHEDULER_ID);
+        if (!scheduler) continue;
+        schedules.push(
+          Object.freeze({
+            jobId: job.id,
+            trigger: job.trigger,
+            ...(typeof scheduler.next === "number" ? { nextAt: new Date(scheduler.next) } : {}),
+          }),
+        );
+      }
+      return Object.freeze(schedules);
+    },
+    listPaused: async (): Promise<readonly string[]> => {
+      const ids: string[] = [];
+      for (const jobId of [...declarations.keys()].sort()) {
+        if (await queue(jobId).isPaused()) ids.push(jobId);
+      }
+      return Object.freeze(ids);
+    },
+    pause: async (jobId: string) => {
+      declaration(jobId);
+      await queue(jobId).pause();
+    },
+    resume: async (jobId: string) => {
+      declaration(jobId);
+      await queue(jobId).resume();
+    },
+  });
+
   const cleanup = async (): Promise<JobCleanupResult> => {
     let completedDeleted = 0;
     let deadLetteredDeleted = 0;
@@ -464,6 +535,7 @@ export function createBullmqJobBackend(options: BullmqJobBackendOptions): Bullmq
     concurrencyBudget: budget,
     metrics,
     queue,
+    introspection,
     attach: (value: JobRuntimeBinding) => {
       if (quitting) throw new Error("cannot attach a job backend after quit()");
       binding = value;
@@ -482,6 +554,49 @@ export function createBullmqJobBackend(options: BullmqJobBackendOptions): Bullmq
     discard,
     cleanup,
   });
+}
+
+const ALL_BULL_TYPES = [
+  "waiting",
+  "prioritized",
+  "paused",
+  "delayed",
+  "active",
+  "completed",
+  "failed",
+] as const;
+
+type BullJobType = (typeof ALL_BULL_TYPES)[number];
+
+/** The BullMQ job types that can hold a run of the given kernel status. */
+function bullTypes(status: JobRunStatus): BullJobType[] {
+  switch (status) {
+    case "waiting":
+      return ["waiting", "prioritized", "paused"];
+    case "delayed":
+      return ["delayed"];
+    case "active":
+      return ["active"];
+    case "completed":
+      return ["completed"];
+    case "failed":
+      return ["failed"];
+    default:
+      return [];
+  }
+}
+
+/** Maps a BullMQ job state onto the kernel run status; discarded runs are removed, never listed. */
+function runStatus(state: string): JobRunStatus {
+  switch (state) {
+    case "completed":
+    case "failed":
+    case "delayed":
+    case "active":
+      return state;
+    default:
+      return "waiting";
+  }
 }
 
 /** Adds bounded jitter so contending runners for one key do not retry in lockstep. */

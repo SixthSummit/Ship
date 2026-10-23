@@ -1,24 +1,36 @@
+import { CONSOLE_OPERATE_PERMISSION } from "@sixthsummit/ship-console";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
 import {
   cacheInvalidationOutbox,
   collectJobs,
   createExecutor,
   defineRealtimePublicationOutbox,
+  MAIL_ORIGINAL_TO_HEADER,
   operationActor,
   providerActor,
   REALTIME_PUBLICATION_OUTBOX_ID,
+  startJobRuntime,
   systemActor,
   type TenantScope,
   type UnitOfWork,
+  WEBHOOK_REPLAY_PERMISSION,
   webhookSecret,
 } from "@sixthsummit/ship-core";
 import {
+  allowlistInterceptor,
+  createInMemoryMailLedger,
+  logMailProvider,
+} from "@sixthsummit/ship-mail";
+import { defineStoragePurgeOutbox, STORAGE_PURGE_OUTBOX_ID } from "@sixthsummit/ship-storage";
+import {
   collectPublishes,
+  createInMemoryAttachmentLedger,
   createInMemoryIdempotencyStore,
   createInMemoryJobBackend,
   createInMemoryLockProvider,
   createInMemoryOutbox,
   createInMemoryRealtimeBackend,
+  createInMemoryStorageAdapter,
   createInMemoryWebhookEventStore,
   drainOutbox,
   drainRealtimePublications,
@@ -37,6 +49,7 @@ import {
 } from "./application.js";
 import { createLegacyBridge } from "./bridge.js";
 import type { ReportNotifier } from "./effects.js";
+import { reportsMailer } from "./mail.js";
 import {
   paymentsOutbox as paymentsOutboxDefinition,
   REPORTS_EXPECTED_RATE_PER_SECOND,
@@ -68,6 +81,7 @@ function fixtureNotifier(send = vi.fn(async () => undefined)): ReportNotifier {
 }
 
 type FixtureInfrastructure = CustomizedInfrastructure & {
+  readonly jobs: ReturnType<typeof createInMemoryJobBackend>;
   readonly realtime: ReturnType<typeof createInMemoryRealtimeBackend>;
   readonly outbox: ReturnType<typeof createInMemoryOutbox>;
   readonly cacheOutbox: ReturnType<typeof createInMemoryOutbox>;
@@ -75,6 +89,11 @@ type FixtureInfrastructure = CustomizedInfrastructure & {
   readonly paymentsOutbox: ReturnType<typeof createInMemoryOutbox>;
   readonly realtimeOutbox: ReturnType<typeof createInMemoryOutbox>;
   readonly webhookEvents: ReturnType<typeof createInMemoryWebhookEventStore>;
+  readonly storage: ReturnType<typeof createInMemoryStorageAdapter>;
+  readonly attachmentLedger: ReturnType<typeof createInMemoryAttachmentLedger>;
+  readonly purgeOutbox: ReturnType<typeof createInMemoryOutbox>;
+  readonly mailProvider: ReturnType<typeof logMailProvider>;
+  readonly mailLedger: ReturnType<typeof createInMemoryMailLedger>;
 };
 
 function fixtureInfrastructure(
@@ -96,6 +115,11 @@ function fixtureInfrastructure(
     webhookSecrets: { stripe: webhookSecret("whsec_fixture"), twilio: webhookSecret("auth-token") },
     jobs: createInMemoryJobBackend(),
     locks: createInMemoryLockProvider(),
+    storage: createInMemoryStorageAdapter(overrides.clock ? { now: overrides.clock } : {}),
+    attachmentLedger: createInMemoryAttachmentLedger(),
+    purgeOutbox: createInMemoryOutbox(defineStoragePurgeOutbox()),
+    mailProvider: logMailProvider(),
+    mailLedger: createInMemoryMailLedger(),
     scheduledTenants: ["acme", "beta"],
     ...overrides,
   } as FixtureInfrastructure;
@@ -309,6 +333,7 @@ describe("customized portfolio application", () => {
       "reports.outbox",
       "ship-cache.invalidation",
       REALTIME_PUBLICATION_OUTBOX_ID,
+      "ship-storage.purge",
     ]);
     expect(graph.outboxes).toEqual(
       expect.arrayContaining([
@@ -711,8 +736,11 @@ describe("customized declared jobs", () => {
       graph.jobs.map((job) => [job.id, job.trigger.kind, job.concurrency.mode, job.enqueues]),
     ).toEqual([
       ["jobs.cleanup", "schedule", "single-runner", []],
+      ["mail.deliver", "enqueue", "parallel", []],
       ["reports.deliver", "enqueue", "single-runner", []],
       ["reports.digest", "schedule", "single-runner", ["reports.deliver"]],
+      ["ship-storage.generate-variant", "enqueue", "parallel", []],
+      ["ship-storage.sweep", "interval", "single-runner", []],
     ]);
     expect(graph.jobs.find((job) => job.id === "reports.deliver")).toMatchObject({
       transaction: "write",
@@ -1030,5 +1058,474 @@ describe("customized legacy bridge", () => {
         actorId: "ana",
       }),
     ).toEqual({ ok: false, reason: "forbidden" });
+  });
+});
+
+describe("customized ops console", () => {
+  const sre = operationActor({ id: "sre", permissions: [CONSOLE_OPERATE_PERMISSION] });
+  /** The existing operator role holds replay and read rights but never the console slug. */
+  const operator = operationActor({
+    id: "operator",
+    permissions: ["portfolio:read", WEBHOOK_REPLAY_PERMISSION],
+  });
+
+  it("mounts every panel as console.* operations behind console.operate only", async () => {
+    const app = createCustomizedApplication(fixtureInfrastructure());
+    const consoleOperations = app.graph.operations.filter((operation) =>
+      operation.id.startsWith("console."),
+    );
+    expect(consoleOperations.map((operation) => operation.id)).toEqual(
+      expect.arrayContaining([
+        "console.panels",
+        "console.jobs.overview",
+        "console.jobs.retry",
+        "console.cron.trigger",
+        "console.webhooks.receipts",
+        "console.webhooks.replay",
+        "console.realtime.channels",
+        "console.outbox.overview",
+      ]),
+    );
+    for (const operation of consoleOperations) {
+      expect(operation.access).toEqual({
+        kind: "permissions",
+        mode: "all",
+        permissions: [CONSOLE_OPERATE_PERMISSION],
+      });
+    }
+    const executor = createExecutor(app);
+    for (const operation of consoleOperations) {
+      await expect(
+        executor.run(operation.id as never, {} as never, { actor: operator }),
+      ).resolves.toMatchObject({ ok: false, status: 403 });
+    }
+    await expect(executor.run("console.panels", {}, { actor: sre })).resolves.toMatchObject({
+      ok: true,
+      data: { panels: expect.arrayContaining([expect.objectContaining({ id: "jobs" })]) },
+    });
+  });
+
+  it("lets an SRE retry a dead-lettered delivery and replay a stored receipt without SQL", async () => {
+    const infrastructure = fixtureInfrastructure();
+    const app = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(app);
+    const jobs = infrastructure.jobs as ReturnType<typeof createInMemoryJobBackend>;
+    await startJobRuntime(app, { backend: jobs, mode: "api" });
+    // A tenant the application never enrolled: the declared TENANT_ACCESS_DENIED
+    // failure is final, so the run dead-letters on its first attempt.
+    await jobs.enqueue("reports.deliver", { tenantId: "gamma", period: "2026-10-22" });
+    await jobs.drain();
+
+    const overview = await executor.run("console.jobs.overview", {}, { actor: sre });
+    expect(overview).toMatchObject({
+      ok: true,
+      data: {
+        jobs: expect.arrayContaining([
+          expect.objectContaining({ jobId: "reports.deliver", failed: 1 }),
+        ]),
+      },
+    });
+    const failed = await executor.run(
+      "console.jobs.runs",
+      { query: { status: "failed" } },
+      { actor: sre },
+    );
+    if (!failed.ok) throw new Error("unreachable");
+    expect(failed.data.runs).toMatchObject([
+      { jobId: "reports.deliver", lastError: expect.stringContaining("TENANT_ACCESS_DENIED") },
+    ]);
+    await expect(
+      executor.run(
+        "console.jobs.retry",
+        { body: { runId: failed.data.runs[0]?.runId ?? "" } },
+        { actor: sre },
+      ),
+    ).resolves.toMatchObject({ ok: true, data: { run: { status: "waiting", attempts: 1 } } });
+    await jobs.drain();
+    expect(jobs.runs()[0]).toMatchObject({ status: "failed", attempts: 2 });
+
+    await infrastructure.webhookEvents.record(
+      {},
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        webhookId: "payments.stripe-webhook",
+        provider: "stripe",
+        requestId: "req-console",
+        receivedAt: new Date("2026-10-22T10:00:00.000Z"),
+        headers: { "content-type": "application/json" },
+        body: new TextEncoder().encode('{"id":"evt_console"}'),
+      },
+    );
+    const receipts = await executor.run(
+      "console.webhooks.receipts",
+      { query: { webhookId: "payments.stripe-webhook" } },
+      { actor: sre },
+    );
+    expect(receipts).toMatchObject({
+      ok: true,
+      data: {
+        webhooks: expect.arrayContaining([
+          expect.objectContaining({ id: "payments.stripe-webhook", mode: "enqueue" }),
+          expect.objectContaining({ id: "messaging.inbound-sms", mode: "inline" }),
+        ]),
+        receipts: [{ eventId: "44444444-4444-4444-8444-444444444444", bytes: 20 }],
+      },
+    });
+    await expect(
+      executor.run(
+        "console.webhooks.replay",
+        { params: { eventId: "44444444-4444-4444-8444-444444444444" } },
+        { actor: sre },
+      ),
+    ).resolves.toMatchObject({ ok: true, data: { queued: true } });
+    expect(infrastructure.paymentsOutbox.records()).toMatchObject([
+      { intentId: "process-webhook", status: "pending" },
+    ]);
+    await expect(
+      executor.run(
+        "console.webhooks.replay",
+        { params: { eventId: "44444444-4444-4444-8444-444444444444" } },
+        { actor: operator },
+      ),
+    ).resolves.toMatchObject({ ok: false, status: 403 });
+
+    await expect(
+      executor.run("console.outbox.overview", {}, { actor: sre }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        outboxes: [
+          expect.objectContaining({ outboxId: "payments.outbox", pending: 1 }),
+          expect.objectContaining({ outboxId: "reports.outbox" }),
+        ],
+      },
+    });
+    await expect(
+      executor.run("console.realtime.channels", {}, { actor: sre }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        channels: expect.arrayContaining([
+          expect.objectContaining({ channelId: "portfolio.activity", presence: true }),
+        ]),
+      },
+    });
+  });
+});
+
+describe("managed storage", () => {
+  const editor = operationActor({
+    id: "editor",
+    permissions: ["portfolio:read", "portfolio:write", "tenant:acme"],
+  });
+  const projectId = "33333333-3333-4333-8333-333333333333";
+
+  async function uploadPhoto(
+    executor: ReturnType<typeof createExecutor<ReturnType<typeof createCustomizedApplication>>>,
+    storage: ReturnType<typeof createInMemoryStorageAdapter>,
+    bytes = new TextEncoder().encode("png-bytes"),
+  ) {
+    const intent = await executor.run(
+      "ship-storage.create-intent",
+      { body: { attachment: "portfolio.photo", contentType: "image/png", size: bytes.byteLength } },
+      { actor: editor },
+    );
+    if (!intent.ok) throw new Error(`intent failed: ${intent.error.code}`);
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await executor.run(
+      "ship-storage.complete",
+      { params: { intentId: intent.data.intentId } },
+      { actor: editor },
+    );
+    if (!complete.ok) throw new Error(`completion failed: ${complete.error.code}`);
+    return complete.data;
+  }
+
+  it("projects the attachment policy into the graph and the client contract without provider detail", () => {
+    const application = createCustomizedApplication(fixtureInfrastructure());
+    expect(application.graph.attachments).toEqual([
+      expect.objectContaining({
+        id: "portfolio.photo",
+        moduleId: "portfolio",
+        cardinality: "many",
+        maxBytes: 5_000_000,
+        visibility: "private",
+        maxCount: 12,
+        variants: ["thumb"],
+        providerId: "portfolio.photo.attachment",
+        operations: ["portfolio.attach-photo", "portfolio.photos", "portfolio.remove-photo"],
+      }),
+    ]);
+    const contract = projectClientContract(application);
+    expect(contract.attachments).toEqual({
+      "portfolio.photo": {
+        cardinality: "many",
+        contentTypes: ["image/jpeg", "image/png", "image/webp"],
+        maxBytes: 5_000_000,
+        visibility: "private",
+        maxCount: 12,
+        variants: ["thumb"],
+      },
+    });
+    expect(JSON.stringify(contract)).not.toContain("memory");
+    expect(
+      contract.operations.find((operation) => operation.id === "ship-storage.create-intent")
+        ?.transport?.binding,
+    ).toBe("POST /storage/intents");
+  });
+
+  it("uploads through a signed intent, attaches to a project, lists with a pending thumbnail and purges on removal", async () => {
+    const infrastructure = fixtureInfrastructure();
+    const application = createCustomizedApplication(infrastructure);
+    await startJobRuntime(application, { backend: infrastructure.jobs, mode: "api" });
+    const executor = createExecutor(application);
+    const { objectId } = await uploadPhoto(executor, infrastructure.storage);
+
+    const attached = await executor.run(
+      "portfolio.attach-photo",
+      { params: { tenantId: "acme", projectId }, body: { objectId } },
+      { actor: editor },
+    );
+    expect(attached).toMatchObject({ ok: true, data: { objectId, count: 1 } });
+    const again = await executor.run(
+      "portfolio.attach-photo",
+      { params: { tenantId: "acme", projectId }, body: { objectId } },
+      { actor: editor },
+    );
+    expect(again).toMatchObject({ ok: false, error: { code: "PHOTO_UNAVAILABLE" } });
+    const crossTenant = await executor.run(
+      "portfolio.photos",
+      { params: { tenantId: "beta", projectId } },
+      { actor: editor },
+    );
+    expect(crossTenant).toMatchObject({ ok: false, error: { code: "TENANT_ACCESS_DENIED" } });
+
+    const listed = await executor.run(
+      "portfolio.photos",
+      { params: { tenantId: "acme", projectId } },
+      { actor: editor },
+    );
+    expect(listed).toMatchObject({
+      ok: true,
+      data: {
+        photos: [
+          {
+            objectId,
+            contentType: "image/png",
+            size: 9,
+            url: expect.stringContaining("portfolio.photo/"),
+            thumb: null,
+          },
+        ],
+      },
+    });
+    const variantRun = infrastructure.jobs
+      .runs()
+      .find((run) => run.jobId === "ship-storage.generate-variant");
+    expect(variantRun?.input).toEqual({ objectId, variant: "thumb" });
+    await expect(
+      runJobOnce(application, "ship-storage.generate-variant", variantRun?.input, { executor }),
+    ).resolves.toMatchObject({ ok: true, data: { rendered: true } });
+    const withThumb = await executor.run(
+      "portfolio.photos",
+      { params: { tenantId: "acme", projectId } },
+      { actor: editor },
+    );
+    expect(withThumb).toMatchObject({
+      ok: true,
+      data: { photos: [{ thumb: expect.stringContaining("variants/thumb.webp") }] },
+    });
+
+    const removed = await executor.run(
+      "portfolio.remove-photo",
+      { params: { tenantId: "acme", projectId, objectId } },
+      { actor: editor },
+    );
+    expect(removed).toMatchObject({ ok: true, data: { removed: true } });
+    expect(infrastructure.purgeOutbox.records()).toMatchObject([
+      { intentId: "purge-object", payload: { objectId }, status: "pending" },
+    ]);
+    expect(infrastructure.storage.keys()).toHaveLength(2);
+    await expect(drainOutbox(executor, STORAGE_PURGE_OUTBOX_ID)).resolves.toMatchObject({
+      completed: 1,
+    });
+    expect(infrastructure.storage.keys()).toEqual([]);
+    expect((await infrastructure.attachmentLedger.readPurge(objectId))?.purgedAt).toBeDefined();
+    expect(
+      await executor.run(
+        "portfolio.photos",
+        { params: { tenantId: "acme", projectId } },
+        { actor: editor },
+      ),
+    ).toMatchObject({ ok: true, data: { photos: [] } });
+  });
+
+  it("abandons an intent that never completes and removes its stray bytes on sweep", async () => {
+    let now = new Date("2026-10-22T10:00:00.000Z");
+    const infrastructure = fixtureInfrastructure({ clock: () => now });
+    const application = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(application);
+    const intent = await executor.run(
+      "ship-storage.create-intent",
+      { body: { attachment: "portfolio.photo", contentType: "image/jpeg", size: 3 } },
+      { actor: editor },
+    );
+    if (!intent.ok) throw new Error("intent failed");
+    expect(
+      await infrastructure.storage.upload(
+        intent.data.upload.url,
+        new TextEncoder().encode("jpg"),
+        intent.data.upload.headers,
+      ),
+    ).toBe(200);
+    now = new Date(now.getTime() + 16 * 60_000);
+    await expect(
+      runJobOnce(application, "ship-storage.sweep", {}, { executor }),
+    ).resolves.toMatchObject({ ok: true, data: { abandoned: 1 } });
+    expect(infrastructure.storage.keys()).toEqual([]);
+    expect(
+      await executor.run(
+        "ship-storage.complete",
+        { params: { intentId: intent.data.intentId } },
+        { actor: editor },
+      ),
+    ).toMatchObject({ ok: false, error: { code: "INTENT_EXPIRED" } });
+  });
+});
+
+describe("customized transactional mail", () => {
+  const emailBody = {
+    recipient: "owner@real-customer.example",
+    period: "2026-09-18",
+    projectCount: 3,
+  };
+
+  it("projects the mailer, the delivery job and message names only into graph and contract", () => {
+    const app = createCustomizedApplication(fixtureInfrastructure());
+    expect(app.graph.mailers).toEqual([
+      {
+        id: "reports.mailer",
+        moduleId: "reports",
+        from: "Portfolio Reports <reports@example.test>",
+        messages: ["digestReady"],
+      },
+    ]);
+    expect(app.graph.jobs.find((job) => job.id === "mail.deliver")).toMatchObject({
+      moduleId: "mail",
+      trigger: { kind: "enqueue" },
+      effects: ["ship.mail.provider"],
+      operations: { enqueuedBy: ["reports.email"] },
+    });
+    const contract = projectClientContract(app);
+    expect(contract.mailers).toEqual({ "reports.mailer": { messages: ["digestReady"] } });
+    expect(JSON.stringify(contract)).not.toContain("reports@example.test");
+  });
+
+  it("enqueues one delivery per idempotency key from the operation and refuses other tenants", async () => {
+    const infrastructure = fixtureInfrastructure();
+    const app = createCustomizedApplication(infrastructure);
+    await startJobRuntime(app, { backend: infrastructure.jobs, mode: "api" });
+    const executor = createExecutor(app);
+    const send = (tenantId: string) =>
+      executor.run(
+        "reports.email",
+        { params: { tenantId }, body: emailBody },
+        { actor: publisher },
+      );
+
+    expect(await send("acme")).toMatchObject({
+      ok: true,
+      status: 202,
+      data: { accepted: true, deduplicated: false },
+    });
+    expect(await send("acme")).toMatchObject({ ok: true, data: { deduplicated: true } });
+    expect(await send("beta")).toMatchObject({ ok: false, status: 403 });
+    const jobs = infrastructure.jobs as ReturnType<typeof createInMemoryJobBackend>;
+    expect(jobs.runs().map((run) => [run.jobId, run.dedupeKey])).toEqual([
+      ["mail.deliver", "digest-email:acme:2026-09-18:owner@real-customer.example"],
+    ]);
+    expect(infrastructure.mailProvider.sent()).toHaveLength(0);
+
+    await jobs.drain();
+    const replay = await runJobOnce(app, "mail.deliver", jobs.runs()[0]?.input, { executor });
+    expect(replay).toMatchObject({ ok: true, data: { status: "duplicate" } });
+    expect(infrastructure.mailProvider.sent()).toHaveLength(1);
+    expect(infrastructure.mailProvider.sent()[0]?.envelope).toMatchObject({
+      from: "Portfolio Reports <reports@example.test>",
+      to: ["owner@real-customer.example"],
+      subject: "Portfolio digest for 2026-09-18",
+      text: "Digest ready: 3 projects summarized for acme on 2026-09-18.",
+    });
+    expect(infrastructure.mailLedger.records()).toEqual([
+      expect.objectContaining({
+        idempotencyKey: "digest-email:acme:2026-09-18:owner@real-customer.example",
+        status: "sent",
+        attempts: 1,
+        tenantId: "acme",
+        intercepted: false,
+      }),
+    ]);
+  });
+
+  it("redirects real customers to the allowlist inbox outside production", async () => {
+    const infrastructure = fixtureInfrastructure({
+      mailInterceptor: allowlistInterceptor({
+        allow: ["@example.test"],
+        redirectTo: ["qa-inbox@example.test"],
+      }),
+    });
+    const app = createCustomizedApplication(infrastructure);
+    const executor = createExecutor(app);
+    const delivered = await runJobOnce(
+      app,
+      "mail.deliver",
+      {
+        mailerId: "reports.mailer",
+        message: "digestReady",
+        to: ["owner@real-customer.example"],
+        payload: { tenantId: "acme", period: "2026-09-18", projectCount: 1 },
+        idempotencyKey: "digest-email:acme:2026-09-18:owner@real-customer.example",
+      },
+      { executor },
+    );
+    expect(delivered).toMatchObject({ ok: true, data: { status: "sent", intercepted: true } });
+    expect(infrastructure.mailProvider.sent()[0]?.envelope).toMatchObject({
+      to: ["qa-inbox@example.test"],
+      subject: "[to: owner@real-customer.example] Portfolio digest for 2026-09-18",
+      headers: { [MAIL_ORIGINAL_TO_HEADER]: "owner@real-customer.example" },
+    });
+    expect(
+      await infrastructure.mailLedger.list({ recipient: "owner@real-customer.example", limit: 5 }),
+    ).toMatchObject([{ deliveredTo: ["qa-inbox@example.test"], intercepted: true }]);
+  });
+
+  it("renders every registered message from its sample for the development preview", async () => {
+    const app = createCustomizedApplication(fixtureInfrastructure());
+    const executor = createExecutor(app);
+    const developer = operationActor({ id: "dev", permissions: ["ship.mail:preview"] });
+    const list = await executor.run("mail.preview-list", {}, { actor: developer });
+    expect(list).toMatchObject({
+      ok: true,
+      data: {
+        mailers: [{ id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] }],
+      },
+    });
+    if (!list.ok) throw new Error("preview list unexpectedly failed");
+    for (const mailer of list.data.mailers) {
+      for (const message of mailer.messages) {
+        const rendered = await executor.run(
+          "mail.preview-render",
+          { params: { mailerId: mailer.id, message: message.name } },
+          { actor: developer },
+        );
+        expect(rendered).toMatchObject({
+          ok: true,
+          data: { subject: "Portfolio digest for 2026-09-18" },
+        });
+      }
+    }
+    expect(reportsMailer.messageNames).toEqual(["digestReady"]);
   });
 });

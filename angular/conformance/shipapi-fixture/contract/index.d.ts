@@ -52,6 +52,16 @@ export interface FixtureContract {
       readonly transport: 'http';
       readonly result: FixtureSuccess<200, { readonly ready: true }>;
     };
+    /** Declared bodiless redirect (SAPI-653): the result carries no data and a `Location` header. */
+    readonly 'oauth.callback': {
+      readonly input: {
+        readonly params?: never;
+        readonly query: { readonly code: string; readonly state: string };
+        readonly body?: never;
+      };
+      readonly transport: 'http';
+      readonly result: FixtureSuccess<302, undefined>;
+    };
     readonly 'reports.download': {
       readonly input: { readonly params: { readonly reportId: string } };
       readonly transport: 'download';

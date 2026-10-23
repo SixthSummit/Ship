@@ -21,6 +21,7 @@ const policies = {
   'accounts.create': operationPolicy('required', 'unsafe', 'required'),
   'accounts.delete': operationPolicy('required', 'idempotent'),
   'public.status': operationPolicy('anonymous', 'safe'),
+  'oauth.callback': operationPolicy('anonymous', 'safe'),
   'reports.download': operationPolicy('required', 'safe'),
   'assets.upload': operationPolicy('required', 'unsafe', 'required'),
   'events.watch': operationPolicy('optional', 'safe'),

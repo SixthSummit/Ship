@@ -50,6 +50,11 @@
       "types": "./lib/jobs-conformance.d.ts",
       "import": "./lib/jobs-conformance.js",
       "default": "./lib/jobs-conformance.js"
+    },
+    "./storage": {
+      "types": "./lib/storage.d.ts",
+      "import": "./lib/storage.js",
+      "default": "./lib/storage.js"
     }
   },
   "sideEffects": false,

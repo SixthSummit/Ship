@@ -265,3 +265,116 @@ describe("respond", () => {
     );
   });
 });
+
+describe("declared redirect outputs", () => {
+  const redirectTransport = {
+    kind: "http",
+    binding: "GET /oauth/callback",
+    metadata: { method: "GET", path: "/oauth/callback", response: "redirect" },
+  };
+
+  function redirectDefinition(status = 302, schema: unknown = z.undefined()) {
+    return {
+      ...validDefinition(),
+      id: "oauth.callback",
+      input: {},
+      output: { [status]: schema },
+      successStatus: status,
+      transport: redirectTransport,
+      handler: () => respond(status, undefined, { headers: { Location: "/done" } }),
+    };
+  }
+
+  it.each([301, 302, 303, 307, 308])("accepts a bodiless %s redirect output", (status) => {
+    expect(() => defineUnknown(redirectDefinition(status))).not.toThrow();
+  });
+
+  it("accepts any synchronous schema that validates undefined to undefined", () => {
+    expect(() => defineUnknown(redirectDefinition(302, z.string().optional()))).not.toThrow();
+    expect(() => defineUnknown(redirectDefinition(302, z.void()))).not.toThrow();
+  });
+
+  it("defers asynchronous or throwing schemas to the executor", () => {
+    const asynchronous = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        validate: async () => ({ issues: [{ message: "body required" }] }),
+      },
+    };
+    const throwing = {
+      "~standard": {
+        version: 1,
+        vendor: "fixture",
+        validate: () => {
+          throw new Error("schema crashed");
+        },
+      },
+    };
+    expect(() => defineUnknown(redirectDefinition(302, asynchronous))).not.toThrow();
+    expect(() => defineUnknown(redirectDefinition(302, throwing))).not.toThrow();
+  });
+
+  it.each([
+    [
+      "a 3xx output without a redirect transport",
+      { ...validDefinition(), output: { 302: z.undefined() }, successStatus: 302 },
+      "SHIP_OPERATION_OUTPUT_INVALID",
+    ],
+    ["a non-redirect 3xx status", redirectDefinition(304), "SHIP_OPERATION_OUTPUT_INVALID"],
+    [
+      "a 2xx output on a redirect transport",
+      redirectDefinition(200),
+      "SHIP_OPERATION_OUTPUT_INVALID",
+    ],
+    [
+      "a redirect status mixed with a 2xx output",
+      { ...redirectDefinition(302), output: { 302: z.undefined(), 200: z.undefined() } },
+      "SHIP_OPERATION_OUTPUT_INVALID",
+    ],
+    [
+      "a successStatus that names an undeclared redirect",
+      { ...redirectDefinition(302), successStatus: 303 },
+      "SHIP_OPERATION_SUCCESS_STATUS_INVALID",
+    ],
+    [
+      "a redirect output schema that requires a body",
+      redirectDefinition(302, z.object({ ok: z.boolean() })),
+      "SHIP_OPERATION_OUTPUT_INVALID",
+    ],
+    [
+      "a redirect output schema that rejects undefined",
+      redirectDefinition(302, z.null()),
+      "SHIP_OPERATION_OUTPUT_INVALID",
+    ],
+    [
+      "a redirect output schema that produces a body",
+      redirectDefinition(
+        302,
+        z.undefined().transform(() => ({ redirected: true })),
+      ),
+      "SHIP_OPERATION_OUTPUT_INVALID",
+    ],
+  ] satisfies readonly [
+    string,
+    unknown,
+    OperationDefinitionDiagnosticCode,
+  ][])("rejects %s", (_name, definition, code) => {
+    expectDiagnostic(definition, code);
+  });
+
+  it("names the output field when a redirect schema would carry a body", () => {
+    try {
+      defineUnknown(redirectDefinition(302, z.object({})));
+      throw new Error("expected definition to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidOperationDefinitionError);
+      expect(error).toMatchObject({
+        code: "SHIP_OPERATION_OUTPUT_INVALID",
+        operationId: "oauth.callback",
+        field: "output",
+        message: expect.stringContaining("redirect output 302"),
+      });
+    }
+  });
+});

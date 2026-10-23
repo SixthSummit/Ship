@@ -1,5 +1,9 @@
+import type { AnyAttachment } from "./attachment.js";
+import { isAttachment } from "./attachment.js";
 import type { DependencyToken } from "./dependency.js";
 import { isDependencyToken } from "./dependency.js";
+import type { AnyMailer } from "./mail.js";
+import { isMailer } from "./mail.js";
 import type { AnyOperation } from "./operation.js";
 import type { AnyProvider } from "./provider.js";
 import { isProvider } from "./provider.js";
@@ -15,6 +19,7 @@ export interface ModuleDefinition<
   TImports extends readonly string[],
   TExports extends readonly DependencyToken[],
   TChannels extends readonly AnyChannel[] = readonly AnyChannel[],
+  TAttachments extends readonly AnyAttachment[] = readonly AnyAttachment[],
 > {
   readonly id: TId;
   readonly operations: TOperations;
@@ -23,6 +28,10 @@ export interface ModuleDefinition<
   readonly exports: TExports;
   /** Realtime channels owned by this module. Operations publish only to declared channels. */
   readonly channels?: TChannels;
+  /** Managed attachments owned by this module. Operations bind only declared attachments. */
+  readonly attachments?: TAttachments;
+  /** Mailers owned by this module; ids are namespaced by the module id. */
+  readonly mailers?: readonly AnyMailer[];
 }
 
 export interface ShipModule<
@@ -32,10 +41,22 @@ export interface ShipModule<
   TImports extends readonly string[],
   TExports extends readonly DependencyToken[],
   TChannels extends readonly AnyChannel[] = readonly AnyChannel[],
-> extends ModuleDefinition<TId, TOperations, TProviders, TImports, TExports, TChannels> {
+  TAttachments extends readonly AnyAttachment[] = readonly AnyAttachment[],
+> extends ModuleDefinition<
+    TId,
+    TOperations,
+    TProviders,
+    TImports,
+    TExports,
+    TChannels,
+    TAttachments
+  > {
   readonly kind: "ship.module";
   /** Typed per module so the client contract can enumerate channel ids and payloads. */
   readonly channels: TChannels;
+  /** Typed per module so the client contract can enumerate attachment ids and policies. */
+  readonly attachments: TAttachments;
+  readonly mailers: readonly AnyMailer[];
 }
 
 export interface AnyModule {
@@ -46,6 +67,9 @@ export interface AnyModule {
   readonly imports: readonly string[];
   readonly exports: readonly DependencyToken[];
   readonly channels: readonly AnyChannel[];
+  readonly attachments: readonly AnyAttachment[];
+  /** Optional so modules compiled by an older kernel still satisfy the shape. */
+  readonly mailers?: readonly AnyMailer[];
 }
 
 export type ModuleDiagnosticCode =
@@ -59,7 +83,11 @@ export type ModuleDiagnosticCode =
   | "SHIP_MODULE_EXPORT_INVALID"
   | "SHIP_MODULE_EXPORT_DUPLICATE"
   | "SHIP_MODULE_CHANNEL_INVALID"
-  | "SHIP_MODULE_CHANNEL_DUPLICATE";
+  | "SHIP_MODULE_CHANNEL_DUPLICATE"
+  | "SHIP_MODULE_ATTACHMENT_INVALID"
+  | "SHIP_MODULE_ATTACHMENT_DUPLICATE"
+  | "SHIP_MODULE_MAILER_INVALID"
+  | "SHIP_MODULE_MAILER_DUPLICATE";
 
 export class InvalidModuleDefinitionError extends Error {
   readonly code: ModuleDiagnosticCode;
@@ -89,11 +117,20 @@ export function defineModule<
   const TProviders extends readonly AnyProvider[],
   const TImports extends readonly string[],
   const TExports extends readonly DependencyToken[],
+  const TAttachments extends readonly AnyAttachment[] = readonly [],
 >(
-  definition: ModuleDefinition<TId, TOperations, TProviders, TImports, TExports, readonly []> & {
+  definition: ModuleDefinition<
+    TId,
+    TOperations,
+    TProviders,
+    TImports,
+    TExports,
+    readonly [],
+    TAttachments
+  > & {
     readonly channels?: undefined;
   },
-): ShipModule<TId, TOperations, TProviders, TImports, TExports, readonly []>;
+): ShipModule<TId, TOperations, TProviders, TImports, TExports, readonly [], TAttachments>;
 export function defineModule<
   const TId extends string,
   const TOperations extends readonly AnyOperation[],
@@ -101,11 +138,20 @@ export function defineModule<
   const TImports extends readonly string[],
   const TExports extends readonly DependencyToken[],
   const TChannels extends readonly AnyChannel[],
+  const TAttachments extends readonly AnyAttachment[] = readonly [],
 >(
-  definition: ModuleDefinition<TId, TOperations, TProviders, TImports, TExports, TChannels> & {
+  definition: ModuleDefinition<
+    TId,
+    TOperations,
+    TProviders,
+    TImports,
+    TExports,
+    TChannels,
+    TAttachments
+  > & {
     readonly channels: TChannels;
   },
-): ShipModule<TId, TOperations, TProviders, TImports, TExports, TChannels>;
+): ShipModule<TId, TOperations, TProviders, TImports, TExports, TChannels, TAttachments>;
 export function defineModule<
   const TId extends string,
   const TOperations extends readonly AnyOperation[],
@@ -113,9 +159,18 @@ export function defineModule<
   const TImports extends readonly string[],
   const TExports extends readonly DependencyToken[],
   const TChannels extends readonly AnyChannel[] = readonly [],
+  const TAttachments extends readonly AnyAttachment[] = readonly [],
 >(
-  definition: ModuleDefinition<TId, TOperations, TProviders, TImports, TExports, TChannels>,
-): ShipModule<TId, TOperations, TProviders, TImports, TExports, TChannels> {
+  definition: ModuleDefinition<
+    TId,
+    TOperations,
+    TProviders,
+    TImports,
+    TExports,
+    TChannels,
+    TAttachments
+  >,
+): ShipModule<TId, TOperations, TProviders, TImports, TExports, TChannels, TAttachments> {
   assertModuleDefinition(definition);
 
   return Object.freeze({
@@ -126,6 +181,8 @@ export function defineModule<
     imports: Object.freeze([...definition.imports]) as unknown as TImports,
     exports: Object.freeze([...definition.exports]) as unknown as TExports,
     channels: Object.freeze([...(definition.channels ?? [])]) as unknown as TChannels,
+    attachments: Object.freeze([...(definition.attachments ?? [])]) as unknown as TAttachments,
+    mailers: Object.freeze([...(definition.mailers ?? [])]),
   });
 }
 
@@ -139,7 +196,8 @@ export function isShipModule(value: unknown): value is AnyModule {
     Array.isArray(Reflect.get(value, "providers")) &&
     Array.isArray(Reflect.get(value, "imports")) &&
     Array.isArray(Reflect.get(value, "exports")) &&
-    Array.isArray(Reflect.get(value, "channels"))
+    Array.isArray(Reflect.get(value, "channels")) &&
+    Array.isArray(Reflect.get(value, "attachments"))
   );
 }
 
@@ -233,6 +291,40 @@ function assertModuleDefinition(
     "module channel",
     moduleId,
     "channels",
+  );
+
+  const attachments = Reflect.get(definition, "attachments") ?? [];
+  assertArray(
+    attachments,
+    isAttachment,
+    "SHIP_MODULE_ATTACHMENT_INVALID",
+    "attachments must contain only defineAttachment() results",
+    moduleId,
+    "attachments",
+  );
+  assertUnique(
+    attachments.map((attachment) => attachment.id),
+    "SHIP_MODULE_ATTACHMENT_DUPLICATE",
+    "module attachment",
+    moduleId,
+    "attachments",
+  );
+
+  const mailers = Reflect.get(definition, "mailers") ?? [];
+  assertArray(
+    mailers,
+    isMailer,
+    "SHIP_MODULE_MAILER_INVALID",
+    "mailers must contain only defineMailer() results",
+    moduleId,
+    "mailers",
+  );
+  assertUnique(
+    mailers.map((mailer) => mailer.id),
+    "SHIP_MODULE_MAILER_DUPLICATE",
+    "module mailer",
+    moduleId,
+    "mailers",
   );
 }
 

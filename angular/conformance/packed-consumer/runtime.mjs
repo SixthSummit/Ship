@@ -12,7 +12,8 @@ const policies = Object.fromEntries(
   Object.entries(contractMetadata.operations).map(([operation, definition]) => [
     operation,
     {
-      authentication: operation === 'public.status' ? 'anonymous' : 'optional',
+      authentication:
+        operation === 'public.status' || operation === 'oauth.callback' ? 'anonymous' : 'optional',
       safety: operation === 'accounts.create' ? 'unsafe' : 'safe',
       idempotency: 'unsupported',
       replayable: true,
@@ -58,12 +59,29 @@ const report = await assertOperationClientConformance(client, {
         requestId: 'request-account-missing',
       },
     },
+    {
+      operation: 'oauth.callback',
+      input: { query: { code: 'code-1', state: 'state-1' } },
+      expect: { kind: 'success', status: 302, requestId: 'request-oauth-callback' },
+    },
   ],
   cancellation: {
     operation: 'public.status',
     input: { query: { delayMs: 1000 } },
   },
 });
+
+// A declared redirect result keeps its Location as browser-readable metadata (SAPI-653).
+const redirect = await client.call('oauth.callback', {
+  query: { code: 'code-1', state: 'state-1' },
+});
+if (
+  !redirect.ok ||
+  redirect.status !== 302 ||
+  redirect.headers.location !== 'https://app.example.test/oauth?connected=true&code=code-1'
+) {
+  throw new Error(`Unexpected redirect result: ${JSON.stringify(redirect)}`);
+}
 
 // SSR proof: in a server runtime the packed stream client renders its initial handle
 // and opens no request. `fetch` here would throw if it were ever called.
@@ -100,7 +118,7 @@ if (contractMetadata.fixtureProtocolVersion !== 1) {
 if (!contractMetadata.graphHash.startsWith('sha256:')) {
   throw new Error('Contract graph hash is unavailable');
 }
-if (report.calls !== 4 || !report.cancellation) {
+if (report.calls !== 5 || !report.cancellation) {
   throw new Error(`Unexpected conformance report: ${JSON.stringify(report)}`);
 }
 

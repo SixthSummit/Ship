@@ -4,11 +4,12 @@ import { type PostgresTestDb, setupPostgresTestDb } from "@sixthsummit/ship-test
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleJobBackend, type DrizzleJobBackendOptions } from "./job-backend.js";
-import { shipJobRunsTable, shipJobStateTable } from "./job-store.js";
+import { shipJobControlTable, shipJobRunsTable, shipJobStateTable } from "./job-store.js";
 
 const runs = shipJobRunsTable();
 const state = shipJobStateTable();
-const schema = { runs, state };
+const control = shipJobControlTable();
+const schema = { runs, state, control };
 
 let context: PostgresTestDb<typeof schema>;
 
@@ -21,7 +22,7 @@ afterAll(async () => {
 }, 60_000);
 
 async function truncate() {
-  await context.pool.query(`TRUNCATE TABLE "ship_job_runs", "ship_job_state"`);
+  await context.pool.query(`TRUNCATE TABLE "ship_job_runs", "ship_job_state", "ship_job_control"`);
 }
 
 function backend(options: Partial<DrizzleJobBackendOptions<typeof schema>> = {}) {
@@ -337,6 +338,76 @@ describe("Drizzle job backend on PostgreSQL", () => {
     });
     expect(await worker.listFailed({ limit: 5 })).toHaveLength(0);
     expect(await worker.retry(accepted.runId)).toBeUndefined();
+  });
+
+  it("lists runs and schedules for the console and holds pause durably in the control table", async () => {
+    const executed: string[] = [];
+    const paused = backend({ controlTable: control, pollIntervalMs: 25 });
+    started.push(paused);
+    await paused.attach({
+      jobs: [
+        declaration("ops.job"),
+        declaration("ops.tick", { trigger: { kind: "interval", everyMs: 60_000 } }),
+      ],
+      execute: async (jobId, input) => {
+        executed.push(`${jobId}:${JSON.stringify(input)}`);
+        return { ok: true, data: undefined };
+      },
+    });
+    const first = await paused.enqueue("ops.job", { n: 1 });
+    const second = await paused.enqueue("ops.job", { n: 2 }, { delayMs: 60_000 });
+    if (!first.accepted || !second.accepted) throw new Error("rejected");
+    await paused.schedule("ops.tick", { kind: "interval", everyMs: 60_000 });
+
+    const listed = await paused.introspection.listRuns({ jobId: "ops.job", limit: 10 });
+    expect(listed.map((run) => [run.runId, run.status])).toEqual([
+      [second.runId, "delayed"],
+      [first.runId, "waiting"],
+    ]);
+    expect(await paused.introspection.listRuns({ status: "waiting", limit: 10 })).toMatchObject([
+      { runId: first.runId },
+    ]);
+    expect(await paused.introspection.getRun(second.runId)).toMatchObject({
+      status: "delayed",
+      input: { n: 2 },
+    });
+    expect(await paused.introspection.getRun("ops.job/missing")).toBeUndefined();
+    expect(await paused.introspection.listSchedules()).toMatchObject([
+      {
+        jobId: "ops.tick",
+        trigger: { kind: "interval", everyMs: 60_000 },
+        nextAt: expect.any(Date),
+      },
+    ]);
+
+    // Pause before any worker starts: the waiting run must stay untouched by
+    // a *second* process reading the same control row.
+    await paused.introspection.pause?.("ops.job");
+    expect(await paused.introspection.listPaused()).toEqual(["ops.job"]);
+    const otherProcess = backend({ controlTable: control, pollIntervalMs: 25 });
+    started.push(otherProcess);
+    await otherProcess.attach({
+      jobs: [declaration("ops.job")],
+      execute: async (jobId, input) => {
+        executed.push(`${jobId}:${JSON.stringify(input)}`);
+        return { ok: true, data: undefined };
+      },
+    });
+    await otherProcess.startWorkers("worker");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(executed).toEqual([]);
+    expect(await otherProcess.introspection.listPaused()).toEqual(["ops.job"]);
+    await paused.introspection.resume?.("ops.job");
+    await waitFor(async () => executed.length === 1, "resumed run");
+    expect(executed).toEqual(['ops.job:{"n":1}']);
+    expect(await context.db.select().from(control)).toMatchObject([
+      { jobId: "ops.job", pausedAt: null },
+    ]);
+
+    // Without a control table the backend reports pause as unsupported.
+    const bare = backend();
+    expect(bare.introspection.pause).toBeUndefined();
+    expect(await bare.introspection.listPaused()).toEqual([]);
   });
 
   it("replaces a schedule without duplicating it and ticks with durable run ids", async () => {

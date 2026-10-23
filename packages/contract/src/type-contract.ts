@@ -1,6 +1,7 @@
 import type { FromSchema, JSONSchema } from "json-schema-to-ts";
 import type {
   ClientContract,
+  ClientContractAttachment,
   ClientContractChannel,
   ClientContractError,
   ClientContractOperation,
@@ -117,10 +118,21 @@ export type ClientTypeContract<TContract extends ClientContract> = Readonly<{
       NonNullable<TContract["channels"]>[TId]
     >;
   }>;
+  attachments: Readonly<{
+    [TId in keyof NonNullable<TContract["attachments"]>]: AttachmentType<
+      NonNullable<TContract["attachments"]>[TId]
+    >;
+  }>;
 }>;
 
 type ChannelType<TChannel extends ClientContractChannel> = Readonly<{
   scope: TChannel["scope"];
   payload: SchemaValue<TChannel["payload"]>;
   presence: TChannel["presence"];
+}>;
+
+type AttachmentType<TAttachment extends ClientContractAttachment> = Readonly<{
+  cardinality: TAttachment["cardinality"];
+  visibility: TAttachment["visibility"];
+  variants: TAttachment["variants"][number];
 }>;
