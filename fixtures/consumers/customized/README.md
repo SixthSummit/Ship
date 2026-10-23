@@ -39,6 +39,13 @@ application exercises:
   the outbox intent in the same transaction; plus the framework retention sweep
   (`jobs.cleanup`, which also sweeps both outboxes) and `ship.jobs:manage`
   dead-letter operations; and
+- declared transactional mail: `reports.mailer` (`mail.ts`) renders the digest
+  notice from a typed payload, `reports.email` sends it through the typed
+  `MailSender` as an enqueued `mail.deliver` run, the `mail` module binds the
+  provider and the `ship_mail_sends` ledger, the non-production allowlist
+  interceptor redirects real customers to the QA inbox with
+  `X-Ship-Original-To`, and the `mail.preview-*` operations render every
+  message from its sample;
 - a legacy call-site bridge (`bridge.ts`) that publishes to any declared
   channel through a registry derived from the application, narrows to a typed
   publisher where the channel is known, answers every operation call with a
@@ -46,6 +53,11 @@ application exercises:
   dispatcher with the framework runner instead of the jobs capability;
 - plain Zod channel payloads whose JSON Schema the client manifest derives,
   and presence paging plus `actorOnline` on the project activity channel; and
+- a declared managed attachment (`portfolio.photo`: many images, 5 MB, private,
+  a `thumb` variant) with `portfolio.attach-photo`, `portfolio.remove-photo` and
+  `portfolio.photos` over the `@sixthsummit/ship-storage` module: signed upload
+  intents, completion fencing, the orphan sweep, a lazily rendered variant, and a
+  purge intent that commits with the detachment and is dispatched durably; and
 - the operator console (`@sixthsummit/ship-console`) mounted under `/console/*`
   behind the dedicated `console.operate` slug that only the `sre` role holds:
   the `operator` role, which may replay webhooks, is refused on every console
@@ -53,6 +65,6 @@ application exercises:
   resumes the job through the PostgreSQL control table, and replays a stored
   Stripe receipt without touching SQL; and
 - constructor injection that selects the notification, outbox, webhook event,
-  job backend, lock, and idempotency adapters at composition time and keeps
-  unit tests network-free through the in-memory backends from
+  job backend, lock, storage, ledger and idempotency adapters at composition
+  time and keeps unit tests network-free through the in-memory backends from
   `@sixthsummit/ship-testing`.

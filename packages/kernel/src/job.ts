@@ -431,11 +431,20 @@ export interface JobBackendDependencyToken extends DependencyToken<JobBackend, J
   readonly role: "backend";
 }
 
-export interface JobEnqueueDependencyToken<TInput extends RuntimeSchema = RuntimeSchema>
-  extends DependencyToken<JobBackend, JobEnqueuer<TInput>> {
+export interface JobEnqueueDependencyToken<
+  TInput extends RuntimeSchema = RuntimeSchema,
+  TResolved = JobEnqueuer<TInput>,
+> extends DependencyToken<JobBackend, TResolved> {
   readonly scope: "job";
   readonly role: "enqueue";
   readonly job: AnyJob;
+  /**
+   * Optional typed facade over the enqueuer. Framework packages use it to hand
+   * a handler a domain-shaped sender (for example a mail sender) while the
+   * graph still records the job-to-job edge and the executor still validates
+   * input against the job schema.
+   */
+  readonly adapt?: (enqueuer: JobEnqueuer<TInput>) => TResolved;
 }
 
 export interface LockProviderDependencyToken extends DependencyToken<LockProvider, LockProvider> {
@@ -495,10 +504,32 @@ export function isJobDependencyToken(value: DependencyToken): value is Dependenc
 
 export function isJobEnqueueDependencyToken(
   value: DependencyToken,
-): value is JobEnqueueDependencyToken {
+): value is JobEnqueueDependencyToken<RuntimeSchema, unknown> {
   return (
     isJobDependencyToken(value) && value.role === "enqueue" && isJob(Reflect.get(value, "job"))
   );
+}
+
+/**
+ * Builds a job enqueue token whose resolved value is `adapt(enqueuer)` rather
+ * than the raw enqueuer. The token keeps `role: "enqueue"` and `job`, so every
+ * compile-time check and graph edge for `jobDependency()` applies unchanged.
+ */
+export function adaptedJobDependency<TJob extends AnyJob, TResolved>(
+  job: TJob,
+  adapt: (enqueuer: JobEnqueuer<TJob["input"]["payload"]>) => TResolved,
+): JobEnqueueDependencyToken<TJob["input"]["payload"], TResolved> {
+  if (typeof adapt !== "function") {
+    throw new InvalidJobDefinitionError(
+      "SHIP_JOB_DEFINITION_INVALID",
+      "adaptedJobDependency() requires an adapt function",
+      { jobId: job?.id },
+    );
+  }
+  return Object.freeze({ ...jobDependency(job), adapt }) as JobEnqueueDependencyToken<
+    TJob["input"]["payload"],
+    TResolved
+  >;
 }
 
 // ---------------------------------------------------------------------------

@@ -27,22 +27,23 @@ The historical Hono-primary decision is retained in
 
 ## Package entrypoints
 
-| Entrypoint                  | Responsibility                                                          |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `@sixthsummit/ship-angular` | legacy/general Angular, auth adapter, REST, online, env, pipes          |
-| `/operations`               | client/result types, DI, resources, mutations, policy, SSR context      |
-| `/ship-api`                 | import-free adapter for ShipAPI's structural browser client             |
-| `/auth`                     | operation-backed session adapter                                        |
-| `/firebase-auth`            | optional Firebase frontend adapter                                      |
-| `/query`                    | optional TanStack Query reads, mutations, cache keys, and SSR hydration |
-| `/push`                     | optional PWA Web Push subscriptions and notification messages/clicks    |
-| `/realtime`                 | manifest-declared realtime subscriptions and presence                   |
-| `/forms`                    | operation input forms and browser-safe codecs                           |
-| `/upload`, `/download`      | progress-aware upload and exact-byte download                           |
-| `/stream`, `/socket`        | typed SSE/chunked streams and bounded WebSockets                        |
-| `/testing`                  | auth and operation-client conformance helpers                           |
-| `/hono-v4`                  | temporary application-owned compatibility mapping                       |
-| `/legacy-rest`              | temporary URL-client migration mapping for pre-Hono applications        |
+| Entrypoint                  | Responsibility                                                           |
+| --------------------------- | ------------------------------------------------------------------------ |
+| `@sixthsummit/ship-angular` | legacy/general Angular, auth adapter, REST, online, env, pipes           |
+| `/operations`               | client/result types, DI, resources, mutations, policy, SSR context       |
+| `/ship-api`                 | import-free adapter for ShipAPI's structural browser client              |
+| `/auth`                     | operation-backed session adapter                                         |
+| `/firebase-auth`            | optional Firebase frontend adapter                                       |
+| `/query`                    | optional TanStack Query reads, mutations, cache keys, and SSR hydration  |
+| `/push`                     | optional PWA Web Push subscriptions and notification messages/clicks     |
+| `/storage`                  | managed attachment uploads: signed intent, PUT with progress, completion |
+| `/realtime`                 | manifest-declared realtime subscriptions and presence                    |
+| `/forms`                    | operation input forms and browser-safe codecs                            |
+| `/upload`, `/download`      | progress-aware upload and exact-byte download                            |
+| `/stream`, `/socket`        | typed SSE/chunked streams and bounded WebSockets                         |
+| `/testing`                  | auth and operation-client conformance helpers                            |
+| `/hono-v4`                  | temporary application-owned compatibility mapping                        |
+| `/legacy-rest`              | temporary URL-client migration mapping for pre-Hono applications         |
 
 The `/query` entrypoint is pending release on `dev`; it is not included in the
 previously released 4.1.0 package. See queued Changesets for release intent.

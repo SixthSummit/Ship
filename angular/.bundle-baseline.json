@@ -184,6 +184,20 @@
       "br": 4426
     },
     {
+      "name": "@sixthsummit/ship-angular/storage (runtime)",
+      "fileCount": 1,
+      "raw": 5417,
+      "gz": 1741,
+      "br": 1503
+    },
+    {
+      "name": "@sixthsummit/ship-angular/storage (types)",
+      "fileCount": 1,
+      "raw": 6660,
+      "gz": 1855,
+      "br": 1550
+    },
+    {
       "name": "@sixthsummit/ship-angular/forms (runtime)",
       "fileCount": 1,
       "raw": 6874,
@@ -241,8 +255,8 @@
     }
   ],
   "totals": {
-    "raw": 667098,
-    "gz": 162833,
-    "br": 138946
+    "raw": 679175,
+    "gz": 166429,
+    "br": 141999
   }
 }

@@ -1,0 +1,70 @@
+name: Schema safety release step
+description: >-
+  Lint Drizzle migrations against the production column rules, apply them with
+  the gated release preset, and fail on schema snapshot drift. Make the job that
+  uses this action a required check before the deploy job.
+
+inputs:
+  migrations-dir:
+    description: Drizzle migrations directory (contains meta/_journal.json)
+    required: true
+  database-url:
+    description: >-
+      Target database. In CI, point it at a disposable PostgreSQL service so the
+      committed snapshot is verified against what the migrations produce.
+    required: true
+  snapshot:
+    description: Committed schema snapshot to verify after migrating; leave empty to skip
+    required: false
+    default: ""
+  allowlist:
+    description: JSON allowlist with justified exceptions
+    required: false
+    default: ""
+  since:
+    description: Only report findings from migrations after this tag
+    required: false
+    default: ""
+  drizzle-config:
+    description: Passed to drizzle-kit migrate --config
+    required: false
+    default: ""
+  migrate-command:
+    description: Replace drizzle-kit migrate with another migrator command
+    required: false
+    default: ""
+  exec:
+    description: Command prefix that resolves project binaries
+    required: false
+    default: pnpm exec
+  working-directory:
+    description: Directory containing the application package
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - name: Lint, migrate, verify snapshot
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SHIP_RELEASE_STEP: "1"
+        DATABASE_URL: ${{ inputs.database-url }}
+        SCHEMA_MIGRATIONS: ${{ inputs.migrations-dir }}
+        SCHEMA_SNAPSHOT: ${{ inputs.snapshot }}
+        SCHEMA_ALLOWLIST: ${{ inputs.allowlist }}
+        SCHEMA_SINCE: ${{ inputs.since }}
+        SCHEMA_DRIZZLE_CONFIG: ${{ inputs.drizzle-config }}
+        SCHEMA_MIGRATE_COMMAND: ${{ inputs.migrate-command }}
+        SCHEMA_EXEC: ${{ inputs.exec }}
+      run: |
+        set -euo pipefail
+        args=(release --migrations "$SCHEMA_MIGRATIONS")
+        if [ -n "$SCHEMA_SNAPSHOT" ]; then args+=(--snapshot "$SCHEMA_SNAPSHOT"); fi
+        if [ -n "$SCHEMA_ALLOWLIST" ]; then args+=(--allowlist "$SCHEMA_ALLOWLIST"); fi
+        if [ -n "$SCHEMA_SINCE" ]; then args+=(--since "$SCHEMA_SINCE"); fi
+        if [ -n "$SCHEMA_DRIZZLE_CONFIG" ]; then args+=(--drizzle-config "$SCHEMA_DRIZZLE_CONFIG"); fi
+        if [ -n "$SCHEMA_MIGRATE_COMMAND" ]; then args+=(--migrate-command "$SCHEMA_MIGRATE_COMMAND"); fi
+        # shellcheck disable=SC2086
+        $SCHEMA_EXEC ship-schema-lint "${args[@]}"

@@ -23,7 +23,7 @@ export interface SessionDirectory {
 
 const rolePermissions = {
   analyst: ["portfolio:read"],
-  publisher: ["portfolio:read", "reports:notify"],
+  publisher: ["portfolio:read", "portfolio:write", "reports:notify"],
   /** Operations staff: may re-enqueue a stored webhook event through the mounted replay. */
   operator: ["portfolio:read", WEBHOOK_REPLAY_PERMISSION],
   /**

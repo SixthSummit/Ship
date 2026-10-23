@@ -1,14 +1,18 @@
 import type {
+  AttachmentLedger,
   IdempotencyStore,
   JobBackend,
+  MailLedger,
   OutboxBackend,
   UnitOfWork,
   WebhookEventStore,
 } from "@sixthsummit/ship-core";
 import { cacheInvalidationOutbox, defineRealtimePublicationOutbox } from "@sixthsummit/ship-core";
 import {
+  createDrizzleAttachmentLedger,
   createDrizzleIdempotencyStore,
   createDrizzleJobBackend,
+  createDrizzleMailLedger,
   createDrizzleOutbox,
   createDrizzleUnitOfWork,
   createDrizzleWebhookEventStore,
@@ -17,6 +21,7 @@ import {
   type TenantRepositoryFactory,
   tenantPredicate,
 } from "@sixthsummit/ship-drizzle";
+import { defineStoragePurgeOutbox } from "@sixthsummit/ship-storage";
 // This file is the consumer-owned data-access boundary; raw operators do not escape it.
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
@@ -28,10 +33,14 @@ import {
   jobControl,
   jobRuns,
   jobState,
+  mailSendsTable,
   type portfolioSchema,
   projects,
   reportRequests,
   reportsOutboxTable,
+  storageIntents,
+  storageObjects,
+  storagePurges,
   webhookEventsTable,
   workItems,
 } from "./schema.js";
@@ -134,10 +143,39 @@ export function createJobBackend(
   });
 }
 
+/**
+ * Object purge intents share the outbox table too; the purge ledger rows live
+ * in the three storage tables included in the migrations.
+ */
+export function createStoragePurgeOutbox(
+  database: NodePgDatabase<typeof portfolioSchema>,
+): OutboxBackend {
+  return createDrizzleOutbox({
+    outbox: defineStoragePurgeOutbox(),
+    database,
+    table: reportsOutboxTable,
+  });
+}
+
+export function createAttachmentLedger(
+  database: NodePgDatabase<typeof portfolioSchema>,
+): AttachmentLedger {
+  return createDrizzleAttachmentLedger({
+    database,
+    intents: storageIntents,
+    objects: storageObjects,
+    purges: storagePurges,
+  });
+}
+
 export function createIdempotencyStore(
   database: NodePgDatabase<typeof portfolioSchema>,
 ): IdempotencyStore {
   return createDrizzleIdempotencyStore({ database, table: idempotencyKeys });
+}
+
+export function createMailLedger(database: NodePgDatabase<typeof portfolioSchema>): MailLedger {
+  return createDrizzleMailLedger({ database, table: mailSendsTable });
 }
 
 export function createPortfolioUnitOfWork(

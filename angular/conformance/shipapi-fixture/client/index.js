@@ -99,6 +99,23 @@ export function createFixtureClient(_options = {}) {
         };
       }
 
+      if (operation === 'oauth.callback') {
+        // A capable runtime exposes the 3xx; the fixture mirrors ShipAPI's manual-redirect
+        // client result: no data, request id, and the Location in the metadata.
+        const location = `https://app.example.test/oauth?connected=true&code=${encodeURIComponent(input.query.code)}`;
+        return {
+          ok: true,
+          status: 302,
+          data: undefined,
+          requestId: 'request-oauth-callback',
+          metadata: Object.freeze({
+            headers: Object.freeze({ 'x-request-id': 'request-oauth-callback', location }),
+            requestId: 'request-oauth-callback',
+            location,
+          }),
+        };
+      }
+
       throw new TypeError(`Fixture client cannot execute ${String(operation)}`);
     },
   });

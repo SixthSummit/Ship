@@ -27,6 +27,7 @@ response, protocol, and programmer failures remain exceptional.
 
 - `/query` — optional TanStack Query reads, mutations, cache identity, and SSR hydration
 - `/push` — optional Angular service worker subscriptions and notification messages/clicks
+- `/storage` — managed attachment uploads against ShipAPI's storage module (signed intent, PUT with progress, completion)
 - `/realtime` — manifest-declared subscriptions and presence
 - `/operations` — unary client kernel, request policy, DI, resources, and mutations
 - `/ship-api` — adapter for ShipAPI's browser-safe structural client and manifest

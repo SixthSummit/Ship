@@ -3,6 +3,8 @@ import {
   defineApp,
   defineModule,
   defineOperation,
+  operationError,
+  operationFailure,
   publicAccess,
   respond,
 } from "@sixthsummit/ship-core";
@@ -169,5 +171,143 @@ describe("declared HTTP redirects", () => {
     const response = await createHonoAdapter(invalidApp).request("/oauth/callback");
     expect(response.status).toBe(500);
     expect(response.headers.get("location")).toBeNull();
+  });
+});
+
+describe("declared HTTP redirects: failure handling", () => {
+  function clientFor(fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
+    return createHttpOperationClient<ApplicationContractOf<typeof app>>(
+      projectClientContract(app),
+      { baseUrl: "https://api.example.test", fetch },
+    );
+  }
+
+  it.each([
+    ["a protocol-relative Location", { status: 302, headers: { location: "//evil.example" } }],
+    ["a missing Location", { status: 302, headers: {} }],
+    [
+      "a redirect that carries a body",
+      {
+        status: 302,
+        headers: { location, "content-type": "text/html" },
+        body: "<a href>moved</a>",
+      },
+    ],
+  ])("rejects %s as a protocol-invalid response", async (_name, shape) => {
+    const client = clientFor(
+      async () =>
+        new Response(shape.body ?? null, {
+          status: shape.status,
+          headers: { "x-request-id": "request-invalid", ...shape.headers },
+        }),
+    );
+
+    await expect(client.call("oauth.callback", {})).rejects.toMatchObject({
+      name: "OperationClientError",
+      code: "SHIP_CLIENT_RESPONSE_INVALID",
+    } satisfies Partial<OperationClientError>);
+  });
+
+  it("returns framework and declared failures on a redirect operation as results", async () => {
+    const invalidState = operationError({
+      code: "OAUTH_STATE_INVALID",
+      status: 400,
+      message: "OAuth state is invalid",
+    });
+    const guarded = defineOperation({
+      ...callback,
+      id: "oauth.guarded-callback",
+      transport: http.get("/oauth/guarded", { response: "redirect", queryParsing: "first-value" }),
+      input: { query: z.object({ code: z.string().min(1), state: z.string().min(1) }) },
+      errors: [invalidState],
+      handler: ({ input }) => {
+        if (input.query.state === "revoked") throw operationFailure(invalidState);
+        return respond(302, undefined, {
+          headers: {
+            Location:
+              input.query.state === "state-1"
+                ? location
+                : "https://app.example.test/oauth?error=invalid_state",
+          },
+        });
+      },
+    });
+    const guardedApp = defineApp({
+      id: "guarded-redirect-fixture",
+      modules: [
+        defineModule({
+          id: "oauth",
+          operations: [guarded],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    const hono = createHonoAdapter(guardedApp);
+    const client = createHttpOperationClient<ApplicationContractOf<typeof guardedApp>>(
+      projectClientContract(guardedApp),
+      {
+        baseUrl: "https://api.example.test",
+        fetch: (input, init) => hono.request(input, init),
+      },
+    );
+
+    await expect(
+      client.call("oauth.guarded-callback", { query: { code: "c", state: "tampered" } }),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 302,
+      metadata: { location: "https://app.example.test/oauth?error=invalid_state" },
+    });
+    await expect(
+      client.call("oauth.guarded-callback", { query: { code: "c", state: "revoked" } }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 400,
+      error: { code: "OAUTH_STATE_INVALID" },
+    });
+    const validation = await client.call("oauth.guarded-callback", {
+      query: { code: "", state: "state-1" },
+    });
+    expect(validation).toMatchObject({
+      ok: false,
+      status: 400,
+      error: { code: "VALIDATION_ERROR" },
+    });
+    expect(validation.metadata).not.toHaveProperty("location");
+  });
+
+  it("projects a POST 303 redirect truthfully", () => {
+    const submit = defineOperation({
+      ...callback,
+      id: "forms.submit",
+      transport: http.post("/forms/submit", { response: "redirect" }),
+      output: { 303: z.undefined() },
+      successStatus: 303,
+      handler: () => respond(303, undefined, { headers: { Location: "/forms/done" } }),
+    });
+    const formsApp = defineApp({
+      id: "form-redirect-fixture",
+      modules: [
+        defineModule({
+          id: "forms",
+          operations: [submit],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    expect(projectClientContract(formsApp).operations[0]).toMatchObject({
+      success: [{ status: 303, jsonSchema: {} }],
+      transport: { metadata: { method: "POST", response: "redirect" } },
+    });
+    const document = projectOpenApi(formsApp, { title: "Forms", version: "1" });
+    expect(document.paths["/forms/submit"]?.post?.responses["303"]).toMatchObject({
+      description: "Redirect",
+      headers: { Location: { required: true } },
+    });
+    expect(document.paths["/forms/submit"]?.post?.responses["303"]).not.toHaveProperty("content");
   });
 });

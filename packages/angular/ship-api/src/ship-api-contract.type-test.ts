@@ -38,6 +38,11 @@ interface ShipApiContract {
             };
           };
     };
+    readonly 'oauth.callback': {
+      readonly transport: 'http';
+      readonly input: { readonly query: { readonly code: string; readonly state: string } };
+      readonly result: { readonly ok: true; readonly status: 302; readonly data: undefined };
+    };
     readonly 'accounts.recalculate': {
       readonly transport: 'direct';
       readonly input: Record<never, never>;
@@ -85,8 +90,29 @@ const client: OperationClient<ShipApiContract> = createPolicyClient(executor, {
       idempotency: 'unsupported',
       replayable: true,
     },
+    'oauth.callback': {
+      authentication: 'anonymous',
+      safety: 'safe',
+      idempotency: 'unsupported',
+      replayable: false,
+    },
   },
 });
+
+async function narrowDeclaredRedirectResult(): Promise<void> {
+  const redirect = await client.call('oauth.callback', {
+    query: { code: 'code-1', state: 'state-1' },
+  });
+  if (redirect.ok && redirect.notModified !== true) {
+    const status: 302 = redirect.status;
+    const data: undefined = redirect.data;
+    const location: string | undefined = redirect.headers.location;
+    void status;
+    void data;
+    void location;
+  }
+}
+void narrowDeclaredRedirectResult;
 
 const streamOperation: StreamOperationId<ShipApiContract> = 'accounts.watch';
 const streamFrame: StreamFrameOf<ShipApiContract, 'accounts.watch'> = {

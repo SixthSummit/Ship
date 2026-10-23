@@ -8,11 +8,14 @@
     "node": ">=22.22.0"
   },
   "scripts": {
-    "check": "biome check --config-path biome.consumer.json .",
+    "check": "biome check --config-path biome.consumer.json . && pnpm run schema:lint",
     "type-check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "build": "tsc -p tsconfig.build.json",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "schema:lint": "ship-schema-lint check drizzle --allowlist schema-lint.allowlist.json",
+    "db:generate": "drizzle-kit generate",
+    "db:release": "ship-schema-lint release --migrations drizzle --allowlist schema-lint.allowlist.json --snapshot schema.snapshot.json"
   },
   "dependencies": {
     "@sixthsummit/ship-console": "^0.1.0",
@@ -20,6 +23,8 @@
     "@sixthsummit/ship-core": "^1.0.0",
     "@sixthsummit/ship-drizzle": "^1.0.0",
     "@sixthsummit/ship-hono": "^1.0.0",
+    "@sixthsummit/ship-mail": "0.1.0",
+    "@sixthsummit/ship-storage": "^0.1.0",
     "@sixthsummit/ship-webhooks": "^0.1.0-alpha.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.15",
@@ -28,9 +33,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
+    "@sixthsummit/ship-schema-lint": "^0.1.0",
     "@sixthsummit/ship-testing": "^1.0.0",
     "@types/node": "^24.1.0",
     "@types/pg": "^8.15.6",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.9.2",
     "vitest": "^4.1.8"
   }

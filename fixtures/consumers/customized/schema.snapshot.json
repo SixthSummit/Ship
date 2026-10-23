@@ -1,0 +1,806 @@
+{
+  "schemaVersion": 1,
+  "schemas": [
+    "public"
+  ],
+  "enums": [],
+  "tables": [
+    {
+      "schema": "public",
+      "name": "projects",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "projects_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "projects_pkey",
+          "definition": "CREATE UNIQUE INDEX projects_pkey ON public.projects USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "report_requests",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "recipient",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "requested_by",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "subject",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "report_requests_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "report_requests_pkey",
+          "definition": "CREATE UNIQUE INDEX report_requests_pkey ON public.report_requests USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_idempotency_keys",
+      "columns": [
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "result",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'in-flight'::text"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_idempotency_keys_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (key)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_idempotency_keys_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_idempotency_keys_pkey ON public.ship_idempotency_keys USING btree (key)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_mail_sends",
+      "columns": [
+        {
+          "name": "attempts",
+          "type": "integer",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "claimed_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "delivered_to",
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "intercepted",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "mailer_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "provider",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "provider_message_id",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "recipients",
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'sending'::text"
+        },
+        {
+          "name": "subject",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "tenant_id",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_mail_sends_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (idempotency_key)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_mail_sends_message_idx",
+          "definition": "CREATE INDEX ship_mail_sends_message_idx ON public.ship_mail_sends USING btree (mailer_id, message, created_at)"
+        },
+        {
+          "name": "ship_mail_sends_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_mail_sends_pkey ON public.ship_mail_sends USING btree (idempotency_key)"
+        },
+        {
+          "name": "ship_mail_sends_recipients_idx",
+          "definition": "CREATE INDEX ship_mail_sends_recipients_idx ON public.ship_mail_sends USING gin (recipients)"
+        },
+        {
+          "name": "ship_mail_sends_tenant_idx",
+          "definition": "CREATE INDEX ship_mail_sends_tenant_idx ON public.ship_mail_sends USING btree (tenant_id, created_at)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_outbox",
+      "columns": [
+        {
+          "name": "attempts",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "dead_lettered_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "dedupe_key",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "discard_reason",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "discarded_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "intent_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "last_error",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "outbox_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'pending'::text"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_outbox_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_outbox_dedupe_idx",
+          "definition": "CREATE UNIQUE INDEX ship_outbox_dedupe_idx ON public.ship_outbox USING btree (outbox_id, intent_id, dedupe_key)"
+        },
+        {
+          "name": "ship_outbox_due_idx",
+          "definition": "CREATE INDEX ship_outbox_due_idx ON public.ship_outbox USING btree (outbox_id, status, available_at)"
+        },
+        {
+          "name": "ship_outbox_lease_idx",
+          "definition": "CREATE INDEX ship_outbox_lease_idx ON public.ship_outbox USING btree (outbox_id, lease_expires_at) WHERE (status = 'claimed'::text)"
+        },
+        {
+          "name": "ship_outbox_pending_idx",
+          "definition": "CREATE INDEX ship_outbox_pending_idx ON public.ship_outbox USING btree (outbox_id, available_at, created_at) WHERE (status = 'pending'::text)"
+        },
+        {
+          "name": "ship_outbox_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_outbox_pkey ON public.ship_outbox USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_storage_intents",
+      "columns": [
+        {
+          "name": "abandoned_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "actor_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "attachment_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "object_id",
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "size",
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'pending'::text"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_storage_intents_key_unique",
+          "type": "u",
+          "definition": "UNIQUE (key)"
+        },
+        {
+          "name": "ship_storage_intents_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_storage_intents_expiry_idx",
+          "definition": "CREATE INDEX ship_storage_intents_expiry_idx ON public.ship_storage_intents USING btree (expires_at) WHERE (status = 'pending'::text)"
+        },
+        {
+          "name": "ship_storage_intents_key_unique",
+          "definition": "CREATE UNIQUE INDEX ship_storage_intents_key_unique ON public.ship_storage_intents USING btree (key)"
+        },
+        {
+          "name": "ship_storage_intents_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_storage_intents_pkey ON public.ship_storage_intents USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_storage_objects",
+      "columns": [
+        {
+          "name": "attached_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "attachment_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "owner_id",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "size",
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'uploaded'::text"
+        },
+        {
+          "name": "uploaded_by",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "variants",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_storage_objects_key_unique",
+          "type": "u",
+          "definition": "UNIQUE (key)"
+        },
+        {
+          "name": "ship_storage_objects_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_storage_objects_key_unique",
+          "definition": "CREATE UNIQUE INDEX ship_storage_objects_key_unique ON public.ship_storage_objects USING btree (key)"
+        },
+        {
+          "name": "ship_storage_objects_owner_idx",
+          "definition": "CREATE INDEX ship_storage_objects_owner_idx ON public.ship_storage_objects USING btree (attachment_id, owner_id) WHERE (status = 'attached'::text)"
+        },
+        {
+          "name": "ship_storage_objects_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_storage_objects_pkey ON public.ship_storage_objects USING btree (id)"
+        },
+        {
+          "name": "ship_storage_objects_stale_idx",
+          "definition": "CREATE INDEX ship_storage_objects_stale_idx ON public.ship_storage_objects USING btree (created_at) WHERE (status = 'uploaded'::text)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_storage_purges",
+      "columns": [
+        {
+          "name": "attempts",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "keys",
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "object_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "purged_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_storage_purges_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (object_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_storage_purges_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_storage_purges_pkey ON public.ship_storage_purges USING btree (object_id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_webhook_events",
+      "columns": [
+        {
+          "name": "body",
+          "type": "bytea",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "headers",
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "outbox_record_id",
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "provider",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "provider_event_id",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "request_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "webhook_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_webhook_events_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_webhook_events_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_webhook_events_pkey ON public.ship_webhook_events USING btree (id)"
+        },
+        {
+          "name": "ship_webhook_events_retention_idx",
+          "definition": "CREATE INDEX ship_webhook_events_retention_idx ON public.ship_webhook_events USING btree (webhook_id, received_at)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "work_items",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "effort",
+          "type": "integer",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "project_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "work_items_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "work_items_project_id_projects_id_fk",
+          "type": "f",
+          "definition": "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "work_items_pkey",
+          "definition": "CREATE UNIQUE INDEX work_items_pkey ON public.work_items USING btree (id)"
+        }
+      ]
+    }
+  ]
+}

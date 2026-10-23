@@ -919,3 +919,197 @@ describe("createExecutor", () => {
     expect(result.requestId).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
+
+describe("declared redirect results", () => {
+  const location = "https://app.example.test/oauth?connected=true";
+  const invalidState = operationError({
+    code: "OAUTH_STATE_INVALID",
+    status: 400,
+    message: "OAuth state is invalid",
+  });
+
+  function redirectApp(
+    handler: (arguments_: {
+      readonly input: { readonly query: { readonly code: string; readonly state: string } };
+    }) => unknown,
+    options: { readonly statuses?: readonly number[]; readonly successStatus?: number } = {},
+  ) {
+    const statuses = options.statuses ?? [302];
+    const operation = defineOperation({
+      id: "oauth.callback",
+      transport: {
+        kind: "http",
+        binding: "GET /oauth/callback",
+        metadata: {
+          method: "GET",
+          path: "/oauth/callback",
+          response: "redirect",
+          queryParsing: "first-value",
+        },
+      },
+      input: { query: z.object({ code: z.string().min(1), state: z.string().min(1) }) },
+      output: Object.fromEntries(statuses.map((status) => [status, z.undefined()])) as Record<
+        302,
+        z.ZodUndefined
+      >,
+      successStatus: (options.successStatus ?? statuses[0]) as 302,
+      errors: [invalidState],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: handler as never,
+    });
+    const module = defineModule({
+      id: "oauth",
+      operations: [operation],
+      providers: [],
+      imports: [],
+      exports: [],
+    });
+    return createExecutor(defineApp({ id: "oauth-fixture", modules: [module] }));
+  }
+
+  const input = { query: { code: "code-1", state: "state-1" } };
+
+  it.each([
+    301, 302, 303, 307, 308,
+  ])("returns an empty %s with its Location as a direct result header", async (status) => {
+    const executor = redirectApp(
+      () => respond(status, undefined, { headers: { Location: location } }),
+      { statuses: [status] },
+    );
+
+    await expect(executor.run("oauth.callback", input, runOptions)).resolves.toEqual({
+      ok: true,
+      status,
+      data: undefined,
+      requestId: "request-1",
+      headers: { location },
+    });
+  });
+
+  it("lets a handler choose a failure redirect while declared failures stay results", async () => {
+    const executor = redirectApp(({ input: { query } }) => {
+      if (query.state === "revoked") throw operationFailure(invalidState);
+      if (query.state !== "state-1") {
+        return respond(302, undefined, {
+          headers: { Location: "https://app.example.test/oauth?error=invalid_state" },
+        });
+      }
+      return respond(302, undefined, { headers: { Location: location } });
+    });
+
+    await expect(
+      executor.run("oauth.callback", { query: { code: "c", state: "tampered" } }, runOptions),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 302,
+      headers: { location: "https://app.example.test/oauth?error=invalid_state" },
+    });
+    const declared = await executor.run(
+      "oauth.callback",
+      { query: { code: "c", state: "revoked" } },
+      runOptions,
+    );
+    expect(declared).toMatchObject({
+      ok: false,
+      status: 400,
+      error: { code: "OAUTH_STATE_INVALID", message: "OAuth state is invalid" },
+    });
+    expect(declared).not.toHaveProperty("headers");
+    const validation = await executor.run("oauth.callback", { query: { code: "" } }, runOptions);
+    expect(validation).toMatchObject({
+      ok: false,
+      status: 400,
+      error: { code: "VALIDATION_ERROR" },
+    });
+  });
+
+  it("accepts root-relative and absolute HTTP(S) locations", async () => {
+    for (const safe of [
+      "/oauth/done?connected=true#calendar",
+      "http://localhost:4200/oauth/done",
+      "HTTPS://App.Example.test/done",
+    ]) {
+      const executor = redirectApp(() => respond(302, undefined, { headers: { Location: safe } }));
+      await expect(executor.run("oauth.callback", input, runOptions)).resolves.toMatchObject({
+        ok: true,
+        status: 302,
+        headers: { location: safe },
+      });
+    }
+  });
+
+  it.each([
+    ["a protocol-relative URL", "//evil.example/phish"],
+    ["a backslash protocol-relative URL", "/\\evil.example/phish"],
+    ["a javascript: URL", "javascript:alert(1)"],
+    ["a mailto: URL", "mailto:victim@example.test"],
+    ["embedded credentials", "https://user:pass@app.example.test/"],
+    ["leading whitespace", " https://app.example.test/"],
+    ["trailing whitespace", "https://app.example.test/ "],
+    ["a tab control character", "https://app.example.test/\tpath"],
+    ["a NUL control character", "https://app.example.test/\u0000"],
+    ["a DEL control character", "https://app.example.test/\u007f"],
+    ["an empty value", ""],
+    ["a relative path without a leading slash", "oauth/done"],
+  ])("rejects %s before producing a redirect", async (_name, unsafe) => {
+    const executor = redirectApp(() => respond(302, undefined, { headers: { Location: unsafe } }));
+
+    await expect(executor.run("oauth.callback", input, runOptions)).rejects.toMatchObject({
+      code: "SHIP_OPERATION_OUTPUT_INVALID",
+      operationId: "oauth.callback",
+    });
+  });
+
+  it("rejects header injection through CRLF inside the Location value", async () => {
+    const executor = redirectApp(() =>
+      respond(302, undefined, {
+        headers: { Location: "https://app.example.test/\r\nSet-Cookie: session=hijacked" },
+      }),
+    );
+
+    await expect(executor.run("oauth.callback", input, runOptions)).rejects.toMatchObject({
+      code: "SHIP_OPERATION_HANDLER_FAILED",
+      operationId: "oauth.callback",
+    });
+  });
+
+  it("rejects a redirect with a body, a missing Location, or a terse return", async () => {
+    for (const handler of [
+      () => respond(302, { ok: true } as never, { headers: { Location: location } }),
+      () => respond(302, undefined),
+      () => respond(302, undefined, { headers: { "x-location": location } }),
+      () => undefined,
+    ]) {
+      const executor = redirectApp(handler);
+      await expect(executor.run("oauth.callback", input, runOptions)).rejects.toMatchObject({
+        code: "SHIP_OPERATION_OUTPUT_INVALID",
+        operationId: "oauth.callback",
+      });
+    }
+  });
+
+  it("rejects an undeclared redirect status", async () => {
+    const executor = redirectApp(() =>
+      respond(303, undefined, { headers: { Location: location } }),
+    );
+
+    await expect(executor.run("oauth.callback", input, runOptions)).rejects.toMatchObject({
+      code: "SHIP_OPERATION_RESPONSE_STATUS_UNDECLARED",
+      operationId: "oauth.callback",
+    });
+  });
+
+  it("returns the safe 500 envelope from tryRun for an unsafe Location", async () => {
+    const executor = redirectApp(() =>
+      respond(302, undefined, { headers: { Location: "//evil.example" } }),
+    );
+
+    await expect(executor.tryRun("oauth.callback", input, runOptions)).resolves.toMatchObject({
+      ok: false,
+      status: 500,
+      error: { code: "INTERNAL_SERVER_ERROR" },
+    });
+  });
+});

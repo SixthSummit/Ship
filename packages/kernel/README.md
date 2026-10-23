@@ -68,6 +68,17 @@ purge every entry; `{ tag, scope: "actor" }` and
 and may own the `cacheBackendDependency` binding for every module that imports
 `ship-cache`.
 
+Managed storage is a declaration too: `defineAttachment({ id, cardinality,
+contentTypes, maxBytes, visibility, maxCount?, variants?, intentTtlMs? })` names
+a field an owning module lists in `attachments`; an operation declares
+`attachments: [photo]`, binds `photo.binding`, and receives a capability scoped
+to its transaction (`attach` and `detach` require `transaction: "write"` so the
+ledger change and the purge intent commit with the owning record; `list`,
+`read`, `url` and `variant` run anywhere). The `StorageAdapter` and
+`AttachmentLedger` contracts live here; `@sixthsummit/ship-storage` mounts the
+`ship-storage` module (signed intents, fenced completion, sweep, lazy variants,
+durable purge) and the disk, S3/R2 and GCS adapters. See ADR-0022.
+
 ## Framework permissions
 
 Some generated operations are gated by permission slugs the framework owns.
@@ -76,7 +87,7 @@ introduces them; `ship-api inspect app` lists them per module.
 
 | Slug                   | Introduced by                                                                                       |
 | ---------------------- | --------------------------------------------------------------------------------------------------- |
-| `ship.outbox:manage`   | any `defineOutboxDispatcher({ deadLetter: true })`, so also `defineCacheInvalidationModule` and `defineRealtimePublicationModule` |
+| `ship.outbox:manage`   | any `defineOutboxDispatcher({ deadLetter: true })`, so also `defineCacheInvalidationModule`, `defineRealtimePublicationModule` and `defineStorageModule` |
 | `ship.jobs:manage`     | `defineJobManagement`                                                                               |
 | `ship.webhooks:replay` | `defineWebhookReplay`                                                                               |
 | `console.operate`      | `defineConsoleModule` in `@sixthsummit/ship-console`; never implied by the slugs above or an admin role |

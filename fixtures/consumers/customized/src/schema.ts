@@ -3,7 +3,11 @@ import {
   shipJobControlTable,
   shipJobRunsTable,
   shipJobStateTable,
+  shipMailSendsTable,
   shipOutboxTable,
+  shipStorageIntentsTable,
+  shipStorageObjectsTable,
+  shipStoragePurgesTable,
   shipWebhookEventsTable,
 } from "@sixthsummit/ship-drizzle";
 import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
@@ -41,6 +45,11 @@ export const webhookEventsTable = shipWebhookEventsTable();
 export const jobRuns = shipJobRunsTable();
 export const jobState = shipJobStateTable();
 export const jobControl = shipJobControlTable();
+/** Managed storage bookkeeping: intents, objects and the purge ledger (ADR-0022). */
+export const storageIntents = shipStorageIntentsTable();
+export const storageObjects = shipStorageObjectsTable();
+export const storagePurges = shipStoragePurgesTable();
+export const mailSendsTable = shipMailSendsTable();
 
 export const portfolioSchema = {
   projects,
@@ -52,4 +61,8 @@ export const portfolioSchema = {
   jobRuns,
   jobState,
   jobControl,
+  storageIntents,
+  storageObjects,
+  storagePurges,
+  mailSendsTable,
 };
