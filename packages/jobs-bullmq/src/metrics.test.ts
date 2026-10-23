@@ -56,6 +56,25 @@ describe("createJobMetrics", () => {
     await provider.shutdown();
   });
 
+  it("stops reporting queue observations once the observer is unregistered", async () => {
+    const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    const reader = new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 3_600_000 });
+    const provider = new MeterProvider({ readers: [reader] });
+    const metrics = createJobMetrics(provider);
+    let observed = 0;
+    const stop = metrics.observeQueues(async () => {
+      observed += 1;
+      return [{ jobId: "reports.digest", depth: 2, oldestWaitingAgeMs: 0, deadLettered: 0 }];
+    });
+    expect((await snapshot(reader))[JOB_METRICS.queueDepth]?.dataPoints[0]?.value).toBe(2);
+    stop();
+    // The cumulative reader replays the last value; what matters is that the
+    // callback no longer runs, so nothing behind it is touched.
+    expect((await snapshot(reader))[JOB_METRICS.queueDepth]?.dataPoints[0]?.value).toBe(2);
+    expect(observed).toBe(1);
+    await provider.shutdown();
+  });
+
   it("ignores observation failures instead of breaking collection", async () => {
     const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
     const reader = new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 3_600_000 });
