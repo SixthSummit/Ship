@@ -31,6 +31,29 @@ export interface ClientContract {
   readonly operations: readonly ClientContractOperation[];
   /** Declared realtime channels keyed by id. Carries no transport detail. Absent in pre-realtime manifests. */
   readonly channels?: Readonly<Record<string, ClientContractChannel>>;
+  /** Declared managed attachments keyed by id. Carries no provider detail. Absent in pre-storage manifests. */
+  readonly attachments?: Readonly<Record<string, ClientContractAttachment>>;
+  /**
+   * Declared mailers keyed by id, with message names only. Templates, sender
+   * addresses and payload schemas never reach the client. Absent when the
+   * application declares no mailer, so older manifests keep their fingerprint.
+   */
+  readonly mailers?: Readonly<Record<string, ClientContractMailer>>;
+}
+
+/** The upload policy a client validates against before it asks for a signed intent. */
+export interface ClientContractAttachment {
+  readonly cardinality: "single" | "many";
+  readonly contentTypes: readonly string[];
+  readonly maxBytes: number;
+  readonly visibility: "private" | "public";
+  readonly maxCount: number;
+  /** Declared variant names; generation is lazy and server-side. */
+  readonly variants: readonly string[];
+}
+
+export interface ClientContractMailer {
+  readonly messages: readonly string[];
 }
 
 export type ClientContractChannelScope = "actor" | "tenant" | "resource";
@@ -59,6 +82,8 @@ export interface ClientContractOperation {
   readonly response?: ClientContractStreamResponse;
   /** Channel ids this operation publishes to. Absent in pre-realtime manifests. */
   readonly publishes?: readonly string[];
+  /** Managed attachment ids this operation binds. Absent when it binds none. */
+  readonly attachments?: readonly string[];
 }
 
 export interface ClientContractCache {

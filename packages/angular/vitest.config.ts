@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Secondary entrypoints live outside tsconfig.json's `include`, so vite's
+  // tsconfig lookup would otherwise compile their Angular decorators as TC39
+  // decorators that Node cannot evaluate. Mirror tsconfig's experimentalDecorators.
+  oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } },
   resolve: {
     alias: {
       '@sixthsummit/ship-angular/query': new URL('./query/src/public-api.ts', import.meta.url)
@@ -9,6 +13,8 @@ export default defineConfig({
         './operations/src/public-api.ts',
         import.meta.url
       ).pathname,
+      '@sixthsummit/ship-angular/upload': new URL('./upload/src/public-api.ts', import.meta.url)
+        .pathname,
     },
   },
   test: {
@@ -40,6 +46,8 @@ export default defineConfig({
       'socket/src/**/*.spec.ts',
       'realtime/src/**/*.test.ts',
       'push/src/**/*.test.ts',
+      'console/src/**/*.test.ts',
+      'storage/src/**/*.test.ts',
       'realtime/src/**/*.spec.ts',
       'forms/src/**/*.test.ts',
       'forms/src/**/*.spec.ts',
@@ -69,6 +77,8 @@ export default defineConfig({
         'socket/src/**/*.ts',
         'realtime/src/**/*.ts',
         'push/src/**/*.ts',
+        'console/src/**/*.ts',
+        'storage/src/**/*.ts',
         'forms/src/**/*.ts',
         'testing/src/**/*.ts',
         'cli/migrations/**/*.js',
@@ -123,6 +133,9 @@ export default defineConfig({
         'push/src/**/*.test.ts',
         'push/src/**/*.type-test.ts',
         'push/src/public-api.ts',
+        'console/src/**/*.test.ts',
+        'console/src/**/*.type-test.ts',
+        'console/src/public-api.ts',
         'forms/src/**/*.spec.ts',
         'forms/src/**/*.test.ts',
         'forms/src/**/*.type-test.ts',

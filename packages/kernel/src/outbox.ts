@@ -361,6 +361,16 @@ export interface OutboxBackend {
   discard(recordId: string, reason: string, now: Date): Promise<OutboxRecord | undefined>;
   cleanup(retention: OutboxRetention, now: Date): Promise<OutboxCleanupResult>;
   health(now: Date): Promise<OutboxHealth>;
+  /** Optional operator-facing lookup of one record regardless of status. */
+  findRecord?(recordId: string): Promise<OutboxRecord | undefined>;
+  /** Optional operator-facing listing, most recently created first. */
+  listRecords?(query: OutboxRecordQuery): Promise<readonly OutboxRecord[]>;
+}
+
+export interface OutboxRecordQuery {
+  /** Restrict to one status; every status when omitted. */
+  readonly status?: OutboxRecordStatus;
+  readonly limit: number;
 }
 
 export function isOutboxBackend(value: unknown): value is OutboxBackend {

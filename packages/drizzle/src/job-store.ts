@@ -5,10 +5,25 @@ import type {
   JobIntervalTrigger,
   JobRetention,
   JobRun,
+  JobRunQuery,
   JobRunStatus,
+  JobScheduleState,
   JobScheduleTrigger,
 } from "@sixthsummit/ship-core";
-import { and, asc, eq, inArray, isNotNull, lte, notInArray, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lte,
+  notInArray,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { DrizzleRepositoryError } from "./repository-error.js";
@@ -80,6 +95,24 @@ export function shipJobStateTable(name = "ship_job_state") {
 }
 
 export type ShipJobStateTable = ReturnType<typeof shipJobStateTable>;
+
+/**
+ * Optional operator control state: a row with `paused_at` set stops every
+ * worker from claiming that job's runs until it is cleared. The table is
+ * opt-in (`createDrizzleJobBackend({ controlTable })`) so existing
+ * deployments change no table shape; without it the backend reports pause
+ * as unsupported. Include it in migrations next to the other job tables.
+ */
+export function shipJobControlTable(name = "ship_job_control") {
+  assertTableName(name);
+  return pgTable(name, {
+    jobId: text("job_id").primaryKey(),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  });
+}
+
+export type ShipJobControlTable = ReturnType<typeof shipJobControlTable>;
 
 export interface NewJobRun {
   readonly runId: string;
@@ -156,6 +189,14 @@ export interface JobRunStore {
     fallback: JobRetention,
     now: Date,
   ): Promise<JobCleanupResult>;
+  /** Runs matching the query, most recently created first; `delayed` means waiting past `now`. */
+  listRuns(query: JobRunQuery, now: Date): Promise<readonly JobRun[]>;
+  getRun(runId: string, now: Date): Promise<JobRun | undefined>;
+  listSchedules(): Promise<readonly JobScheduleState[]>;
+  /** Ids of paused jobs; empty when the store has no control table. */
+  listPaused(): Promise<readonly string[]>;
+  /** Present only when the store holds control state; see `shipJobControlTable`. */
+  setPaused?(jobId: string, paused: boolean, now: Date): Promise<void>;
 }
 
 type Executor = NodePgDatabase<Record<string, unknown>>;
@@ -164,6 +205,7 @@ export function createDrizzleJobRunStore(
   database: NodePgDatabase<Record<string, unknown>>,
   runs: ShipJobRunsTable,
   state: ShipJobStateTable,
+  control?: ShipJobControlTable,
 ): JobRunStore {
   const db: Executor = database;
 
@@ -453,7 +495,7 @@ export function createDrizzleJobRunStore(
       .where(eq(runs.status, "failed"))
       .orderBy(asc(runs.failedAt), asc(runs.createdAt))
       .limit(limit);
-    return Object.freeze(rows.map(toRun));
+    return Object.freeze(rows.map((row) => toRun(row)));
   };
 
   const retry = async (runId: string, now: Date) => {
@@ -522,6 +564,69 @@ export function createDrizzleJobRunStore(
     return Object.freeze({ completedDeleted, deadLetteredDeleted });
   };
 
+  const listRuns = async (query: JobRunQuery, now: Date) => {
+    const conditions: (SQL | undefined)[] = [];
+    if (query.jobId !== undefined) conditions.push(eq(runs.jobId, query.jobId));
+    if (query.status === "delayed") {
+      conditions.push(eq(runs.status, "waiting"), gt(runs.availableAt, now));
+    } else if (query.status === "waiting") {
+      conditions.push(eq(runs.status, "waiting"), lte(runs.availableAt, now));
+    } else if (query.status !== undefined) {
+      conditions.push(eq(runs.status, query.status));
+    }
+    const rows = await db
+      .select()
+      .from(runs)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(runs.createdAt), desc(runs.id))
+      .limit(query.limit);
+    return Object.freeze(rows.map((row) => toRun(row, now)));
+  };
+
+  const getRun = async (runId: string, now: Date) => {
+    const [row] = await db.select().from(runs).where(eq(runs.id, runId)).limit(1);
+    return row ? toRun(row, now) : undefined;
+  };
+
+  const listSchedules = async () => {
+    const rows = await db
+      .select()
+      .from(state)
+      .where(isNotNull(state.trigger))
+      .orderBy(asc(state.jobId));
+    return Object.freeze(
+      rows.map((row) =>
+        Object.freeze({
+          jobId: row.jobId,
+          trigger: row.trigger as JobScheduleTrigger | JobIntervalTrigger,
+          ...(row.nextAt ? { nextAt: row.nextAt } : {}),
+        }),
+      ),
+    );
+  };
+
+  const listPaused = async (): Promise<readonly string[]> => {
+    if (!control) return Object.freeze([]);
+    const rows = await db
+      .select({ jobId: control.jobId })
+      .from(control)
+      .where(isNotNull(control.pausedAt))
+      .orderBy(asc(control.jobId));
+    return Object.freeze(rows.map((row) => row.jobId));
+  };
+
+  const setPaused = control
+    ? async (jobId: string, paused: boolean, now: Date) => {
+        await db
+          .insert(control)
+          .values({ jobId, pausedAt: paused ? now : null, updatedAt: now })
+          .onConflictDoUpdate({
+            target: control.jobId,
+            set: { pausedAt: paused ? now : null, updatedAt: now },
+          });
+      }
+    : undefined;
+
   return Object.freeze({
     insert,
     findDeduplicated,
@@ -539,10 +644,15 @@ export function createDrizzleJobRunStore(
     retry,
     discard,
     cleanup,
+    listRuns,
+    getRun,
+    listSchedules,
+    listPaused,
+    ...(setPaused ? { setPaused } : {}),
   });
 }
 
-function toRun(row: ShipJobRunsTable["$inferSelect"]): JobRun {
+function toRun(row: ShipJobRunsTable["$inferSelect"], now?: Date): JobRun {
   const history: readonly JobAttemptFailure[] = Object.freeze(
     (row.history ?? []).map((item) =>
       Object.freeze({ attempt: item.attempt, error: item.error, at: new Date(item.at) }),
@@ -554,7 +664,10 @@ function toRun(row: ShipJobRunsTable["$inferSelect"]): JobRun {
     input: row.input,
     ...(row.key !== null ? { key: row.key } : {}),
     ...(row.dedupeKey !== null ? { dedupeKey: row.dedupeKey } : {}),
-    status: row.status as JobRunStatus,
+    status:
+      now && row.status === "waiting" && row.availableAt.getTime() > now.getTime()
+        ? "delayed"
+        : (row.status as JobRunStatus),
     attempts: row.attempts,
     ...(row.lastError !== null ? { lastError: row.lastError } : {}),
     history,

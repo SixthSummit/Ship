@@ -1,0 +1,52 @@
+{
+  "name": "@sixthsummit/ship-console",
+  "version": "0.1.0",
+  "description": "Operator console module for Ship applications: jobs, cron, webhook receipts, realtime channels and outboxes as declared operations behind a dedicated permission",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/console/src",
+    "test:coverage": "vitest run --root ../.. packages/console/src --coverage"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^",
+    "@sixthsummit/ship-hono": "workspace:^",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-hono": "workspace:*",
+    "@sixthsummit/ship-testing": "workspace:^",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/console"
+  }
+}

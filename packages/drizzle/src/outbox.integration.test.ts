@@ -165,6 +165,31 @@ describe("Drizzle outbox integration", () => {
     expect(await context.db.select().from(outboxTable)).toHaveLength(1);
   });
 
+  it("finds one record by id and lists records newest first per status for the console", async () => {
+    const backend = createDrizzleOutbox({ outbox, database: context.db, table: outboxTable });
+    const time = clockAt();
+    const executor = application(backend, async () => undefined, time.clock);
+    await executor.run("reports.request", { body: { value: "one" } });
+    time.advance(1_000);
+    await executor.run("reports.request", { body: { value: "two" } });
+    const [claimed] = await backend.claimDue(time.clock(), 1, 60_000);
+    await backend.fail(claimed?.id ?? "", "smtp down", { deadLetter: true }, time.clock());
+
+    const all = await backend.listRecords?.({ limit: 10 });
+    expect(all?.map((record) => record.dedupeKey)).toEqual(["two", "one"]);
+    expect(await backend.listRecords?.({ status: "dead-lettered", limit: 10 })).toMatchObject([
+      { dedupeKey: "one", lastError: "smtp down" },
+    ]);
+    expect(await backend.listRecords?.({ status: "pending", limit: 10 })).toMatchObject([
+      { dedupeKey: "two" },
+    ]);
+    expect(await backend.findRecord?.(claimed?.id ?? "")).toMatchObject({
+      id: claimed?.id,
+      status: "dead-lettered",
+    });
+    expect(await backend.findRecord?.("00000000-0000-4000-8000-000000000000")).toBeUndefined();
+  });
+
   it("refuses to record outside a Drizzle unit-of-work scope", async () => {
     const backend = createDrizzleOutbox({ outbox, database: context.db, table: outboxTable });
     await expect(

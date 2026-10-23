@@ -16,10 +16,12 @@ export { createHttpOperationClient, OperationClientError } from "./client.js";
 export type {
   ClientContract,
   ClientContractAccess,
+  ClientContractAttachment,
   ClientContractCache,
   ClientContractChannel,
   ClientContractChannelScope,
   ClientContractError,
+  ClientContractMailer,
   ClientContractOperation,
   ClientContractStreamLimits,
   ClientContractStreamResponse,

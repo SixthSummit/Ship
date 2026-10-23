@@ -423,6 +423,40 @@ export interface RealtimePublishBackend {
   publish(channel: AnyChannel, scopeKey: string, payload: unknown): Promise<void>;
   health(): Promise<RealtimeBackendHealth>;
   close(): Promise<void>;
+  /** Optional operator-facing introspection; see {@link RealtimeIntrospection}. */
+  readonly introspection?: RealtimeIntrospection;
+}
+
+/** What one backend process knows about a channel: its live subscriptions and last publish. */
+export interface RealtimeChannelState {
+  readonly channelId: string;
+  /** Live subscriptions this backend holds for the channel (0 for a publish-only backend). */
+  readonly subscribers: number;
+  /** Distinct scope keys with at least one live subscription. */
+  readonly scopes: number;
+  /** When this backend last accepted a publication for the channel. */
+  readonly lastPublishedAt?: Date;
+  readonly lastScopeKey?: string;
+}
+
+/**
+ * Backend-neutral introspection an operator console reads. Counts are what
+ * this backend instance observes: a gateway answers for its own connections,
+ * so a multi-gateway deployment reads the console from each gateway or
+ * aggregates elsewhere.
+ */
+export interface RealtimeIntrospection {
+  readonly kind: "ship.realtime-introspection";
+  channels(): Promise<readonly RealtimeChannelState[]>;
+}
+
+export function isRealtimeIntrospection(value: unknown): value is RealtimeIntrospection {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Reflect.get(value, "kind") === "ship.realtime-introspection" &&
+    typeof Reflect.get(value, "channels") === "function"
+  );
 }
 
 export interface RealtimeSubscriptionRequest {
