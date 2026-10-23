@@ -3,7 +3,7 @@ import {
   createRequestClientRegistry,
   credentialAuthRateLimitPolicies,
 } from "@sixthsummit/ship-auth-credentials";
-import { createHonoAdapter } from "@sixthsummit/ship-hono";
+import { assertCorsOptions, createHonoAdapter, type HonoCorsOptions } from "@sixthsummit/ship-hono";
 import { type CustomizedInfrastructure, createCustomizedApplication } from "./application.js";
 import {
   customizedActorResolver,
@@ -31,6 +31,11 @@ export function createCustomizedHttpApplication(
   const authClients = infrastructure.authClients ?? createRequestClientRegistry();
   const composed = { ...infrastructure, credentialStore, authClients };
   const corsOrigins = options.corsOrigins ?? DEFAULT_CORS_ORIGINS;
+  // The CORS allowlist doubles as the CSRF policy's trusted origins, so the
+  // SAPI-760 guard judges it first: a wildcard with credentials is a CORS
+  // misconfiguration, reported as one.
+  const cors: HonoCorsOptions = { origin: corsOrigins, credentials: true };
+  assertCorsOptions(cors);
   const application = createCustomizedApplication(composed);
   return {
     application,
@@ -60,7 +65,7 @@ export function createCustomizedHttpApplication(
       webhooks: { publicBaseUrl: options.publicBaseUrl ?? "https://golden.example.test" },
       // One policy covers operation, streaming and webhook routes and their
       // preflights; declared error headers (Retry-After) are exposed automatically.
-      cors: { origin: corsOrigins, credentials: true },
+      cors,
     }),
   };
 }

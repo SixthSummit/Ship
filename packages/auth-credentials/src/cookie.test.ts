@@ -265,7 +265,7 @@ describe("the CSRF pre-validation policy", () => {
       const response = await call("/app/write", { headers });
       expect(response.status, label).toBe(status);
       if (message) {
-        const body = await response.json();
+        const body = (await response.json()) as { error: { code: string; message: string } };
         expect(body.error.code, label).toBe("AUTHORIZATION_ERROR");
         expect(body.error.message, label).toContain(message);
       }
@@ -289,7 +289,8 @@ describe("the CSRF pre-validation policy", () => {
   it("origin-checks session-issuing operations against login CSRF and lets native clients through", async () => {
     const refused = await call("/auth/sign-in", { headers: { origin: "https://evil.example" } });
     expect(refused.status).toBe(403);
-    expect((await refused.json()).error.message).toContain("sign in");
+    const refusal = (await refused.json()) as { error: { message: string } };
+    expect(refusal.error.message).toContain("sign in");
     expect(
       (await call("/auth/sign-in", { headers: { referer: "https://evil.example/" } })).status,
     ).toBe(403);

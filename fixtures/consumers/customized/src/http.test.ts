@@ -217,11 +217,15 @@ describe("customized portfolio HTTP application", () => {
         .status,
     ).toBe(403);
 
-    // A native client signs in with the bearer at the same time; both are live sessions.
-    const bearer = await browser("/auth/sign-in", {
-      body: { email: "ada@example.test", password },
-      origin: null,
+    // A native client (no cookies, no Origin) signs in with the bearer at the
+    // same time; both are live sessions.
+    const native = await http.request("/auth/sign-in", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "ada@example.test", password }),
     });
+    expect(native.status).toBe(200);
+    const bearer = { body: await native.json() };
     expect(bearer.body.session).toMatchObject({
       transport: "bearer",
       token: expect.stringMatching(/^ship_s_/u),

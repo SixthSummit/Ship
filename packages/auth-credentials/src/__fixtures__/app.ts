@@ -270,7 +270,7 @@ export async function registerAndSignIn(fixture: Fixture, email = EMAIL, passwor
   if (signedIn.status !== 200) throw new Error(`sign-in failed: ${JSON.stringify(signedIn.body)}`);
   return signedIn.body as {
     status: string;
-    session: { token: string; id: string; expiresAt: string; mfaState: string };
+    session: { token: string; id: string; expiresAt: string; mfaState: string; transport: string };
     account: { id: string; email: string };
   };
 }
