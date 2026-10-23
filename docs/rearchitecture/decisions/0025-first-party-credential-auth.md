@@ -60,7 +60,8 @@ the credential-level guard and applies to direct execution too.
 counter reset once a lock lapses), `session` (absolute max age, idle timeout,
 touch interval), `mfa.required` (`"never"`, `"always"` or a function of the
 account, so "required per role" is one line), token TTLs, recovery-code count,
-`requireVerifiedEmail` and `onExistingEmail` (`reject` or `conceal`). An
+`requireVerifiedEmail` and `onExistingEmail` (`conceal` by default, or
+`reject`). An
 account that must enrol receives a `pending-enrolment` session that reaches
 only the enrolment flow, sign-out and `me`. Per-surface MFA is expressed in
 `resolveActor` from `session.mfaState` (the customized consumer grants
@@ -84,7 +85,7 @@ cannot both win. The in-memory store implements the same contract, and
 
 | Concern | Choice |
 | --- | --- |
-| Password hashing | scrypt from `node:crypto` (N=2^15, r=8, p=1, 16-byte salt, 32-byte key), PHC string carrying the parameters, `needsRehash` upgrade on sign-in; zero native dependencies. `PasswordHasher` is pluggable so argon2id can be bound where a native binding is acceptable. |
+| Password hashing | argon2id from `node:crypto` (64 MiB, t=3, p=1, 16-byte salt, 32-byte tag; Node 24 ships argon2 natively, so no binding is needed), standard PHC string, `needsRehash` upgrade on sign-in. The same hasher verifies a `$scrypt$` string and reports it for rehash, so scrypt installations upgrade without a migration. `scryptPasswordHasher` stays available and `PasswordHasher` is pluggable so another implementation can be bound where binding is acceptable. |
 | TOTP | RFC 6238 over HMAC-SHA1, 6 digits, 30 s, ±1 step, implemented on `node:crypto` and tested against the RFC appendix vectors; the last accepted step is stored and a code at or before it is a replay. |
 | Tokens | Verification, reset, change-email, MFA challenge and session tokens are 256 random bits with a kind prefix; only their SHA-256 is stored and lookups are by hash. |
 | MFA secrets at rest | AES-256-GCM under a consumer-supplied key ring (`{ current, keys }`, 32-byte keys, key id recorded on the row and bound as associated data) so keys rotate by adding one and switching `current`. |
@@ -142,11 +143,21 @@ for stateless edges.
 Rejected: TOTP verification needs the secret, so hashing is impossible, and a
 database read must not yield working second factors.
 
-### argon2id by default
+### scrypt by default
 
-Rejected only on dependency grounds: it needs a native binding the package
-should not force on every consumer. The hasher is pluggable and the choice is
-recorded here for review.
+Shipped first on dependency grounds, then replaced: `node:crypto` on the Node
+versions Ship pins exposes `argon2`, so the OWASP first-choice algorithm costs
+no binding. scrypt stays selectable and verifies through the argon2id hasher so
+the switch needs no migration.
+
+### Rejecting a duplicate registration by default
+
+Rejected: with sign-in and forgot-password already concealing account
+existence, a 409 on register was the one remaining enumeration oracle, and the
+consumers this package exists for (health, legal, finance) treat account
+existence as sensitive. Conceal answers 201 and mails the owner instead, which
+costs the registrant one confusing moment and nothing else. `reject` is one
+policy line for applications that prefer the friendlier answer.
 
 ### A per-panel console permission for auth audit
 

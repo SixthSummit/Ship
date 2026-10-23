@@ -1,4 +1,25 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import {
+  argon2 as argon2Callback,
+  randomBytes,
+  scrypt as scryptCallback,
+  timingSafeEqual,
+} from "node:crypto";
+
+interface Argon2idParameters {
+  readonly message: Buffer;
+  readonly nonce: Uint8Array;
+  readonly parallelism: number;
+  readonly tagLength: number;
+  readonly memory: number;
+  readonly passes: number;
+  readonly version: number;
+}
+
+function argon2id(parameters: Argon2idParameters): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    argon2Callback("argon2id", parameters, (error, key) => (error ? reject(error) : resolve(key)));
+  });
+}
 
 function scrypt(
   password: Buffer,
@@ -14,9 +35,9 @@ function scrypt(
 }
 
 /**
- * Hashes and verifies passwords. The default is scrypt from `node:crypto`
- * (zero native dependencies); bind an argon2id implementation here when the
- * deployment can carry a native binding.
+ * Hashes and verifies passwords. The default is argon2id from `node:crypto`
+ * (`argon2idPasswordHasher`); `scryptPasswordHasher` remains available. Both
+ * have zero native dependencies.
  */
 export interface PasswordHasher {
   readonly algorithm: string;
@@ -134,6 +155,138 @@ function parseScrypt(stored: string) {
     salt: fromBase64url(match[4] as string),
     hash: fromBase64url(match[5] as string),
   };
+}
+
+export interface Argon2idPasswordHasherOptions {
+  /** Memory cost in KiB. Defaults to 65536 (64 MiB). */
+  readonly memory?: number;
+  /** Number of passes `t`. Defaults to 3. */
+  readonly passes?: number;
+  /** Parallelism `p`. Defaults to 1. */
+  readonly parallelism?: number;
+  /** Tag (derived key) length in bytes. Defaults to 32. */
+  readonly tagLength?: number;
+  /** Salt length in bytes. Defaults to 16. */
+  readonly saltLength?: number;
+}
+
+const ARGON2_VERSION = 0x13;
+const ARGON2_MAX_MEMORY = 1024 * 1024; // 1 GiB in KiB; a stored hash never asks for more
+const ARGON2ID_PATTERN =
+  /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/u;
+
+/**
+ * argon2id (RFC 9106) from `node:crypto` with the standard PHC string
+ * `$argon2id$v=19$m=65536,t=3,p=1$<salt>$<hash>` (base64 without padding), so
+ * hashes are portable to and from other argon2 implementations. The defaults
+ * (64 MiB, three passes) sit above the OWASP minimum of 19 MiB and two passes.
+ *
+ * `verify` also accepts a `$scrypt$` string produced by `scryptPasswordHasher`
+ * and `needsRehash` reports it, so a deployment that started on scrypt
+ * upgrades every account on its next successful sign-in with no migration.
+ */
+export function argon2idPasswordHasher(
+  options: Argon2idPasswordHasherOptions = {},
+): PasswordHasher {
+  const memory = options.memory ?? 65536;
+  const passes = options.passes ?? 3;
+  const parallelism = options.parallelism ?? 1;
+  const tagLength = options.tagLength ?? 32;
+  const saltLength = options.saltLength ?? 16;
+  for (const [name, value, min, max] of [
+    ["memory", memory, 8, ARGON2_MAX_MEMORY],
+    ["passes", passes, 1, 10],
+    ["parallelism", parallelism, 1, 16],
+    ["tagLength", tagLength, 16, 128],
+    ["saltLength", saltLength, 8, 64],
+  ] as const) {
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new TypeError(`argon2id ${name} must be an integer between ${min} and ${max}`);
+    }
+  }
+  if (memory < 8 * parallelism) {
+    throw new TypeError("argon2id memory must be at least 8 KiB per lane of parallelism");
+  }
+  const legacy = scryptPasswordHasher();
+
+  const derive = (
+    password: string,
+    salt: Uint8Array,
+    parameters: { readonly memory: number; readonly passes: number; readonly parallelism: number },
+    length: number,
+  ): Promise<Buffer> =>
+    argon2id({
+      message: Buffer.from(password, "utf8"),
+      nonce: salt,
+      memory: parameters.memory,
+      passes: parameters.passes,
+      parallelism: parameters.parallelism,
+      tagLength: length,
+      version: ARGON2_VERSION,
+    });
+
+  return Object.freeze({
+    algorithm: "argon2id",
+    async hash(password: string): Promise<string> {
+      const salt = randomBytes(saltLength);
+      const key = await derive(password, salt, { memory, passes, parallelism }, tagLength);
+      return `$argon2id$v=19$m=${memory},t=${passes},p=${parallelism}$${base64(salt)}$${base64(key)}`;
+    },
+    async verify(password: string, stored: string): Promise<boolean> {
+      if (typeof stored === "string" && stored.startsWith("$scrypt$")) {
+        return legacy.verify(password, stored);
+      }
+      const parsed = parseArgon2id(stored);
+      if (!parsed) return false;
+      const key = await derive(password, parsed.salt, parsed, parsed.hash.byteLength);
+      return key.byteLength === parsed.hash.byteLength && timingSafeEqual(key, parsed.hash);
+    },
+    needsRehash(stored: string): boolean {
+      const parsed = parseArgon2id(stored);
+      if (!parsed) return true;
+      return (
+        parsed.memory < memory ||
+        parsed.passes < passes ||
+        parsed.parallelism < parallelism ||
+        parsed.hash.byteLength < tagLength
+      );
+    },
+  });
+}
+
+function parseArgon2id(stored: string) {
+  if (typeof stored !== "string") return undefined;
+  const match = ARGON2ID_PATTERN.exec(stored);
+  if (!match) return undefined;
+  const memory = Number(match[1]);
+  const passes = Number(match[2]);
+  const parallelism = Number(match[3]);
+  if (
+    !Number.isInteger(memory) ||
+    memory < 8 ||
+    memory > ARGON2_MAX_MEMORY ||
+    !Number.isInteger(passes) ||
+    passes < 1 ||
+    passes > 10 ||
+    !Number.isInteger(parallelism) ||
+    parallelism < 1 ||
+    parallelism > 16
+  ) {
+    return undefined;
+  }
+  const salt = fromBase64(match[4] as string);
+  const hash = fromBase64(match[5] as string);
+  if (salt.byteLength < 8 || hash.byteLength < 16) return undefined;
+  return { memory, passes, parallelism, salt, hash };
+}
+
+function base64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64").replace(/=+$/u, "");
+}
+
+function fromBase64(value: string): Uint8Array {
+  const buffer = Buffer.from(value, "base64");
+  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 }
 
 export function base64url(bytes: Uint8Array): string {

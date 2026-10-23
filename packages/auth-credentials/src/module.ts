@@ -2,7 +2,7 @@ import type { AnyMailer, DependencyToken } from "@sixthsummit/ship-core";
 import { defineModule, isMailer, valueProvider } from "@sixthsummit/ship-core";
 import type { MailSender } from "@sixthsummit/ship-mail";
 import type { RequestClientRegistry } from "./client.js";
-import { type PasswordHasher, scryptPasswordHasher } from "./crypto/password.js";
+import { argon2idPasswordHasher, type PasswordHasher } from "./crypto/password.js";
 import { createSecretBox, type SecretKeyRing } from "./crypto/secretbox.js";
 import { InvalidCredentialAuthDefinitionError } from "./errors.js";
 import type { CredentialAuthMailer } from "./mailer.js";
@@ -43,7 +43,7 @@ export interface CredentialAuthModuleOptions<
   /** Keys that seal TOTP secrets at rest. */
   readonly secrets: SecretKeyRing;
   readonly policies?: CredentialAuthPolicyOptions;
-  /** Defaults to scrypt from `node:crypto`. */
+  /** Defaults to argon2id from `node:crypto` (`argon2idPasswordHasher()`). */
   readonly hasher?: PasswordHasher;
   /** Roles stamped on every registered account. Defaults to `[]`. */
   readonly defaultRoles?: readonly string[];
@@ -64,7 +64,7 @@ export function defineCredentialAuthModule<
   assertOptions(options);
   const id = (options.id ?? DEFAULT_CREDENTIAL_AUTH_MODULE_ID) as TId;
   const basePath = options.basePath ?? DEFAULT_CREDENTIAL_AUTH_BASE_PATH;
-  const hasher = options.hasher ?? scryptPasswordHasher();
+  const hasher = options.hasher ?? argon2idPasswordHasher();
   const appName = options.mailer.messages.verifyEmail.sample?.appName ?? id;
   const runtime: CredentialAuthRuntime = {
     id,
@@ -204,6 +204,19 @@ function assertOptions(options: unknown): asserts options is CredentialAuthModul
       { field: "links" },
     );
   }
+  const policies = Reflect.get(options, "policies");
+  const onExistingEmail =
+    typeof policies === "object" && policies !== null
+      ? Reflect.get(policies, "onExistingEmail")
+      : undefined;
+  const signIn = Reflect.get(links, "signIn");
+  if (onExistingEmail !== "reject" && (typeof signIn !== "string" || !isHttpUrl(signIn))) {
+    throw new InvalidCredentialAuthDefinitionError(
+      "SHIP_AUTH_OPTIONS_INVALID",
+      'credential auth links.signIn must be an absolute http(s) URL while policies.onExistingEmail is "conceal" (the default): the existing-account notice links to it. Set policies.onExistingEmail to "reject" to opt out.',
+      { field: "links" },
+    );
+  }
   const hasher = Reflect.get(options, "hasher");
   if (
     hasher !== undefined &&
@@ -248,5 +261,14 @@ function assertOptions(options: unknown): asserts options is CredentialAuthModul
       "credential auth clock must be a function",
       { field: "clock" },
     );
+  }
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
   }
 }

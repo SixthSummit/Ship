@@ -46,6 +46,7 @@ export const auth = defineCredentialAuthModule({
   links: {
     verifyEmail: (token) => `${env.APP_URL}/verify/${token}`,
     resetPassword: (token) => `${env.APP_URL}/reset/${token}`,
+    signIn: `${env.APP_URL}/sign-in`, // the existing-account notice links here
     changeEmail: (token) => `${env.APP_URL}/email/${token}`,
   },
   secrets: { current: "k1", keys: { k1: env.AUTH_MFA_KEY } },
@@ -56,7 +57,7 @@ export const auth = defineCredentialAuthModule({
     mfa: { required: (account) => account.roles.includes("admin") },
     tokens: { verifyEmailTtlMs: 24 * 60 * 60_000, resetPasswordTtlMs: 60 * 60_000 },
     requireVerifiedEmail: true,
-    onExistingEmail: "reject", // or "conceal" (201 and silence)
+    onExistingEmail: "conceal", // default; "reject" answers 409 and enumerates accounts
   },
   defaultRoles: ["member"],
   clients, // createRequestClientRegistry(), shared with the adapter
@@ -159,10 +160,32 @@ the pending challenge and emit `expired` when the challenge is gone.
 ## Security choices
 
 See the table in [ADR-0025](../../rearchitecture/decisions/0025-first-party-credential-auth.md):
-scrypt (pluggable), RFC 6238 TOTP with replay guard, SHA-256 token hashes,
+argon2id from `node:crypto` (scrypt available, pluggable), RFC 6238 TOTP with
+replay guard, SHA-256 token hashes,
 AES-256-GCM MFA secrets under a key ring, hashed single-use recovery codes,
 constant-time comparisons, a decoy hash on unknown emails, opaque hashed
 session bearers.
+
+### Passwords
+
+`argon2idPasswordHasher()` is the default: argon2id from `node:crypto`, 64 MiB,
+three passes, one lane, in the standard PHC string, so hashes are portable.
+Pass `hasher: scryptPasswordHasher()` to keep scrypt, or any `PasswordHasher`.
+The argon2id hasher also verifies `$scrypt$` hashes and reports them through
+`needsRehash`, so an installation that started on scrypt upgrades each account
+on its next successful sign-in with no migration.
+
+### Registering an email that already has an account
+
+`onExistingEmail` defaults to `"conceal"`: `register` answers `201` exactly as
+it does for a new address, and the existing address is told instead. An
+unverified account receives its verification link again; a verified one
+receives the `existingAccount` message with a link to `links.signIn`. The
+caller cannot tell the two cases apart, so the endpoint does not enumerate
+accounts, which matters once sign-in and forgot-password already conceal.
+`links.signIn` is required in this mode and refused at definition time when
+missing. `"reject"` answers `409 AUTH_EMAIL_TAKEN`; opt in where account
+existence is not sensitive.
 
 ## Proof
 

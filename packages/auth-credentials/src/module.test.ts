@@ -19,6 +19,7 @@ const links = {
   verifyEmail: (token: string) => `https://x.test/v/${token}`,
   resetPassword: (token: string) => `https://x.test/r/${token}`,
   changeEmail: (token: string) => `https://x.test/e/${token}`,
+  signIn: "https://x.test/sign-in",
 };
 
 describe("defineCredentialAuthModule", () => {
@@ -160,25 +161,52 @@ describe("registration and email verification", () => {
     expect(verified.status).toBe(200);
   });
 
-  it("rejects a taken email by default and conceals it when configured", async () => {
+  it("conceals a taken email by default: re-verifies an unverified account and notifies a verified one", async () => {
     const fixture = createFixture();
     await fixture.start();
     await fixture.request("/auth/register", { body: { email: EMAIL, password: PASSWORD } });
-    const taken = await fixture.request("/auth/register", {
+    expect((await fixture.deliverMail()).map((mail) => mail.message)).toEqual(["verifyEmail"]);
+
+    // Unverified duplicate: same 201, the verification link goes out again,
+    // and the original password is what the account keeps.
+    const unverified = await fixture.request("/auth/register", {
+      body: { email: EMAIL, password: "a completely different passphrase" },
+    });
+    expect(unverified.status).toBe(201);
+    const resent = await fixture.deliverMail();
+    expect(resent.map((mail) => mail.message)).toEqual(["verifyEmail"]);
+    expect(
+      (await fixture.request("/auth/verify-email", { body: { token: resent[0]?.token } })).status,
+    ).toBe(200);
+
+    // Verified duplicate: same 201, and the owner gets a notice that links to sign-in.
+    const verified = await fixture.request("/auth/register", {
+      body: { email: EMAIL, password: PASSWORD },
+    });
+    expect(verified.status).toBe(201);
+    const notice = await fixture.deliverMail();
+    expect(notice).toHaveLength(1);
+    expect(notice[0]).toMatchObject({ message: "existingAccount" });
+    expect([notice[0]?.to].flat()).toContain(EMAIL);
+    expect(notice[0]?.url.endsWith("/sign-in")).toBe(true);
+    expect(
+      (await fixture.request("/auth/sign-in", { body: { email: EMAIL, password: PASSWORD } }))
+        .status,
+    ).toBe(200);
+  });
+
+  it("rejects a taken email with 409 when configured, and refuses conceal without a sign-in link", async () => {
+    const rejecting = createFixture({ onExistingEmail: "reject" });
+    await rejecting.start();
+    await rejecting.request("/auth/register", { body: { email: EMAIL, password: PASSWORD } });
+    const taken = await rejecting.request("/auth/register", {
       body: { email: EMAIL, password: PASSWORD },
     });
     expect(taken.status).toBe(409);
     expect(taken.body.error.code).toBe("AUTH_EMAIL_TAKEN");
 
-    const concealed = createFixture({ onExistingEmail: "conceal" });
-    await concealed.start();
-    await concealed.request("/auth/register", { body: { email: EMAIL, password: PASSWORD } });
-    await concealed.deliverMail();
-    const again = await concealed.request("/auth/register", {
-      body: { email: EMAIL, password: PASSWORD },
-    });
-    expect(again.status).toBe(201);
-    expect(await concealed.deliverMail()).toEqual([]);
+    expect(() => createFixture({ signInLink: null })).toThrow(/links\.signIn/u);
+    expect(() => createFixture({ signInLink: null, onExistingEmail: "reject" })).not.toThrow();
   });
 
   it("enforces the password policy on register and reset", async () => {

@@ -22,7 +22,7 @@ import {
 import { createInMemoryJobBackend } from "@sixthsummit/ship-testing/jobs";
 import { z } from "zod";
 import { createRequestClientRegistry } from "../client.js";
-import { scryptPasswordHasher } from "../crypto/password.js";
+import { argon2idPasswordHasher } from "../crypto/password.js";
 import { defineCredentialAuthMailer } from "../mailer.js";
 import { createInMemoryCredentialStore, type InMemoryCredentialStore } from "../memory-store.js";
 import { defineCredentialAuthModule } from "../module.js";
@@ -50,6 +50,8 @@ export interface FixtureOptions {
   readonly rateLimit?: { readonly max: number; readonly windowMs: number };
   readonly resolveActor?: (request: ResolveCredentialActorRequest) => OperationActorInput | null;
   readonly onExistingEmail?: "reject" | "conceal";
+  /** `null` omits `links.signIn` to exercise the construction-time diagnostic. */
+  readonly signInLink?: string | null;
   /** An external store (the PostgreSQL store in the integration test); defaults to in-memory. */
   readonly store?: CredentialStore;
 }
@@ -75,10 +77,13 @@ export function createFixture(options: FixtureOptions = {}) {
       verifyEmail: (token) => `${BASE_URL}/verify/${token}`,
       resetPassword: (token) => `${BASE_URL}/reset/${token}`,
       changeEmail: (token) => `${BASE_URL}/email/${token}`,
+      ...(options.signInLink === null
+        ? {}
+        : { signIn: options.signInLink ?? `${BASE_URL}/sign-in` }),
     },
     secrets: KEY_RING,
-    // Cheap scrypt for tests; production uses the default parameters.
-    hasher: scryptPasswordHasher({ logCost: 10 }),
+    // Cheap argon2id for tests; production uses the default parameters.
+    hasher: argon2idPasswordHasher({ memory: 1024, passes: 1 }),
     policies: {
       ...options.policies,
       ...(options.onExistingEmail ? { onExistingEmail: options.onExistingEmail } : {}),

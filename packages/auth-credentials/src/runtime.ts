@@ -20,6 +20,12 @@ export interface CredentialAuthLinks {
   readonly verifyEmail: (token: string) => string;
   readonly resetPassword: (token: string) => string;
   readonly changeEmail: (token: string) => string;
+  /**
+   * The sign-in page. Required while `onExistingEmail` is `"conceal"` (the
+   * default): the notice sent to an address that already has an account
+   * points here instead of revealing anything to the caller.
+   */
+  readonly signIn?: string;
 }
 
 /** The identity provider every credential session resolves with; its subject is the session id. */

@@ -159,6 +159,7 @@ heading did not mean that every item below was still unreleased.
 
 ### Changed
 
+- `@sixthsummit/ship-auth-credentials` defaults (ADR-0025 amended): argon2id from `node:crypto` replaces scrypt as the password hasher (scrypt hashes still verify and rehash on sign-in), and `onExistingEmail` defaults to `conceal`, with an `existingAccount` mail and a required `links.signIn` in that mode.
 - Prepared framework-only public documentation: removed private application evidence and migration inventories, retained framework ADR decisions and package release entries, and replaced application-derived regression fixtures with synthetic inputs.
 
 - Reframed agent-native development around typed code, compiled invariants, structured diagnostics, and executable tests rather than prompt or skill compliance.

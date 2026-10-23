@@ -1,4 +1,6 @@
 export {
+  type Argon2idPasswordHasherOptions,
+  argon2idPasswordHasher,
   type PasswordHasher,
   type ScryptPasswordHasherOptions,
   scryptPasswordHasher,
