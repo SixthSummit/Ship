@@ -114,10 +114,10 @@ auth-audit panel component for the console.
   unauthenticated account lookup.
 - Mail, rate limiting, migrations and the console reuse their capabilities;
   the package adds no queue, no middleware and no second permission model.
-- **Two-consumer rule:** Tortlink v2 is the first named consumer (its SAPI-227
-  MFA and surface policies become `mfa.required` plus `resolveActor`); its
-  adoption is tracked on its own migration work and does not gate this
-  decision. The second consumer is the Ship reference application planned
+- **Two-consumer rule:** the first named consumer is an existing
+  Firebase-backed product whose MFA and surface policies (SAPI-227) become
+  `mfa.required` plus `resolveActor`; its adoption is tracked on its own
+  migration work and does not gate this decision. The second consumer is the Ship reference application planned
   for after the M12 batteries land, which installs the published packages
   and exercises every battery together. Until it runs, the customized golden
   consumer is the in-repo proof and the package publishes as `0.x`.
