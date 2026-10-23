@@ -8,7 +8,7 @@ export type {
   HonoUnexpectedErrorContext,
   ShipHttpErrorEnvelope,
 } from "./adapter.js";
-export { createHonoAdapter, HonoAdapterError } from "./adapter.js";
+export { createHonoAdapter, GLOBAL_PRE_VALIDATION_POLICY, HonoAdapterError } from "./adapter.js";
 export type {
   HeaderCredential,
   HonoAuthenticationOptions,

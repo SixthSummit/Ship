@@ -178,6 +178,96 @@ describe("createHonoAdapter", () => {
     expect(JSON.stringify(await unavailable.json())).not.toContain("backend secret");
   });
 
+  it("runs the global policy before the operation policy, projects reason denials and merges Set-Cookie", async () => {
+    const guarded = defineOperation({
+      id: "fixtures.guarded",
+      transport: http.post("/guarded"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () =>
+        respond(200, { ok: true as const }, { headers: { "set-cookie": "session=a; HttpOnly" } }),
+    });
+    const other = defineOperation({
+      id: "fixtures.other",
+      transport: http.get("/other"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const application = defineApp({
+      id: "fixture-api",
+      modules: [
+        defineModule({
+          id: "fixtures",
+          operations: [guarded, other],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    const order: string[] = [];
+    const app = createHonoAdapter(application, {
+      preValidationPolicies: {
+        "*": ({ request, operationId }) => {
+          order.push(`global:${operationId}`);
+          if (request.headers.get("x-deny") === "forbidden") {
+            return { allowed: false, reason: "forbidden", message: "CSRF check failed" };
+          }
+          if (request.headers.get("x-deny") === "credential") {
+            return { allowed: false, reason: "invalid-credential" };
+          }
+          return { allowed: true, headers: { "set-cookie": "csrf=b; Path=/", "x-global": "1" } };
+        },
+        "fixtures.guarded": ({ operationId }) => {
+          order.push(`specific:${operationId}`);
+          return { allowed: true, headers: { "x-global": "2" } };
+        },
+      },
+    });
+    const allowed = await app.request("/guarded", { method: "POST" });
+    expect(allowed.status).toBe(200);
+    expect(order).toEqual(["global:fixtures.guarded", "specific:fixtures.guarded"]);
+    expect(allowed.headers.getSetCookie()).toEqual(["session=a; HttpOnly", "csrf=b; Path=/"]);
+    expect(allowed.headers.get("x-global")).toBe("2");
+
+    expect((await app.request("/other")).status).toBe(200);
+    expect(order).toEqual([
+      "global:fixtures.guarded",
+      "specific:fixtures.guarded",
+      "global:fixtures.other",
+    ]);
+
+    const forbidden = await app.request("/guarded", {
+      method: "POST",
+      headers: { "x-deny": "forbidden" },
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toEqual({
+      success: false,
+      error: { code: "AUTHORIZATION_ERROR", message: "CSRF check failed" },
+    });
+    expect(forbidden.headers.get("x-request-id")).toBeTruthy();
+    const unauthenticated = await app.request("/guarded", {
+      method: "POST",
+      headers: { "x-deny": "credential" },
+    });
+    expect(unauthenticated.status).toBe(401);
+    expect(await unauthenticated.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_ERROR", message: "Authentication failed" },
+    });
+  });
+
   it("passes the operation ID to centralized failure projection", async () => {
     const operation = defineOperation({
       id: "fixtures.validation",
