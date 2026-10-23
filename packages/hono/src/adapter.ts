@@ -107,6 +107,55 @@ export type HonoPreValidationPolicy = (
  */
 export const GLOBAL_PRE_VALIDATION_POLICY = "*";
 
+const POLICY_IDS = new WeakMap<HonoPreValidationPolicy, readonly string[]>();
+const POLICY_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/u;
+
+/**
+ * Names a pre-validation policy so a credential adapter's
+ * {@link HonoPolicyRequirement} can recognise it at construction. The id is
+ * the policy's identity, not its configuration: two instances of the same
+ * guard carry the same id.
+ */
+export function definePreValidationPolicy(
+  id: string,
+  policy: HonoPreValidationPolicy,
+): HonoPreValidationPolicy {
+  if (typeof id !== "string" || !POLICY_ID_PATTERN.test(id)) {
+    throw new TypeError(
+      `pre-validation policy id must be a lowercase dot-separated identifier; received ${JSON.stringify(id)}`,
+    );
+  }
+  if (typeof policy !== "function") {
+    throw new TypeError("pre-validation policy must be a function");
+  }
+  const named: HonoPreValidationPolicy = (context) => policy(context);
+  POLICY_IDS.set(named, Object.freeze([...new Set([...preValidationPolicyIds(policy), id])]));
+  return named;
+}
+
+/** The ids a policy carries from `definePreValidationPolicy`; a list carries every member's. */
+export function preValidationPolicyIds(
+  policy: HonoPreValidationPolicy | readonly HonoPreValidationPolicy[] | undefined,
+): readonly string[] {
+  return [...new Set(policyList(policy).flatMap((member) => POLICY_IDS.get(member) ?? []))];
+}
+
+function policyList(
+  entry: HonoPreValidationPolicy | readonly HonoPreValidationPolicy[] | undefined,
+): readonly HonoPreValidationPolicy[] {
+  if (entry === undefined) return [];
+  return typeof entry === "function" ? [entry] : entry;
+}
+
+/**
+ * The policies keyed by operation id or `"*"`. A key may hold one policy or
+ * a list that runs in order: the first refusal wins and the allow headers
+ * accumulate (`Set-Cookie` values are all appended).
+ */
+export type HonoPreValidationPolicies = Readonly<
+  Record<string, HonoPreValidationPolicy | readonly HonoPreValidationPolicy[]>
+>;
+
 export interface CreateHonoAdapterOptions<TCredential = unknown> {
   /** Used only when an incoming X-Request-Id is absent or unsafe to reflect. */
   readonly generateRequestId?: () => string;
@@ -124,9 +173,10 @@ export interface CreateHonoAdapterOptions<TCredential = unknown> {
   /**
    * Operation-id keyed transport policies; never invoked by direct executor
    * runs. The `"*"` key ({@link GLOBAL_PRE_VALIDATION_POLICY}) runs for every
-   * operation before the operation's own policy.
+   * operation before the operation's own policy. A key may hold a list of
+   * policies that run in order.
    */
-  readonly preValidationPolicies?: Readonly<Record<string, HonoPreValidationPolicy>>;
+  readonly preValidationPolicies?: HonoPreValidationPolicies;
   /** Receives unexpected failures after the wire response has been made safe. */
   readonly onUnexpectedError?: (
     error: unknown,
@@ -169,11 +219,26 @@ export function createHonoAdapter<
     const known =
       operationId === GLOBAL_PRE_VALIDATION_POLICY ||
       routes.some((operation) => operation.id === operationId);
-    if (!known || typeof policy !== "function") {
+    const members = typeof policy === "function" ? [policy] : policy;
+    if (
+      !known ||
+      !Array.isArray(members) ||
+      members.length === 0 ||
+      members.some((member) => typeof member !== "function")
+    ) {
       throw new HonoAdapterError(
         "SHIP_HONO_OPTIONS_INVALID",
         `preValidationPolicies contains an unknown operation or invalid policy: ${JSON.stringify(operationId)}`,
       );
+    }
+  }
+  // A credential adapter that reads an ambient credential names the guard it
+  // cannot be used without; a missing guard is a construction failure, not a
+  // production surprise.
+  for (const requirement of options.auth?.credentials.requires ?? []) {
+    const registered = options.preValidationPolicies?.[requirement.key];
+    if (!preValidationPolicyIds(registered).includes(requirement.policyId)) {
+      throw new HonoAdapterError("SHIP_HONO_OPTIONS_INVALID", requirement.message);
     }
   }
   const executor: ApplicationExecutor<CompiledApplication<string, readonly AnyModule[]>> =
@@ -229,9 +294,8 @@ export function createHonoAdapter<
         const policies = [
           options.preValidationPolicies?.[GLOBAL_PRE_VALIDATION_POLICY],
           options.preValidationPolicies?.[operation.id],
-        ];
+        ].flatMap(policyList);
         for (const policy of policies) {
-          if (!policy) continue;
           const decision = await policy({
             request: context.req.raw,
             operationId: operation.id,

@@ -24,7 +24,13 @@ import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createHonoAdapter, HonoAdapterError, serializeFailure } from "./adapter.js";
+import {
+  createHonoAdapter,
+  definePreValidationPolicy,
+  HonoAdapterError,
+  preValidationPolicyIds,
+  serializeFailure,
+} from "./adapter.js";
 import { defineHonoCredentialAdapter, type HonoAuthenticationOptions } from "./auth.js";
 import { http } from "./transport.js";
 
@@ -266,6 +272,100 @@ describe("createHonoAdapter", () => {
     expect(await unauthenticated.json()).toMatchObject({
       error: { code: "AUTHENTICATION_ERROR", message: "Authentication failed" },
     });
+  });
+
+  it("refuses a credential adapter whose required policy is not registered, and accepts a named policy alone or in a list", async () => {
+    const open = defineOperation({
+      id: "fixtures.open",
+      transport: http.post("/open"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const application = defineApp({
+      id: "fixture-api",
+      modules: [
+        defineModule({
+          id: "fixtures",
+          operations: [open],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    const auth: HonoAuthenticationOptions<string | undefined> = {
+      credentials: defineHonoCredentialAdapter<string | undefined>({
+        id: "fixtures.cookie",
+        extract: (request) => request.headers.get("cookie") ?? undefined,
+        requires: [
+          {
+            key: "*",
+            policyId: "fixtures.csrf",
+            message:
+              'fixtures.cookie reads a cookie and requires the fixtures.csrf policy under "*"',
+          },
+        ],
+      }),
+      actors: defineActorResolver<string | undefined>({
+        id: "fixtures.actors",
+        resolve: () => ({ ok: true }),
+      }),
+    };
+    const unnamed = () => ({ allowed: true }) as const;
+    const csrf = definePreValidationPolicy("fixtures.csrf", () => ({
+      allowed: true,
+      headers: { "set-cookie": "csrf=1; Path=/" },
+    }));
+    const other = definePreValidationPolicy("fixtures.other", ({ request }) =>
+      request.headers.get("x-deny") === "1"
+        ? { allowed: false, reason: "forbidden", message: "denied by other" }
+        : { allowed: true, headers: { "set-cookie": "other=1; Path=/", "x-other": "1" } },
+    );
+    expect(preValidationPolicyIds(csrf)).toEqual(["fixtures.csrf"]);
+    expect(preValidationPolicyIds(unnamed)).toEqual([]);
+    expect(() => definePreValidationPolicy("Bad Id", csrf)).toThrow(TypeError);
+
+    const missing = expect.objectContaining({
+      code: "SHIP_HONO_OPTIONS_INVALID",
+      message: expect.stringContaining("requires the fixtures.csrf policy"),
+    });
+    expect(() => createHonoAdapter(application, { auth })).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "*": unnamed } }),
+    ).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "fixtures.open": csrf } }),
+    ).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "*": csrf } }),
+    ).not.toThrow();
+
+    const list = [other, csrf];
+    expect(preValidationPolicyIds(list)).toEqual(["fixtures.other", "fixtures.csrf"]);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "*": [] } }),
+    ).toThrow(expect.objectContaining({ code: "SHIP_HONO_OPTIONS_INVALID" }));
+    const app = createHonoAdapter(application, { auth, preValidationPolicies: { "*": list } });
+    const allowed = await app.request("/open", { method: "POST" });
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.getSetCookie()).toEqual(["other=1; Path=/", "csrf=1; Path=/"]);
+    expect(allowed.headers.get("x-other")).toBe("1");
+    const denied = await app.request("/open", { method: "POST", headers: { "x-deny": "1" } });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ error: { message: "denied by other" } });
+    expect(() =>
+      defineHonoCredentialAdapter({
+        id: "fixtures.bad",
+        extract: () => undefined,
+        requires: [{ key: "*", policyId: "Bad", message: "x" }],
+      }),
+    ).toThrow(TypeError);
   });
 
   it("passes the operation ID to centralized failure projection", async () => {
