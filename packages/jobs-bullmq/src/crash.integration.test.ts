@@ -1,7 +1,7 @@
 import { type PostgresTestDb, setupPostgresTestDb } from "@sixthsummit/ship-testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { spawnChildWorker } from "./__fixtures__/children.js";
+import { type ChildWorker, spawnChildWorker } from "./__fixtures__/children.js";
 import {
   type CrashPoint,
   crashOutboxTable,
@@ -16,6 +16,14 @@ import {
   uniquePrefix,
   waitFor,
 } from "./__fixtures__/redis.js";
+
+/**
+ * Upper bound on recovery. Stall detection (lock 2 s + two 500 ms stalled
+ * checks) and the outbox lease (1 s) put the expected recovery in the single
+ * digits of seconds; the bound is generous because the suite runs alongside
+ * three other Docker-backed files under `--maxWorkers=4`.
+ */
+const RECOVERY_TIMEOUT_MS = 45_000;
 
 /**
  * Crash/restart at the three documented points. The worker child exits with
@@ -50,6 +58,29 @@ describe("crash and restart recovery", () => {
     };
   }
 
+  /** What the recovery predicate sees, for the timeout message. */
+  async function describeRecovery(
+    api: Awaited<ReturnType<typeof createCrashRuntime>>,
+    key: string,
+  ) {
+    const queue = api.backend.queue("crash.write");
+    const [state, counts, failed] = await Promise.all([
+      snapshot(key),
+      queue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
+      queue.getFailed(0, 5),
+    ]);
+    return JSON.stringify({
+      state,
+      counts,
+      failed: failed.map((job) => ({
+        id: job.id,
+        attemptsMade: job.attemptsMade,
+        failedReason: job.failedReason,
+        stalledCounter: job.stalledCounter,
+      })),
+    });
+  }
+
   async function scenario(crashAt: CrashPoint, key: string) {
     const prefix = uniquePrefix(`crash-${crashAt}`);
     const environment = {
@@ -65,46 +96,63 @@ describe("crash and restart recovery", () => {
       crashAt: "none",
       mode: "api",
     });
-    const crashing = spawnChildWorker("crash-child.ts", {
-      ...environment,
-      WORKER_NAME: "crashing",
-      CRASH_AT: crashAt,
-    });
-    await crashing.ready;
-    const accepted = await api.backend.enqueue("crash.write", { key });
-    expect(accepted).toMatchObject({ accepted: true });
-    expect(await crashing.exited).toBe(3);
-    const afterCrash = await snapshot(key);
+    const children: ChildWorker[] = [];
+    try {
+      const crashing = spawnChildWorker("crash-child.ts", {
+        ...environment,
+        WORKER_NAME: "crashing",
+        CRASH_AT: crashAt,
+      });
+      children.push(crashing);
+      await crashing.ready;
+      const accepted = await api.backend.enqueue("crash.write", { key });
+      expect(accepted).toMatchObject({ accepted: true });
+      expect(await crashing.exited).toBe(3);
+      const afterCrash = await snapshot(key);
 
-    const recovering = spawnChildWorker("crash-child.ts", {
-      ...environment,
-      WORKER_NAME: "recovering",
-      CRASH_AT: "none",
-    });
-    await recovering.ready;
-    await waitFor(
-      async () => {
-        const state = await snapshot(key);
-        const counts = await api.backend
-          .queue("crash.write")
-          .getJobCounts("waiting", "active", "delayed");
-        return (
-          state.records === 1 &&
-          state.intents.every((status) => status === "completed") &&
-          state.intents.length === 1 &&
-          counts.waiting === 0 &&
-          counts.active === 0 &&
-          counts.delayed === 0
+      const recovering = spawnChildWorker("crash-child.ts", {
+        ...environment,
+        WORKER_NAME: "recovering",
+        CRASH_AT: "none",
+      });
+      children.push(recovering);
+      await recovering.ready;
+      try {
+        await waitFor(
+          async () => {
+            const state = await snapshot(key);
+            const counts = await api.backend
+              .queue("crash.write")
+              .getJobCounts("waiting", "active", "delayed");
+            return (
+              state.records === 1 &&
+              state.intents.every((status) => status === "completed") &&
+              state.intents.length === 1 &&
+              counts.waiting === 0 &&
+              counts.active === 0 &&
+              counts.delayed === 0
+            );
+          },
+          `${crashAt} recovery`,
+          RECOVERY_TIMEOUT_MS,
+          200,
         );
-      },
-      `${crashAt} recovery`,
-      45_000,
-      200,
-    );
-    const recovered = await snapshot(key);
-    await recovering.stop();
-    await api.stop();
-    return { afterCrash, recovered };
+      } catch (error) {
+        const detail = await describeRecovery(api, key).catch((cause) => `unavailable: ${cause}`);
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}; recovering child ${
+            recovering.process.exitCode === null ? "alive" : `exited ${recovering.process.exitCode}`
+          }; last observed ${detail}`,
+        );
+      }
+      const recovered = await snapshot(key);
+      return { afterCrash, recovered };
+    } finally {
+      // Stop the children before the api so a failed scenario never leaks a
+      // worker that is still connected when `afterAll` stops the containers.
+      await Promise.all(children.map((child) => child.stop()));
+      await api.stop();
+    }
   }
 
   it("rolls back a crash before commit and completes the work once on restart", async () => {

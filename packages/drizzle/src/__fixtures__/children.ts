@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 const fixturesDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(fixturesDirectory, "../..");
+/** How long a child gets to exit on SIGTERM before SIGKILL. */
+const STOP_GRACE_MS = 5_000;
 
 export interface ChildWorker {
   readonly process: ChildProcess;
@@ -44,8 +46,18 @@ export function spawnChildWorker(script: string, env: Record<string, string>): C
     ready,
     exited,
     stop: async () => {
-      if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
-      return exited;
+      if (child.exitCode !== null) return exited;
+      child.kill("SIGTERM");
+      // A child whose graceful shutdown hangs on a dropped connection must not
+      // hold the suite open: escalate so cleanup is bounded.
+      const escalate = setTimeout(() => {
+        if (child.exitCode === null) child.kill("SIGKILL");
+      }, STOP_GRACE_MS);
+      try {
+        return await exited;
+      } finally {
+        clearTimeout(escalate);
+      }
     },
   };
 }
