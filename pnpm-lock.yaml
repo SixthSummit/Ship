@@ -781,6 +781,15 @@ importers:
         specifier: ^4.3.6
         version: 4.5.4
 
+  packages/rich-text:
+    devDependencies:
+      '@sixthsummit/ship-core':
+        specifier: workspace:*
+        version: link:../kernel
+      '@sixthsummit/ship-testing':
+        specifier: workspace:^
+        version: link:../testing
+
   packages/schema-lint:
     dependencies:
       commander:
