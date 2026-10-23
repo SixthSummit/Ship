@@ -412,6 +412,261 @@
     },
     {
       "schema": "public",
+      "name": "ship_storage_intents",
+      "columns": [
+        {
+          "name": "abandoned_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "actor_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "attachment_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "object_id",
+          "type": "uuid",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "size",
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'pending'::text"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_storage_intents_key_unique",
+          "type": "u",
+          "definition": "UNIQUE (key)"
+        },
+        {
+          "name": "ship_storage_intents_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_storage_intents_expiry_idx",
+          "definition": "CREATE INDEX ship_storage_intents_expiry_idx ON public.ship_storage_intents USING btree (expires_at) WHERE (status = 'pending'::text)"
+        },
+        {
+          "name": "ship_storage_intents_key_unique",
+          "definition": "CREATE UNIQUE INDEX ship_storage_intents_key_unique ON public.ship_storage_intents USING btree (key)"
+        },
+        {
+          "name": "ship_storage_intents_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_storage_intents_pkey ON public.ship_storage_intents USING btree (id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_storage_objects",
+      "columns": [
+        {
+          "name": "attached_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "attachment_id",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "owner_id",
+          "type": "text",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "size",
+          "type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "default": "'uploaded'::text"
+        },
+        {
+          "name": "uploaded_by",
+          "type": "text",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "variants",
+          "type": "jsonb",
+          "nullable": false,
+          "default": "'{}'::jsonb"
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_storage_objects_key_unique",
+          "type": "u",
+          "definition": "UNIQUE (key)"
+        },
+        {
+          "name": "ship_storage_objects_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_storage_objects_key_unique",
+          "definition": "CREATE UNIQUE INDEX ship_storage_objects_key_unique ON public.ship_storage_objects USING btree (key)"
+        },
+        {
+          "name": "ship_storage_objects_owner_idx",
+          "definition": "CREATE INDEX ship_storage_objects_owner_idx ON public.ship_storage_objects USING btree (attachment_id, owner_id) WHERE (status = 'attached'::text)"
+        },
+        {
+          "name": "ship_storage_objects_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_storage_objects_pkey ON public.ship_storage_objects USING btree (id)"
+        },
+        {
+          "name": "ship_storage_objects_stale_idx",
+          "definition": "CREATE INDEX ship_storage_objects_stale_idx ON public.ship_storage_objects USING btree (created_at) WHERE (status = 'uploaded'::text)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "ship_storage_purges",
+      "columns": [
+        {
+          "name": "attempts",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "keys",
+          "type": "jsonb",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "object_id",
+          "type": "uuid",
+          "nullable": false,
+          "default": null
+        },
+        {
+          "name": "purged_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null
+        },
+        {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "ship_storage_purges_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (object_id)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ship_storage_purges_pkey",
+          "definition": "CREATE UNIQUE INDEX ship_storage_purges_pkey ON public.ship_storage_purges USING btree (object_id)"
+        }
+      ]
+    },
+    {
+      "schema": "public",
       "name": "ship_webhook_events",
       "columns": [
         {
