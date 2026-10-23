@@ -1,6 +1,7 @@
 import type { OperationActor, OperationActorInput, OperationIdentity } from "./actor.js";
 import { isOperationActor, isOperationIdentity, normalizeOperationActor } from "./actor.js";
 import type { CompiledApplication } from "./application.js";
+import type { AttachmentCapability } from "./attachment.js";
 import { isAttachmentCapability, isAttachmentDependencyToken } from "./attachment.js";
 import type { CacheBackend } from "./cache.js";
 import {
@@ -53,6 +54,7 @@ import {
   createOutboxChannelPublisher,
   findRealtimePublicationOutbox,
 } from "./realtime-publication.js";
+import { isRichTextCapability, isRichTextDependencyToken } from "./rich-text.js";
 import type { RuntimeSchema, SchemaIssue } from "./schema.js";
 import { isTenantScope } from "./tenant.js";
 
@@ -250,6 +252,7 @@ export type OperationExecutionDiagnosticCode =
   | "SHIP_OPERATION_OUTBOX_BACKEND_INVALID"
   | "SHIP_OPERATION_OUTBOX_SCOPE_MISSING"
   | "SHIP_OPERATION_ATTACHMENT_CAPABILITY_INVALID"
+  | "SHIP_OPERATION_RICH_TEXT_CAPABILITY_INVALID"
   | "SHIP_OPERATION_PUBLICATION_OUTBOX_MISSING"
   | "SHIP_OPERATION_CACHE_BACKEND_INVALID"
   | "SHIP_OPERATION_CACHE_KEY_INVALID"
@@ -995,6 +998,51 @@ async function resolveBindings(
       services[name] = capability.withScope(
         typeof scope === "object" && scope !== null ? scope : undefined,
       );
+      continue;
+    }
+    if (isRichTextDependencyToken(token)) {
+      const capability = await resolveProvider(
+        app,
+        operation,
+        token.id,
+        operationProviders,
+        singletonProviders,
+      );
+      if (!isRichTextCapability(capability) || capability.fieldId !== token.fieldId) {
+        throw new OperationExecutionError(
+          "SHIP_OPERATION_RICH_TEXT_CAPABILITY_INVALID",
+          `provider ${JSON.stringify(token.id)} did not create a rich text capability for ${JSON.stringify(token.fieldId)}`,
+          { operationId: operation.id, providerId: token.id },
+        );
+      }
+      const rawScope = scopedCapabilities?.values().next().value;
+      const scope = typeof rawScope === "object" && rawScope !== null ? rawScope : undefined;
+      // Embedded objects are attached and detached through the field's own
+      // attachment capability in the same transaction, so purge follows the
+      // owning record (ADR-0022).
+      let attachments: ReturnType<AttachmentCapability["withScope"]> | undefined;
+      if (capability.attachmentId !== undefined) {
+        const attachmentProviderId = `${capability.attachmentId}.attachment`;
+        const attachmentCapability = await resolveProvider(
+          app,
+          operation,
+          attachmentProviderId,
+          operationProviders,
+          singletonProviders,
+        );
+        if (
+          !isAttachmentCapability(attachmentCapability) ||
+          attachmentCapability.attachmentId !== capability.attachmentId
+        ) {
+          throw new OperationExecutionError(
+            "SHIP_OPERATION_ATTACHMENT_CAPABILITY_INVALID",
+            `provider ${JSON.stringify(attachmentProviderId)} did not create an attachment capability for ${JSON.stringify(capability.attachmentId)}`,
+            { operationId: operation.id, providerId: attachmentProviderId },
+          );
+        }
+        attachments = attachmentCapability.withScope(scope);
+      }
+      services[name] = capability.withScope(scope, attachments);
       continue;
     }
     if (isJobDependencyToken(token)) {

@@ -41,6 +41,7 @@ import {
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
 import { defineMailDelivery, defineMailPreview } from "@sixthsummit/ship-mail";
+import { richTextProvider } from "@sixthsummit/ship-rich-text";
 import {
   createPassthroughImageProcessor,
   defineStorageModule,
@@ -55,6 +56,7 @@ import {
   publishedChannels,
   reportRequested,
 } from "./channels.js";
+import { defineDocumentOperations, documentBody, documentImage } from "./documents.js";
 import type { PaymentEventSink, ReportNotifier } from "./effects.js";
 import { defineReportJobs } from "./jobs.js";
 import { reportsMailer } from "./mail.js";
@@ -614,8 +616,17 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
     authorizeTenant,
     tenantAccessDenied,
   });
+  // Rich text: the portfolio module owns the document body field and the
+  // attachment its embedded images belong to; `save` attaches and detaches
+  // them in the same transaction as the row and `delete` clears them, so
+  // the storage purge outbox removes the bytes exactly when the row goes.
+  const documents = defineDocumentOperations({
+    portfolioUnitOfWork,
+    authorizeTenant,
+    tenantAccessDenied,
+  });
   const storage = defineStorageModule({
-    attachments: [projectPhoto],
+    attachments: [projectPhoto, documentImage],
     adapter: infrastructure.storage,
     ledger: infrastructure.attachmentLedger,
     outbox: infrastructure.purgeOutbox,
@@ -646,12 +657,21 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
   const management = defineJobManagement({ clock });
   const portfolioModule = defineModule({
     id: "portfolio",
-    operations: [summary, photos.attach, photos.remove, photos.list],
+    operations: [
+      summary,
+      photos.attach,
+      photos.remove,
+      photos.list,
+      documents.save,
+      documents.read,
+      documents.remove,
+    ],
     providers: [
       valueProvider(portfolioUnitOfWork, unitOfWork),
       valueProvider(portfolioCache, cache),
       valueProvider(jobBackendDependency(), jobs),
       valueProvider(lockProviderDependency(), locks),
+      richTextProvider(documentBody),
     ],
     imports: [STORAGE_MODULE_ID],
     exports: [
@@ -661,7 +681,8 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       lockProviderDependency(),
     ],
     channels: [projectActivity],
-    attachments: [projectPhoto],
+    attachments: [projectPhoto, documentImage],
+    richText: [documentBody],
   });
   const reportsModule = defineModule({
     id: "reports",
@@ -759,4 +780,4 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
   });
 }
 
-export { projectPhoto };
+export { documentBody, documentImage, projectPhoto };

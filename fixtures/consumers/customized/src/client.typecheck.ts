@@ -84,3 +84,27 @@ async function verifyStorageContract(): Promise<void> {
   if (photos.ok) photos.data.photos[0]?.thumb satisfies string | null | undefined;
 }
 void verifyStorageContract;
+
+// Rich text documents travel as the document model; the typed client never sees HTML on the way in.
+async function verifyRichTextContract(): Promise<void> {
+  const saved = await client.call("portfolio.save-document", {
+    params: { tenantId: "acme", documentId: "doc-1" },
+    body: {
+      title: "Letter",
+      document: { schemaVersion: 1, type: "doc", content: [{ type: "paragraph" }] },
+    },
+  });
+  if (saved.ok) saved.data.attached satisfies readonly string[];
+  // The declared refusal is part of the typed result next to the framework failures.
+  if (!saved.ok) saved.error.code satisfies "DOCUMENT_INVALID" | (string & {});
+  const read = await client.call("portfolio.document", {
+    params: { tenantId: "acme", documentId: "doc-1" },
+  });
+  if (read.ok) read.data.html satisfies string;
+  await client.call("portfolio.save-document", {
+    params: { tenantId: "acme", documentId: "doc-1" },
+    // @ts-expect-error the body carries a document model, not an HTML string
+    body: { title: "Letter", document: "<p>hi</p>" },
+  });
+}
+void verifyRichTextContract;

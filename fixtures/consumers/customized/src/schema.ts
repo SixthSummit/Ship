@@ -10,7 +10,7 @@ import {
   shipStoragePurgesTable,
   shipWebhookEventsTable,
 } from "@sixthsummit/ship-drizzle";
-import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const projects = pgTable("projects", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -37,6 +37,21 @@ export const reportRequests = pgTable("report_requests", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Rich text documents: the sanitized document model (`body`, jsonb) and its
+ * plain-text projection (`body_text`) for search and previews. Embedded
+ * images are `ship_storage_objects` rows owned by `<tenant>/document/<id>`.
+ */
+export const documents = pgTable("documents", {
+  id: uuid("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  title: text("title").notNull(),
+  body: jsonb("body").notNull(),
+  bodyText: text("body_text").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 /** Framework-owned tables the application includes in its own migrations. */
 export const reportsOutboxTable = shipOutboxTable();
 export const idempotencyKeys = shipIdempotencyTable();
@@ -55,6 +70,7 @@ export const portfolioSchema = {
   projects,
   workItems,
   reportRequests,
+  documents,
   reportsOutboxTable,
   idempotencyKeys,
   webhookEventsTable,

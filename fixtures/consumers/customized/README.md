@@ -58,6 +58,18 @@ application exercises:
   `portfolio.photos` over the `@sixthsummit/ship-storage` module: signed upload
   intents, completion fencing, the orphan sweep, a lazily rendered variant, and a
   purge intent that commits with the detachment and is dispatched durably; and
+- a declared rich text field (`portfolio.document-body`, `documents.ts`) over
+  `@sixthsummit/ship-rich-text`: documents are stored as the sanitized document
+  model plus a plain-text projection (`documents.body` / `body_text`), never
+  HTML; the field widens the kernel's versioned base schema with a named
+  `merge-field` extension whose structural spec reaches the client contract
+  while its renderers stay on the server; embedded images are objects of the
+  `portfolio.document-image` attachment that `portfolio.save-document`
+  attaches and detaches in the same transaction as the row, so a dropped image
+  and a deleted document both commit a purge intent and the storage outbox
+  removes the bytes; `portfolio.document` renders HTML with signed URLs
+  resolved at render time; the real-PostgreSQL test proves an embedded image
+  lives exactly as long as the owning row; and
 - the operator console (`@sixthsummit/ship-console`) mounted under `/console/*`
   behind the dedicated `console.operate` slug that only the `sre` role holds:
   the `operator` role, which may replay webhooks, is refused on every console

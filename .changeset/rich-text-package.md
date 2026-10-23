@@ -1,0 +1,5 @@
+---
+"@sixthsummit/ship-rich-text": minor
+---
+
+Initial release of `@sixthsummit/ship-rich-text`: the engine behind `defineRichText`. A hand-written, dependency-free walker over the ProseMirror JSON document validates strictly with path-addressed issues (canonical frozen output, size and depth bounds, U+0000 and lone-surrogate refusal), sanitizes while reporting every drop, renders HTML through one escaped path (https/mailto links only, deterministic mark nesting, render-time signed URLs for embedded objects that are never stored), projects plain text for search and previews and applies declared migrations explicitly. `richTextProvider(field)` binds the capability: `save` attaches newly referenced uploads and detaches dropped ones inside the owning write transaction, `clear` detaches everything on record deletion, so embedded images are purged with the owning record through the storage outbox. `richTextDocumentSchema(field)` validates operation inputs against the field's allowlist and `richTextIssuesSchema()` types the refusal details. The package suite includes an XSS corpus against the renderer.
