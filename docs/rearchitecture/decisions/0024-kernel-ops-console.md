@@ -9,7 +9,7 @@
 
 Rails ships Mission Control Jobs: mount one engine and an operator sees every queue, every job with its arguments and error, retries or discards one or many, pauses a queue, and reads recurring tasks with their next run. The kernel had the durable state (job runs, schedules, webhook receipts, outbox records, realtime channels) and the management operations (`ship.jobs:manage`, `ship.outbox:manage`, `ship.webhooks:replay`), but no operator surface. The consumer with the most queues in the fleet (13 queues, 15 jobs, 6 cron routes) read Cloud Logging when something stuck, recovered backlogs by hand and inspected webhook receipts in SQL.
 
-Three constraints shaped the answer. Every read and mutation must be an operation, so direct execution, HTTP and the generated client share one access policy and one audit trail (ADR-0001, ADR-0004). The console must not widen what an existing role can do: a mount is a default-off addition for every consumer. And the console must not know which adapter is bound: Vault Drive runs BullMQ, Tortlink v2 runs the PostgreSQL job backend, and both must get the same panels.
+Three constraints shaped the answer. Every read and mutation must be an operation, so direct execution, HTTP and the generated client share one access policy and one audit trail (ADR-0001, ADR-0004). The console must not widen what an existing role can do: a mount is a default-off addition for every consumer. And the console must not know which adapter is bound: one named consumer runs BullMQ, another runs the PostgreSQL job backend, and both must get the same panels.
 
 ## Decision
 

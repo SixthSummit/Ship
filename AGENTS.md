@@ -221,6 +221,7 @@ ShipAngular `createResource()` and React Native + Expo + TanStack Query both con
 
 ## Things agents commonly get wrong (v4)
 
+- **Don't name customers or their products** anywhere in this repository: not in docs, ADRs, changelogs, comments, fixtures or tests. The repository is public. Refer to "a consumer", "the first named consumer" or the Linear ticket id instead, and keep adoption evidence in the consumer repositories.
 - **Don't read `process.env` directly** outside `src/environment.ts` / `defineEnv()`. Module + handler code routes through the validated `env` object. Framework code reads env at init-time boundaries only — accepted boundary points: `observability/otel.ts`, `observability/metrics.ts`, `observability/logger.ts` (pretty-print gating), `app/defineEnv.ts`, `app/services/jobs/JobsManager.ts` (worker-mode resolution), `http/utils/authCookies.ts` (cookie-secure gating), `http/app/errors.ts` (dev-stack disclosure gating).
 - **Don't hand-write SQL migrations.** Use `drizzle-kit generate` from schema source. The plugin's PreToolUse hook (`block-migration-edit.sh`) blocks edits to `src/db/migrations/*.sql` to enforce this.
 - **Don't `console.log`** in framework or module code. Use `logger` from `@sixthsummit/ship-api/observability/logger`. console writes lose request-id + trace context.

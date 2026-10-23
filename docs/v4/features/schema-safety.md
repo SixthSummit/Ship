@@ -217,11 +217,11 @@ guard refuses pending migrations, and that an induced hand edit is caught.
 
 ## Consumers
 
-Two named consumers prove the capability. Vault Drive already moved migrations
+Two named consumers prove the capability. The first already moved migrations
 to a gated release step (SAPI-148) and adds the linter and snapshot check to
-that step. Tortlink v2 adopts the preset and the action instead of hand-rolling
-its release step (SAPI-184). AFHC's 134 historical migrations (SAPI-270) are
-the stress test for the `baseline` adoption path. Consumer wiring lives in the
+that step. The second adopts the preset and the action instead of hand-rolling
+its release step (SAPI-184). A third consumer's 134 historical migrations
+(SAPI-270) are the stress test for the `baseline` adoption path. Consumer wiring lives in the
 consumer repositories; this repository ships the package, the action, the
 reference consumer and the evidence.
 
