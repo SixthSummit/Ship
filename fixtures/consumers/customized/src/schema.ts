@@ -1,5 +1,6 @@
 import {
   shipIdempotencyTable,
+  shipMailSendsTable,
   shipOutboxTable,
   shipWebhookEventsTable,
 } from "@sixthsummit/ship-drizzle";
@@ -34,6 +35,7 @@ export const reportRequests = pgTable("report_requests", {
 export const reportsOutboxTable = shipOutboxTable();
 export const idempotencyKeys = shipIdempotencyTable();
 export const webhookEventsTable = shipWebhookEventsTable();
+export const mailSendsTable = shipMailSendsTable();
 
 export const portfolioSchema = {
   projects,
@@ -42,4 +44,5 @@ export const portfolioSchema = {
   reportsOutboxTable,
   idempotencyKeys,
   webhookEventsTable,
+  mailSendsTable,
 };

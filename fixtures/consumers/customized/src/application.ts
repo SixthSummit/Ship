@@ -17,6 +17,11 @@ import {
   jobBackendDependency,
   type LockProvider,
   lockProviderDependency,
+  type MailInterceptor,
+  type MailLedger,
+  type MailProvider,
+  mailLedgerDependency,
+  mailProviderDependency,
   type OutboxBackend,
   operationError,
   operationFailure,
@@ -31,6 +36,7 @@ import {
   type WebhookEventStore,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
+import { defineMailDelivery, defineMailPreview } from "@sixthsummit/ship-mail";
 import { z } from "zod";
 import {
   notificationDelivered,
@@ -40,6 +46,7 @@ import {
 } from "./channels.js";
 import type { PaymentEventSink, ReportNotifier } from "./effects.js";
 import { defineReportJobs } from "./jobs.js";
+import { reportsMailer } from "./mail.js";
 import { paymentSink, paymentsOutbox, reportNotifier, reportsOutbox } from "./outbox.js";
 import { type PortfolioCapabilities, workItemStates } from "./repository.js";
 import {
@@ -135,6 +142,38 @@ const notificationAcceptedSchema = contractSchema(
       properties: {
         accepted: { type: "boolean", const: true },
         adapter: { type: "string" },
+      },
+    },
+  },
+);
+const emailBodySchema = contractSchema(
+  z.object({
+    recipient: z.string().email(),
+    period: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    projectCount: z.number().int().nonnegative(),
+  }),
+  {
+    jsonSchema: {
+      type: "object",
+      required: ["recipient", "period", "projectCount"],
+      properties: {
+        recipient: { type: "string", format: "email" },
+        period: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        projectCount: { type: "integer", minimum: 0 },
+      },
+    },
+  },
+);
+const emailAcceptedSchema = contractSchema(
+  z.object({ accepted: z.literal(true), sendId: z.string(), deduplicated: z.boolean() }),
+  {
+    jsonSchema: {
+      type: "object",
+      required: ["accepted", "sendId", "deduplicated"],
+      properties: {
+        accepted: { type: "boolean", const: true },
+        sendId: { type: "string" },
+        deduplicated: { type: "boolean" },
       },
     },
   },
@@ -236,6 +275,11 @@ const tenantAccessDenied = operationError({
   message: "Tenant access denied",
   details: tenantDeniedDetailsSchema,
 });
+const mailQueueFull = operationError({
+  code: "MAIL_QUEUE_FULL",
+  status: 503,
+  message: "Mail delivery queue is full; retry later",
+});
 
 const portfolioUnitOfWork = unitOfWorkDependency<PortfolioCapabilities>("database.portfolio");
 const idempotencyStore = idempotencyStoreDependency("platform.idempotency");
@@ -309,6 +353,10 @@ export interface CustomizedInfrastructure {
   readonly webhookSecrets: WebhookSecrets;
   readonly jobs: JobBackend;
   readonly locks: LockProvider;
+  /** Transactional mail: the provider adapter, the send ledger and the non-production guard. */
+  readonly mailProvider: MailProvider;
+  readonly mailLedger: MailLedger;
+  readonly mailInterceptor?: MailInterceptor;
   /** Tenants the scheduled digest job fans out to. */
   readonly scheduledTenants?: readonly string[];
   readonly digestRecipient?: string;
@@ -494,6 +542,42 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       return { tenantId: scope.tenantId, steps: total };
     },
   });
+  // Transactional mail: `reports.email` enqueues `mail.deliver` through the
+  // typed sender; the job renders, claims the ledger row and calls the
+  // provider once per idempotency key. The interceptor is only bound outside
+  // production so staging never emails a real customer.
+  const mail = defineMailDelivery({
+    mailers: [reportsMailer],
+    ...(infrastructure.mailInterceptor ? { interceptor: infrastructure.mailInterceptor } : {}),
+    clock,
+  });
+  const mailPreview = defineMailPreview({ mailers: [reportsMailer] });
+  const email = defineOperation({
+    id: "reports.email",
+    transport: http.post("/tenants/:tenantId/report-emails"),
+    input: { params: tenantParamsSchema, body: emailBodySchema },
+    output: { 202: emailAcceptedSchema },
+    successStatus: 202,
+    errors: [tenantAccessDenied, mailQueueFull],
+    access: permission("reports:notify"),
+    transaction: "none",
+    dependencies: { mail: mail.dependency },
+    handler: async ({ input, services, context }) => {
+      const scope = await authorizeTenant(input.params.tenantId, context);
+      const sent = await services.mail.send(reportsMailer, "digestReady", {
+        to: input.body.recipient,
+        payload: {
+          tenantId: scope.tenantId,
+          period: input.body.period,
+          projectCount: input.body.projectCount,
+        },
+        idempotencyKey: `digest-email:${scope.tenantId}:${input.body.period}:${input.body.recipient}`,
+        tenantId: scope.tenantId,
+      });
+      if (!sent.accepted) throw operationFailure(mailQueueFull);
+      return { accepted: true as const, sendId: sent.sendId, deduplicated: sent.deduplicated };
+    },
+  });
   const reportJobs = defineReportJobs({
     scheduledTenants,
     recipient: infrastructure.digestRecipient ?? "reports@example.test",
@@ -535,6 +619,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       notify,
       request,
       progress,
+      email,
       ...dispatcher.operations,
       reportJobs.deliver,
       reportJobs.digest,
@@ -547,6 +632,17 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
     imports: ["portfolio", "ship-cache", REALTIME_PUBLICATION_MODULE_ID],
     exports: [idempotencyStore, reportsOutbox.writer],
     channels: [notificationDelivered, reportRequested],
+    mailers: [reportsMailer],
+  });
+  const mailModule = defineModule({
+    id: "mail",
+    operations: [mail.job, ...mailPreview.operations],
+    providers: [
+      valueProvider(mailProviderDependency(), infrastructure.mailProvider),
+      valueProvider(mailLedgerDependency(), infrastructure.mailLedger),
+    ],
+    imports: ["portfolio"],
+    exports: [],
   });
   const paymentsModule = defineModule({
     id: "payments",
@@ -588,6 +684,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       paymentsModule,
       messagingModule,
       jobsModule,
+      mailModule,
     ],
     runtime: { workers: { mode: "api" } },
   });

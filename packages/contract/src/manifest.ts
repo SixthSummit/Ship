@@ -31,6 +31,16 @@ export interface ClientContract {
   readonly operations: readonly ClientContractOperation[];
   /** Declared realtime channels keyed by id. Carries no transport detail. Absent in pre-realtime manifests. */
   readonly channels?: Readonly<Record<string, ClientContractChannel>>;
+  /**
+   * Declared mailers keyed by id, with message names only. Templates, sender
+   * addresses and payload schemas never reach the client. Absent when the
+   * application declares no mailer, so older manifests keep their fingerprint.
+   */
+  readonly mailers?: Readonly<Record<string, ClientContractMailer>>;
+}
+
+export interface ClientContractMailer {
+  readonly messages: readonly string[];
 }
 
 export type ClientContractChannelScope = "actor" | "tenant" | "resource";
