@@ -1,12 +1,18 @@
 import type {
+  AttachmentLedger,
   IdempotencyStore,
+  JobBackend,
+  MailLedger,
   OutboxBackend,
   UnitOfWork,
   WebhookEventStore,
 } from "@sixthsummit/ship-core";
 import { cacheInvalidationOutbox, defineRealtimePublicationOutbox } from "@sixthsummit/ship-core";
 import {
+  createDrizzleAttachmentLedger,
   createDrizzleIdempotencyStore,
+  createDrizzleJobBackend,
+  createDrizzleMailLedger,
   createDrizzleOutbox,
   createDrizzleUnitOfWork,
   createDrizzleWebhookEventStore,
@@ -15,6 +21,7 @@ import {
   type TenantRepositoryFactory,
   tenantPredicate,
 } from "@sixthsummit/ship-drizzle";
+import { defineStoragePurgeOutbox } from "@sixthsummit/ship-storage";
 // This file is the consumer-owned data-access boundary; raw operators do not escape it.
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
@@ -23,10 +30,17 @@ import { publishedChannels } from "./channels.js";
 import { paymentsOutbox, reportsOutbox } from "./outbox.js";
 import {
   idempotencyKeys,
+  jobControl,
+  jobRuns,
+  jobState,
+  mailSendsTable,
   type portfolioSchema,
   projects,
   reportRequests,
   reportsOutboxTable,
+  storageIntents,
+  storageObjects,
+  storagePurges,
   webhookEventsTable,
   workItems,
 } from "./schema.js";
@@ -112,10 +126,56 @@ export function createWebhookEventStore(
   });
 }
 
+/**
+ * The PostgreSQL job backend with the opt-in control table, so the ops
+ * console can pause a job durably where every worker process sees it.
+ */
+export function createJobBackend(
+  database: NodePgDatabase<typeof portfolioSchema>,
+  options: { readonly pollIntervalMs?: number; readonly clock?: () => Date } = {},
+): JobBackend & { readonly lockProvider: import("@sixthsummit/ship-core").LockProvider } {
+  return createDrizzleJobBackend({
+    database,
+    table: jobRuns,
+    stateTable: jobState,
+    controlTable: jobControl,
+    ...options,
+  });
+}
+
+/**
+ * Object purge intents share the outbox table too; the purge ledger rows live
+ * in the three storage tables included in the migrations.
+ */
+export function createStoragePurgeOutbox(
+  database: NodePgDatabase<typeof portfolioSchema>,
+): OutboxBackend {
+  return createDrizzleOutbox({
+    outbox: defineStoragePurgeOutbox(),
+    database,
+    table: reportsOutboxTable,
+  });
+}
+
+export function createAttachmentLedger(
+  database: NodePgDatabase<typeof portfolioSchema>,
+): AttachmentLedger {
+  return createDrizzleAttachmentLedger({
+    database,
+    intents: storageIntents,
+    objects: storageObjects,
+    purges: storagePurges,
+  });
+}
+
 export function createIdempotencyStore(
   database: NodePgDatabase<typeof portfolioSchema>,
 ): IdempotencyStore {
   return createDrizzleIdempotencyStore({ database, table: idempotencyKeys });
+}
+
+export function createMailLedger(database: NodePgDatabase<typeof portfolioSchema>): MailLedger {
+  return createDrizzleMailLedger({ database, table: mailSendsTable });
 }
 
 export function createPortfolioUnitOfWork(

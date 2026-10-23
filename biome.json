@@ -16,6 +16,8 @@
       "!!apps/docs/.astro",
       "!!packages/*/templates",
       "!!pnpm-lock.yaml",
+      "!!**/drizzle/meta",
+      "!!**/schema.snapshot.json",
       "!!angular",
       "!!packages/angular",
       "!!apps/angular-docs"

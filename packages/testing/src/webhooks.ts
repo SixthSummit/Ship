@@ -3,6 +3,7 @@ import type {
   WebhookEventCleanupRequest,
   WebhookEventCleanupResult,
   WebhookEventInput,
+  WebhookEventQuery,
   WebhookEventStore,
   WebhookVerifier,
 } from "@sixthsummit/ship-core";
@@ -65,6 +66,18 @@ export function createInMemoryWebhookEventStore(
   const read = async (eventId: string): Promise<StoredWebhookEvent | undefined> =>
     rows.get(eventId);
 
+  const list = async (query: WebhookEventQuery): Promise<readonly StoredWebhookEvent[]> =>
+    Object.freeze(
+      [...rows.values()]
+        .filter(
+          (event) =>
+            (query.webhookId === undefined || event.webhookId === query.webhookId) &&
+            (query.before === undefined || event.receivedAt.getTime() < query.before.getTime()),
+        )
+        .sort((left, right) => right.receivedAt.getTime() - left.receivedAt.getTime())
+        .slice(0, query.limit),
+    );
+
   const cleanup = async (
     request: WebhookEventCleanupRequest,
   ): Promise<WebhookEventCleanupResult> => {
@@ -92,6 +105,7 @@ export function createInMemoryWebhookEventStore(
     record,
     link,
     read,
+    list,
     cleanup,
     events: () =>
       Object.freeze(

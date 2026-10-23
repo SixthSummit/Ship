@@ -1,7 +1,14 @@
 import { createHttpOperationClient } from "@sixthsummit/ship-contract";
 import type { ApplicationContractOf } from "@sixthsummit/ship-contract/application";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
-import { createExecutor, systemActor, webhookSecret } from "@sixthsummit/ship-core";
+import {
+  createExecutor,
+  createExecutor as createRuntimeExecutor,
+  startJobRuntime,
+  systemActor,
+  webhookSecret,
+} from "@sixthsummit/ship-core";
+import { logMailProvider } from "@sixthsummit/ship-mail";
 import { createInMemoryRealtimeBackend } from "@sixthsummit/ship-testing";
 import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import {
@@ -10,6 +17,7 @@ import {
   runJobOnce,
 } from "@sixthsummit/ship-testing/jobs";
 import { type PostgresTestDb, setupPostgresTestDb } from "@sixthsummit/ship-testing/postgres";
+import { createInMemoryStorageAdapter } from "@sixthsummit/ship-testing/storage";
 import { stripeSignatureHeader } from "@sixthsummit/ship-webhooks/stripe";
 import { twilioSignatureHeader } from "@sixthsummit/ship-webhooks/twilio";
 import { sql } from "drizzle-orm";
@@ -19,20 +27,28 @@ import type { SessionDirectory } from "./auth.js";
 import type { PaymentEventSink, ReportNotifier } from "./effects.js";
 import { createCustomizedHttpApplication } from "./http.js";
 import {
+  createAttachmentLedger,
   createCacheInvalidationOutbox,
   createIdempotencyStore,
+  createJobBackend,
+  createMailLedger,
   createPaymentsOutbox,
   createPortfolioUnitOfWork,
   createRealtimePublicationOutbox,
   createReportsOutbox,
+  createStoragePurgeOutbox,
   createWebhookEventStore,
 } from "./repository.js";
 import {
   idempotencyKeys,
+  mailSendsTable,
   portfolioSchema,
   projects,
   reportRequests,
   reportsOutboxTable,
+  storageIntents,
+  storageObjects,
+  storagePurges,
   webhookEventsTable,
   workItems,
 } from "./schema.js";
@@ -51,6 +67,9 @@ const sessions: SessionDirectory = {
     if (token === "operator-token") {
       return { actorId: "operator", role: "operator", tenants: [] };
     }
+    if (token === "sre-token") {
+      return { actorId: "sre", role: "sre", tenants: [] };
+    }
     return undefined;
   },
 };
@@ -62,10 +81,12 @@ describe("customized packed application", () => {
   const realtime = createInMemoryRealtimeBackend({ channels: publishedChannels });
   const record = vi.fn(async () => undefined);
   const paymentSink: PaymentEventSink = { adapter: "recording", record };
+  const mailProvider = logMailProvider();
   const stripeSecret = "whsec_integration";
   const twilioToken = "twilio-auth-token";
   /** Real time plus a test-controlled offset so dispatch and retention share one clock. */
   const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
   const infrastructure = () => ({
     unitOfWork: createPortfolioUnitOfWork(database.db),
     notifier,
@@ -82,6 +103,12 @@ describe("customized packed application", () => {
     clock: clock.now,
     jobs: createInMemoryJobBackend(),
     locks: createInMemoryLockProvider(),
+    storage,
+    attachmentLedger: createAttachmentLedger(database.db),
+    purgeOutbox: createStoragePurgeOutbox(database.db),
+    unattachedGraceMs: 60_000,
+    mailProvider,
+    mailLedger: createMailLedger(database.db),
     scheduledTenants: ["acme"],
   });
 
@@ -546,6 +573,130 @@ describe("customized packed application", () => {
     await expect(response.text()).resolves.toBe("");
   });
 
+  it("retries a dead-lettered PostgreSQL job run and replays a receipt from the console over HTTP", async () => {
+    const jobs = createJobBackend(database.db, { pollIntervalMs: 25 });
+    const { application, http } = createCustomizedHttpApplication(
+      { ...infrastructure(), jobs, locks: jobs.lockProvider },
+      sessions,
+    );
+    const runtime = await startJobRuntime(application, { backend: jobs, mode: "worker" });
+    try {
+      // "gamma" is not an enrolled tenant: the declared failure is final and dead-letters at once.
+      const accepted = await jobs.enqueue("reports.deliver", {
+        tenantId: "gamma",
+        period: "2026-10-22",
+      });
+      if (!accepted.accepted) throw new Error("rejected");
+      const failedRuns = () =>
+        http.request("/console/jobs/runs?status=failed&jobId=reports.deliver", {
+          headers: { authorization: "ShipSession sre-token" },
+        });
+      const deadline = Date.now() + 15_000;
+      let listed: { runs: { runId: string; attempts: number }[] } = { runs: [] };
+      while (listed.runs.length === 0 && Date.now() < deadline) {
+        listed = (await (await failedRuns()).json()) as typeof listed;
+        if (listed.runs.length === 0) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(listed.runs).toMatchObject([{ runId: accepted.runId, attempts: 1 }]);
+
+      // The operator role (replay + read) is refused; only the SRE role holds console.operate.
+      const refused = await http.request("/console/jobs/retry", {
+        method: "POST",
+        headers: {
+          authorization: "ShipSession operator-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ runId: accepted.runId }),
+      });
+      expect(refused.status).toBe(403);
+      const retried = await http.request("/console/jobs/retry", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ runId: accepted.runId }),
+      });
+      expect(retried.status).toBe(200);
+      await expect(retried.json()).resolves.toMatchObject({ run: { status: "waiting" } });
+      let again: { runs: { attempts: number }[] } = { runs: [] };
+      const retryDeadline = Date.now() + 15_000;
+      while ((again.runs[0]?.attempts ?? 0) < 2 && Date.now() < retryDeadline) {
+        again = (await (await failedRuns()).json()) as typeof again;
+        if ((again.runs[0]?.attempts ?? 0) < 2)
+          await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(again.runs[0]?.attempts).toBe(2);
+
+      // Durable pause through the control table, then resume.
+      const paused = await http.request("/console/jobs/pause", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ jobId: "reports.deliver" }),
+      });
+      expect(paused.status).toBe(200);
+      const overview = await http.request("/console/jobs", {
+        headers: { authorization: "ShipSession sre-token" },
+      });
+      await expect(overview.json()).resolves.toMatchObject({
+        capabilities: { adapter: "drizzle", pause: true },
+        jobs: expect.arrayContaining([
+          expect.objectContaining({ jobId: "reports.deliver", paused: true, failed: 1 }),
+        ]),
+      });
+      await http.request("/console/jobs/resume", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ jobId: "reports.deliver" }),
+      });
+
+      // A stored Stripe receipt is listed with its spawned record and replayed by the SRE.
+      const body = '{"id":"evt_console_1","type":"invoice.paid","data":{"object":{"amount":5}}}';
+      const signature = await stripeSignatureHeader({ secret: stripeSecret, rawBody: body });
+      const delivered = await http.request("/webhooks/stripe", {
+        method: "POST",
+        headers: { "content-type": "application/json", "stripe-signature": signature },
+        body,
+      });
+      const { eventId } = (await delivered.json()) as { eventId: string };
+      const executor = createRuntimeExecutor(application);
+      await executor.run("payments.outbox.dispatch", {}, { actor: systemActor({ id: "worker" }) });
+      const receipts = await http.request(
+        "/console/webhooks/receipts?webhookId=payments.stripe-webhook&limit=10",
+        { headers: { authorization: "ShipSession sre-token" } },
+      );
+      expect(receipts.status).toBe(200);
+      await expect(receipts.json()).resolves.toMatchObject({
+        capabilities: { list: true, dispatch: true },
+        receipts: [
+          {
+            eventId,
+            providerEventId: "evt_console_1",
+            verification: "verified",
+            dispatch: { outboxId: "payments.outbox", status: "completed" },
+          },
+        ],
+      });
+      const replayed = await http.request(`/console/webhooks/receipts/${eventId}/replay`, {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token" },
+      });
+      expect(replayed.status).toBe(200);
+      await expect(replayed.json()).resolves.toMatchObject({ eventId, queued: true });
+      const forbidden = await http.request(`/console/webhooks/receipts/${eventId}/replay`, {
+        method: "POST",
+        headers: { authorization: "ShipSession operator-token" },
+      });
+      expect(forbidden.status).toBe(403);
+      const records = await http.request(
+        "/console/outbox/records?outboxId=payments.outbox&status=pending",
+        { headers: { authorization: "ShipSession sre-token" } },
+      );
+      await expect(records.json()).resolves.toMatchObject({
+        records: [{ intentId: "process-webhook", status: "pending" }],
+      });
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   it("runs the enqueued delivery job against PostgreSQL: one request row and one intent per period", async () => {
     const { application } = createCustomizedHttpApplication(infrastructure(), sessions);
     const executor = createExecutor(application);
@@ -566,5 +717,202 @@ describe("customized packed application", () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ subject: "Digest for 2026-09-18" }),
     );
+  });
+  it("sends transactional mail once per idempotency key with one ledger row and one provider call", async () => {
+    const infra = infrastructure();
+    const { application, http } = createCustomizedHttpApplication(infra, sessions);
+    await startJobRuntime(application, { backend: infra.jobs, mode: "api" });
+    const executor = createExecutor(application);
+    const post = () =>
+      http.request("/tenants/acme/report-emails", {
+        method: "POST",
+        headers: {
+          authorization: "ShipSession publisher-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          recipient: "owner@real-customer.example",
+          period: "2026-09-18",
+          projectCount: 2,
+        }),
+      });
+    const first = await post();
+    expect(first.status).toBe(202);
+    await expect(first.json()).resolves.toMatchObject({ accepted: true, deduplicated: false });
+    await expect((await post()).json()).resolves.toMatchObject({ deduplicated: true });
+
+    await expect(infra.jobs.drain()).resolves.toEqual({ executed: 1, completed: 1, failed: 0 });
+    const replay = await runJobOnce(application, "mail.deliver", infra.jobs.runs()[0]?.input, {
+      executor,
+    });
+    expect(replay).toMatchObject({ ok: true, data: { status: "duplicate", attempt: 1 } });
+    // A later send with the same key enqueues again (the first run is terminal) and is
+    // still answered from the ledger.
+    await expect((await post()).json()).resolves.toMatchObject({ deduplicated: false });
+    await expect(infra.jobs.drain()).resolves.toEqual({ executed: 1, completed: 1, failed: 0 });
+
+    expect(mailProvider.sent()).toHaveLength(1);
+    expect(mailProvider.sent()[0]?.envelope.subject).toBe("Portfolio digest for 2026-09-18");
+    const rows = await database.db.select().from(mailSendsTable);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      idempotencyKey: "digest-email:acme:2026-09-18:owner@real-customer.example",
+      mailerId: "reports.mailer",
+      message: "digestReady",
+      recipients: ["owner@real-customer.example"],
+      status: "sent",
+      attempts: 1,
+      provider: "log",
+      tenantId: "acme",
+    });
+    await expect(
+      infra.mailLedger.list({ recipient: "owner@real-customer.example", limit: 10 }),
+    ).resolves.toHaveLength(1);
+  });
+});
+
+describe("customized managed storage against PostgreSQL", () => {
+  let database: PostgresTestDb<typeof portfolioSchema>;
+  const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
+  const projectId = acmeProjectId;
+
+  beforeAll(async () => {
+    database = await setupPostgresTestDb(portfolioSchema);
+  });
+
+  afterAll(async () => {
+    await database.cleanup();
+  });
+
+  function build() {
+    const infrastructure = {
+      unitOfWork: createPortfolioUnitOfWork(database.db),
+      notifier: { adapter: "recording", send: vi.fn(async () => undefined) } as ReportNotifier,
+      outbox: createReportsOutbox(database.db),
+      idempotency: createIdempotencyStore(database.db),
+      cache: createInMemoryCacheBackend(),
+      cacheOutbox: createCacheInvalidationOutbox(database.db),
+      realtime: createInMemoryRealtimeBackend({ channels: publishedChannels }),
+      realtimeOutbox: createRealtimePublicationOutbox(database.db),
+      paymentSink: {
+        adapter: "recording",
+        record: vi.fn(async () => undefined),
+      } as PaymentEventSink,
+      paymentsOutbox: createPaymentsOutbox(database.db),
+      webhookEvents: createWebhookEventStore(database.db),
+      webhookSecrets: { stripe: webhookSecret("whsec_x"), twilio: webhookSecret("twilio") },
+      clock: clock.now,
+      jobs: createInMemoryJobBackend(),
+      locks: createInMemoryLockProvider(),
+      storage,
+      attachmentLedger: createAttachmentLedger(database.db),
+      purgeOutbox: createStoragePurgeOutbox(database.db),
+      unattachedGraceMs: 60_000,
+      mailProvider: logMailProvider(),
+      mailLedger: createMailLedger(database.db),
+      scheduledTenants: ["acme"],
+    };
+    const { application, http } = createCustomizedHttpApplication(infrastructure, sessions);
+    const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
+      projectClientContract(application),
+      {
+        baseUrl: "https://golden.example.test",
+        headers: { authorization: "ShipSession publisher-token" },
+        fetch: async (input, init) => http.request(input, init),
+      },
+    );
+    return { application, http, client, infrastructure };
+  }
+
+  it("commits the detachment and the purge intent together, then deletes the object on dispatch", async () => {
+    const { application, client } = build();
+    const bytes = new TextEncoder().encode("png-bytes");
+    const intent = await client.call("ship-storage.create-intent", {
+      body: { attachment: "portfolio.photo", contentType: "image/png", size: bytes.byteLength },
+    });
+    expect(intent).toMatchObject({ ok: true, status: 201 });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    expect(complete).toMatchObject({ ok: true, status: 200 });
+    if (!complete.ok) throw new Error("completion failed");
+    expect(await database.db.select().from(storageObjects)).toMatchObject([
+      { id: complete.data.objectId, status: "uploaded", attachmentId: "portfolio.photo" },
+    ]);
+
+    const attached = await client.call("portfolio.attach-photo", {
+      params: { tenantId: "acme", projectId },
+      body: { objectId: complete.data.objectId },
+    });
+    expect(attached).toMatchObject({ ok: true, status: 201, data: { count: 1 } });
+    expect(await database.db.select().from(storageObjects)).toMatchObject([
+      { status: "attached", ownerId: `acme/${projectId}` },
+    ]);
+
+    const removed = await client.call("portfolio.remove-photo", {
+      params: { tenantId: "acme", projectId, objectId: complete.data.objectId },
+    });
+    expect(removed).toMatchObject({ ok: true, data: { removed: true } });
+    const purgeRows = await database.db.select().from(storagePurges);
+    expect(purgeRows).toMatchObject([{ objectId: complete.data.objectId, purgedAt: null }]);
+    const purgeIntents = (await database.db.select().from(reportsOutboxTable)).filter(
+      (row) => row.outboxId === "ship-storage.purge",
+    );
+    expect(purgeIntents).toMatchObject([
+      {
+        intentId: "purge-object",
+        status: "pending",
+        payload: { objectId: complete.data.objectId },
+      },
+    ]);
+    expect(storage.keys()).toEqual([intent.data.objectKey]);
+
+    const executor = createExecutor(application);
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { claimed: 1, completed: 1 } });
+    expect(storage.keys()).toEqual([]);
+    expect(await database.db.select().from(storagePurges)).toMatchObject([
+      { objectId: complete.data.objectId, attempts: 1 },
+    ]);
+    expect((await database.db.select().from(storagePurges))[0]?.purgedAt).not.toBeNull();
+    // A replayed dispatch finds nothing to claim and the purge row unchanged.
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { claimed: 0 } });
+  });
+
+  it("abandons an induced orphan intent on sweep and fences its late completion", async () => {
+    const { application, client } = build();
+    const intent = await client.call("ship-storage.create-intent", {
+      body: { attachment: "portfolio.photo", contentType: "image/webp", size: 4 },
+    });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(
+      await storage.upload(
+        intent.data.upload.url,
+        new TextEncoder().encode("webp"),
+        intent.data.upload.headers,
+      ),
+    ).toBe(200);
+    clock.offsetMs += 16 * 60_000;
+    const executor = createExecutor(application);
+    await expect(
+      runJobOnce(application, "ship-storage.sweep", {}, { executor }),
+    ).resolves.toMatchObject({ ok: true, data: { abandoned: 1 } });
+    expect(await database.db.select().from(storageIntents)).toContainEqual(
+      expect.objectContaining({ id: intent.data.intentId, status: "abandoned" }),
+    );
+    expect(storage.keys()).not.toContain(intent.data.objectKey);
+    const late = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    expect(late).toMatchObject({ ok: false, status: 410, error: { code: "INTENT_EXPIRED" } });
+    clock.offsetMs = 0;
   });
 });

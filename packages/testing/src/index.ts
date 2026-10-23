@@ -63,6 +63,18 @@ export {
   realtimeBackendConformance,
 } from "./realtime.js";
 export {
+  createInMemoryAttachmentLedger,
+  createInMemoryStorageAdapter,
+  type InMemoryAttachmentLedger,
+  type InMemoryStorageAdapter,
+  type InMemoryStorageAdapterOptions,
+  runStorageAdapterConformance,
+  type StorageAdapterConformanceOptions,
+  type StorageConformanceCheck,
+  StorageConformanceError,
+  storageAdapterConformance,
+} from "./storage.js";
+export {
   createInMemoryWebhookEventStore,
   type FakeWebhookProvider,
   type FakeWebhookProviderOptions,

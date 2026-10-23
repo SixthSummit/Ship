@@ -1,7 +1,9 @@
 import {
+  type AttachmentCapability,
   cacheBackendDependency,
   channelPublisherProvider,
   defineApp,
+  defineAttachment,
   defineChannel,
   defineModule,
   defineOperation,
@@ -13,6 +15,7 @@ import {
   publicAccess,
   type RealtimePublishBackend,
   type RuntimeSchema,
+  STORAGE_MODULE_ID,
   valueProvider,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
@@ -562,5 +565,89 @@ describe("projectClientContract cache policy", () => {
       ],
     });
     expect(projectClientContract(app).operations[0]).not.toHaveProperty("cache");
+  });
+});
+
+describe("projectClientContract attachments", () => {
+  it("projects the upload policy of declared attachments without provider detail", () => {
+    const photo = defineAttachment({
+      id: "gallery.photo",
+      cardinality: "many",
+      contentTypes: ["image/png", "image/jpeg"],
+      maxBytes: 5_000_000,
+      visibility: "private",
+      maxCount: 12,
+      variants: { thumb: { width: 200, height: 200, fit: "cover", format: "webp" } },
+    });
+    const capability: AttachmentCapability = {
+      kind: "ship.attachment-capability",
+      attachmentId: photo.id,
+      withScope: () => {
+        throw new Error("unused");
+      },
+    };
+    const add = defineOperation({
+      id: "gallery.add",
+      transport: http.post("/gallery/:ownerId/photos"),
+      input: {
+        params: z.object({ ownerId: z.string() }),
+        body: z.object({ objectId: z.string().uuid() }),
+      },
+      output: { 201: z.object({ attached: z.literal(true) }) },
+      successStatus: 201,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: { photos: photo.binding },
+      attachments: [photo],
+      handler: () => ({ attached: true as const }),
+    });
+    const app = defineApp({
+      id: "contract-attachments",
+      modules: [
+        defineModule({
+          id: "gallery",
+          operations: [add],
+          providers: [],
+          imports: [STORAGE_MODULE_ID],
+          exports: [],
+          attachments: [photo],
+        }),
+        defineModule({
+          id: STORAGE_MODULE_ID,
+          operations: [],
+          providers: [valueProvider(photo.binding, capability)],
+          imports: [],
+          exports: [photo.binding],
+        }),
+      ],
+    });
+
+    const contract = projectClientContract(app);
+    expect(contract.attachments).toEqual({
+      "gallery.photo": {
+        cardinality: "many",
+        contentTypes: ["image/jpeg", "image/png"],
+        maxBytes: 5_000_000,
+        visibility: "private",
+        maxCount: 12,
+        variants: ["thumb"],
+      },
+    });
+    expect(contract.operations[0]?.attachments).toEqual(["gallery.photo"]);
+    const serialized = JSON.stringify(contract);
+    for (const forbidden of ["providerId", "intentTtlMs", "gallery.photo.attachment", "disk"]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    const withoutAttachments = projectClientContract(
+      defineApp({
+        id: "contract-attachments",
+        modules: [
+          defineModule({ id: "gallery", operations: [], providers: [], imports: [], exports: [] }),
+        ],
+      }),
+    );
+    expect(withoutAttachments.attachments).toEqual({});
+    expect(withoutAttachments.fingerprint).not.toBe(contract.fingerprint);
   });
 });

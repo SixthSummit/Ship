@@ -22,6 +22,7 @@ import { createInMemoryOutbox } from "./outbox.js";
 import {
   collectPublishes,
   conformanceChannels,
+  conformanceTenantScopes,
   createInMemoryRealtimeBackend,
   drainRealtimePublications,
   realtimeBackendConformance,
@@ -76,6 +77,55 @@ describe("createInMemoryRealtimeBackend", () => {
       ),
     ).toEqual({ ok: false, reason: "unavailable" });
     await backend.unsubscribe("missing");
+  });
+});
+
+describe("in-memory realtime introspection", () => {
+  it("reports subscriber and scope counts per channel and the last publish", async () => {
+    const backend = createInMemoryRealtimeBackend({
+      channels: [conformanceChannels.feed, conformanceChannels.room],
+      tenantScopes: conformanceTenantScopes,
+    });
+    expect(await backend.introspection?.channels()).toEqual([
+      { channelId: "conformance.feed", subscribers: 0, scopes: 0 },
+      { channelId: "conformance.room", subscribers: 0, scopes: 0 },
+    ]);
+    await backend.subscribe(
+      {
+        channelId: "conformance.feed",
+        scopeKey: "alice",
+        actor: operationActor({ id: "alice" }),
+        connectionId: "c1",
+        requestId: "r",
+      },
+      () => undefined,
+    );
+    await backend.subscribe(
+      {
+        channelId: "conformance.feed",
+        scopeKey: "bob",
+        actor: operationActor({ id: "bob" }),
+        connectionId: "c2",
+        requestId: "r",
+      },
+      () => undefined,
+    );
+    await backend.publish(conformanceChannels.feed, "alice", { n: 1 });
+    expect(await backend.introspection?.channels()).toMatchObject([
+      {
+        channelId: "conformance.feed",
+        subscribers: 2,
+        scopes: 2,
+        lastPublishedAt: expect.any(Date),
+        lastScopeKey: "alice",
+      },
+      { channelId: "conformance.room", subscribers: 0, scopes: 0 },
+    ]);
+    backend.reset();
+    expect(await backend.introspection?.channels()).toEqual([
+      { channelId: "conformance.feed", subscribers: 0, scopes: 0 },
+      { channelId: "conformance.room", subscribers: 0, scopes: 0 },
+    ]);
   });
 });
 

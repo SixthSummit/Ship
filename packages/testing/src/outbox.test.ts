@@ -167,6 +167,30 @@ describe("createInMemoryOutbox", () => {
     backend.reset();
   });
 
+  it("finds one record by id and lists records newest first by status", async () => {
+    const backend = createInMemoryOutbox(outbox);
+    const [first] = await backend.record({}, [
+      { intentId: "send", payload: { to: "a" }, availableAt: new Date(1) },
+    ]);
+    const [second] = await backend.record({}, [
+      { intentId: "send", payload: { to: "b" }, availableAt: new Date(2) },
+    ]);
+    const firstId = first && !first.deduplicated ? first.recordId : "";
+    const secondId = second && !second.deduplicated ? second.recordId : "";
+    const [claimed] = await backend.claimDue(new Date(10), 1, 1_000);
+    await backend.fail(claimed?.id ?? "", "boom", { deadLetter: true }, new Date(11));
+    expect(await backend.findRecord(firstId)).toMatchObject({ status: "dead-lettered" });
+    expect(await backend.findRecord("missing")).toBeUndefined();
+    expect((await backend.listRecords({ limit: 10 })).map((row) => row.id)).toEqual([
+      secondId,
+      firstId,
+    ]);
+    expect(await backend.listRecords({ status: "pending", limit: 10 })).toMatchObject([
+      { id: secondId },
+    ]);
+    expect(await backend.listRecords({ status: "completed", limit: 10 })).toEqual([]);
+  });
+
   it("re-leases expired claims, ignores completion of unclaimed rows, and filters intents", async () => {
     const backend = createInMemoryOutbox(outbox);
     const time = clockAt();

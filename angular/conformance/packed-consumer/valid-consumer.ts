@@ -36,6 +36,7 @@ const generatedClient = createPolicyClient(
       'accounts.create': policy('required', 'unsafe', 'required'),
       'accounts.delete': policy('required', 'idempotent'),
       'public.status': policy('anonymous', 'safe'),
+      'oauth.callback': policy('anonymous', 'safe'),
       'reports.download': policy('required', 'safe'),
       'assets.upload': policy('required', 'unsafe', 'required'),
       'events.watch': policy('optional', 'safe'),

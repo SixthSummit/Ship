@@ -402,6 +402,20 @@ export interface WebhookEventStore {
   link(scope: object, eventId: string, outboxRecordId: string): Promise<void>;
   read(eventId: string): Promise<StoredWebhookEvent | undefined>;
   cleanup(request: WebhookEventCleanupRequest): Promise<WebhookEventCleanupResult>;
+  /**
+   * Optional operator-facing listing, most recently received first. Stores
+   * that omit it still satisfy the contract; an ops console reports the
+   * missing capability instead of failing.
+   */
+  list?(query: WebhookEventQuery): Promise<readonly StoredWebhookEvent[]>;
+}
+
+export interface WebhookEventQuery {
+  /** Restrict to one declared webhook. */
+  readonly webhookId?: string;
+  /** Events received strictly before this instant, for paging backwards. */
+  readonly before?: Date;
+  readonly limit: number;
 }
 
 export function webhookEventStoreDependency(id: string): DependencyToken<WebhookEventStore> {

@@ -6,12 +6,25 @@ import type {
   OutboxHealth,
   OutboxIntentInput,
   OutboxRecord,
+  OutboxRecordQuery,
   OutboxRecordResult,
   OutboxRecordStatus,
   OutboxRetention,
 } from "@sixthsummit/ship-core";
 import { isOutbox } from "@sixthsummit/ship-core";
-import { and, asc, eq, inArray, isNotNull, lte, notInArray, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  lte,
+  notInArray,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import {
   index,
@@ -266,6 +279,30 @@ export function createDrizzleOutbox<TSchema extends Record<string, unknown>>(
     return Object.freeze(rows.map(toRecord));
   };
 
+  const findRecord = async (recordId: string): Promise<OutboxRecord | undefined> => {
+    const rows = await database
+      .select()
+      .from(table)
+      .where(and(eq(table.id, recordId), eq(table.outboxId, outboxId)))
+      .limit(1);
+    return rows[0] ? toRecord(rows[0]) : undefined;
+  };
+
+  const listRecords = async (query: OutboxRecordQuery): Promise<readonly OutboxRecord[]> => {
+    const rows = await database
+      .select()
+      .from(table)
+      .where(
+        and(
+          eq(table.outboxId, outboxId),
+          query.status !== undefined ? eq(table.status, query.status) : undefined,
+        ),
+      )
+      .orderBy(desc(table.createdAt), desc(table.id))
+      .limit(query.limit);
+    return Object.freeze(rows.map(toRecord));
+  };
+
   const retry = async (recordId: string, now: Date) => {
     const rows = await database
       .update(table)
@@ -364,6 +401,8 @@ export function createDrizzleOutbox<TSchema extends Record<string, unknown>>(
     complete,
     fail,
     listDeadLettered,
+    findRecord,
+    listRecords,
     retry,
     discard,
     cleanup,

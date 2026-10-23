@@ -104,12 +104,14 @@ const ALLOW_LIST = [
   { src: "docs/v4/features/rate-limit.md", target: "features/rate-limit.md" },
   { src: "docs/v4/features/idempotency.md", target: "features/idempotency.md" },
   { src: "docs/v4/features/webhooks.md", target: "features/webhooks.md" },
+  { src: "docs/v4/features/schema-safety.md", target: "features/schema-safety.md" },
   { src: "docs/v4/features/uploads.md", target: "features/uploads.md" },
   { src: "docs/v4/features/health-checks.md", target: "features/health-checks.md" },
   { src: "docs/v4/features/sessions.md", target: "features/sessions.md" },
   { src: "docs/v4/features/streaming.md", target: "features/streaming.md" },
   { src: "docs/v4/features/websockets.md", target: "features/websockets.md" },
   { src: "docs/v4/features/llm-helpers.md", target: "features/llm-helpers.md" },
+  { src: "docs/v4/features/mail.md", target: "features/mail.md" },
 ];
 
 /**

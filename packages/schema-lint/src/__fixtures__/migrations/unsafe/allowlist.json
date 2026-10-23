@@ -1,0 +1,9 @@
+{
+  "allow": [
+    {
+      "migration": "0001_retire_legacy",
+      "rule": "column-rename",
+      "justification": "dual-write shipped in 2026.10.0; every running release reads amount_cents"
+    }
+  ]
+}
