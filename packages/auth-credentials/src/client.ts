@@ -2,6 +2,12 @@
 export interface RequestClient {
   readonly ip?: string;
   readonly userAgent?: string;
+  /**
+   * How the request authenticated, recorded by the resolver so an operation
+   * on the current session (sign-out, revoke, MFA confirmation) knows whether
+   * to clear or rotate the session cookie. Absent on anonymous requests.
+   */
+  readonly sessionTransport?: "bearer" | "cookie";
 }
 
 /**

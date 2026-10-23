@@ -2,6 +2,12 @@ import type { DependencyToken, OperationIdentity } from "@sixthsummit/ship-core"
 import { operationFailure } from "@sixthsummit/ship-core";
 import type { MailSender } from "@sixthsummit/ship-mail";
 import type { RequestClientRegistry } from "./client.js";
+import {
+  type CredentialSessionPolicy,
+  type CredentialSessionTransport,
+  clearSessionCookie,
+  serializeSessionCookie,
+} from "./cookie.js";
 import type { PasswordHasher } from "./crypto/password.js";
 import type { SecretBox } from "./crypto/secretbox.js";
 import { generateToken, hashToken, SESSION_TOKEN_PREFIX } from "./crypto/tokens.js";
@@ -41,6 +47,8 @@ export interface CredentialAuthRuntime {
   readonly appName: string;
   readonly links: CredentialAuthLinks;
   readonly policies: CredentialAuthPolicies;
+  /** Which transports a session may use and the cookie attributes when one of them is `cookie`. */
+  readonly sessions: CredentialSessionPolicy;
   readonly hasher: PasswordHasher;
   readonly secrets: SecretBox;
   readonly defaultRoles: readonly string[];
@@ -170,13 +178,58 @@ export async function issueSession(
   return { token, session };
 }
 
-export function sessionTokenView(issued: IssuedSession) {
+/**
+ * The session as the client sees it. A `cookie` session carries no token: the
+ * response headers from {@link sessionCookieHeaders} install it instead.
+ */
+export function sessionTokenView(issued: IssuedSession, transport: CredentialSessionTransport) {
   return {
-    token: issued.token,
+    transport,
+    ...(transport === "bearer" ? { token: issued.token } : {}),
     id: issued.session.id,
     expiresAt: issued.session.expiresAt.toISOString(),
     mfaState: issued.session.mfaState,
   };
+}
+
+/** The transport a sign-in uses: the one it asked for, else the module's default. */
+export function resolveTransport(
+  runtime: CredentialAuthRuntime,
+  requested: CredentialSessionTransport | undefined,
+): CredentialSessionTransport {
+  if (requested !== undefined && runtime.sessions.transports.includes(requested)) return requested;
+  return runtime.sessions.defaultTransport;
+}
+
+/** How the current request authenticated, as the resolver recorded it; `undefined` off HTTP or when anonymous. */
+export function requestTransport(
+  runtime: CredentialAuthRuntime,
+  requestId: string,
+): CredentialSessionTransport | undefined {
+  return runtime.clients?.get(requestId)?.sessionTransport;
+}
+
+/** `Set-Cookie` headers that install a freshly issued cookie session; `undefined` for a bearer one. */
+export function sessionCookieHeaders(
+  runtime: CredentialAuthRuntime,
+  issued: IssuedSession,
+  transport: CredentialSessionTransport,
+  now: Date,
+): Readonly<Record<string, string>> | undefined {
+  const cookie = runtime.sessions.cookie;
+  if (transport !== "cookie" || !cookie) return undefined;
+  const maxAgeSeconds = Math.ceil((issued.session.expiresAt.getTime() - now.getTime()) / 1000);
+  return { "set-cookie": serializeSessionCookie(cookie, issued.token, maxAgeSeconds) };
+}
+
+/** `Set-Cookie` headers that remove the session cookie when the current request authenticated through it. */
+export function clearSessionCookieHeaders(
+  runtime: CredentialAuthRuntime,
+  requestId: string,
+): Readonly<Record<string, string>> | undefined {
+  const cookie = runtime.sessions.cookie;
+  if (!cookie || requestTransport(runtime, requestId) !== "cookie") return undefined;
+  return { "set-cookie": clearSessionCookie(cookie) };
 }
 
 export async function sendCredentialMail(

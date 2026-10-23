@@ -3,6 +3,7 @@ import {
   defineOperation,
   operationFailure,
   publicAccess,
+  respond,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
 import { z } from "zod";
@@ -20,11 +21,14 @@ import {
   audit,
   type CredentialAuthRuntime,
   clearFailedAttempts,
+  clearSessionCookieHeaders,
   currentSessionId,
   issueSession,
   lockedFailure,
   lockRemainingSeconds,
   recordFailedAttempt,
+  resolveTransport,
+  sessionCookieHeaders,
   sessionTokenView,
 } from "../runtime.js";
 import type { AuthAccount, CredentialStore } from "../store.js";
@@ -38,7 +42,6 @@ import {
   signInOutputSchema,
 } from "../views.js";
 
-const signInBody = z.object({ email: emailSchema, password: passwordSchema });
 const signedOutSchema = z.object({ signedOut: z.literal(true) });
 const meSchema = z.object({
   account: accountViewSchema,
@@ -64,6 +67,14 @@ export function defineSessionOperations<const TId extends string>(
   runtime: CredentialAuthRuntime,
 ) {
   const { basePath } = runtime;
+  // Only the enabled transports validate, so a client asking for a cookie
+  // from a bearer-only module gets a validation error naming the field
+  // rather than a token it did not expect.
+  const signInBody = z.object({
+    email: emailSchema,
+    password: passwordSchema,
+    transport: z.enum(runtime.sessions.transports).optional(),
+  });
 
   const signIn = defineOperation({
     id: `${id}.sign-in` as const,
@@ -175,18 +186,21 @@ export function defineSessionOperations<const TId extends string>(
         context.requestId,
         now,
       );
+      const transport = resolveTransport(runtime, input.body.transport);
       await audit(runtime, store, context.requestId, {
         event: "sign-in",
         outcome: "success",
         accountId: account.id,
         sessionId: issued.session.id,
-        ...(mustEnrol ? { details: { mfaEnrolmentRequired: true } } : {}),
+        details: { transport, ...(mustEnrol ? { mfaEnrolmentRequired: true } : {}) },
       });
-      return {
+      const body = {
         status: mustEnrol ? ("mfa-enrolment-required" as const) : ("signed-in" as const),
-        session: sessionTokenView(issued),
+        session: sessionTokenView(issued, transport),
         account: accountView(account, false),
       };
+      const headers = sessionCookieHeaders(runtime, issued, transport, now);
+      return headers ? respond(200, body, { headers }) : body;
     },
   });
 
@@ -212,7 +226,10 @@ export function defineSessionOperations<const TId extends string>(
         accountId: context.actor.id,
         ...(sessionId ? { sessionId } : {}),
       });
-      return { signedOut: true as const };
+      const headers = clearSessionCookieHeaders(runtime, context.requestId);
+      return headers
+        ? respond(200, { signedOut: true as const }, { headers })
+        : { signedOut: true as const };
     },
   });
 
@@ -287,7 +304,12 @@ export function defineSessionOperations<const TId extends string>(
         sessionId: session.id,
       });
       if (!revoked) throw operationFailure(authSessionNotFound);
-      return { revoked: 1 };
+      // Revoking the session behind this very request also takes its cookie away.
+      const headers =
+        session.id === currentSessionId(context.identity)
+          ? clearSessionCookieHeaders(runtime, context.requestId)
+          : undefined;
+      return headers ? respond(200, { revoked: 1 }, { headers }) : { revoked: 1 };
     },
   });
 
@@ -322,7 +344,10 @@ export function defineSessionOperations<const TId extends string>(
         ...(current ? { sessionId: current } : {}),
         details: { revoked, keepCurrent },
       });
-      return { revoked };
+      const headers = keepCurrent
+        ? undefined
+        : clearSessionCookieHeaders(runtime, context.requestId);
+      return headers ? respond(200, { revoked }, { headers }) : { revoked };
     },
   });
 

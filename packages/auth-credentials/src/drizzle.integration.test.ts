@@ -4,7 +4,13 @@ import {
   truncateAll,
 } from "@sixthsummit/ship-testing/postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createFixture, EMAIL, PASSWORD, registerAndSignIn } from "./__fixtures__/app.js";
+import {
+  createCookieJar,
+  createFixture,
+  EMAIL,
+  PASSWORD,
+  registerAndSignIn,
+} from "./__fixtures__/app.js";
 import { credentialStoreConformance } from "./conformance.js";
 import { totpCode, totpStep } from "./crypto/totp.js";
 import { createDrizzleCredentialStore, shipAuthTables } from "./drizzle.js";
@@ -130,5 +136,81 @@ describe("Drizzle credential store against PostgreSQL", () => {
     expect(audit.map((event) => event.event)).toContain("sessions.revoke-all");
     expect(audit.map((event) => event.event)).toContain("mfa.recover");
     for (const event of audit) expect(JSON.stringify(event)).not.toContain("ship_");
+  });
+
+  it("runs cookie sessions beside bearer sessions on PostgreSQL, and revoke-all ends the cookie mid-request", async () => {
+    await truncateAll(database);
+    const store = createDrizzleCredentialStore({ database: database.db, tables });
+    const origin = "https://app.example.test";
+    const fixture = createFixture({
+      store,
+      sessions: { transport: "both" },
+      trustedOrigins: [origin],
+    });
+    await fixture.start();
+    const bearer = await registerAndSignIn(fixture);
+    const jar = createCookieJar();
+    const browser = async (
+      path: string,
+      init: { readonly body?: unknown; readonly csrf?: boolean } = {},
+    ) => {
+      const cookie = jar.header();
+      const csrf = jar.get("ship_csrf")?.value;
+      const response = await fixture.request(path, {
+        ...(init.body !== undefined ? { body: init.body } : {}),
+        headers: {
+          ...(cookie ? { cookie } : {}),
+          origin,
+          ...(init.csrf !== false && csrf ? { "x-csrf-token": csrf } : {}),
+        },
+      });
+      jar.absorb(response.headers);
+      return response;
+    };
+
+    // Sign in over the cookie: the row is a real session, the token is only in the jar.
+    const signedIn = await browser("/auth/sign-in", {
+      body: { email: EMAIL, password: PASSWORD, transport: "cookie" },
+    });
+    expect(signedIn.status).toBe(200);
+    expect(signedIn.body.session.token).toBeUndefined();
+    const rows = await store.listSessions(bearer.account.id);
+    expect(rows).toHaveLength(2);
+    expect(jar.get("ship_session")?.value).toMatch(/^ship_s_/u);
+
+    // Reload-safe: a fresh request with nothing but the cookie is the same session.
+    const me = await browser("/auth/me");
+    expect(me.status).toBe(200);
+    expect(me.body.session.id).toBe(signedIn.body.session.id);
+    expect((await browser("/app/slow", { body: {}, csrf: false })).status).toBe(403);
+
+    // Revoke-all (from the bearer session, through the executor) while a cookie
+    // request is in flight: the authorized request finishes, the next one is refused.
+    const entered = new Promise<void>((resolve) => {
+      fixture.gate.entered = resolve;
+    });
+    const inFlight = browser("/app/slow", { body: {} });
+    await entered;
+    const revoked = await fixture.executor.run(
+      "auth.sessions.revoke-all",
+      { body: {} },
+      {
+        actor: { id: bearer.account.id },
+        identity: { provider: "ship-credentials.session", subject: bearer.session.id },
+      },
+    );
+    expect(revoked).toMatchObject({ ok: true, data: { revoked: 2 } });
+    fixture.gate.release();
+    expect((await inFlight).status).toBe(200);
+    expect((await browser("/auth/me")).status).toBe(401);
+    expect((await fixture.request("/auth/me", { token: bearer.session.token })).status).toBe(401);
+    // The stale cookie does not block a new sign-in, which replaces it.
+    const again = await browser("/auth/sign-in", {
+      body: { email: EMAIL, password: PASSWORD, transport: "cookie" },
+    });
+    expect(again.status).toBe(200);
+    expect((await browser("/auth/me")).body.session.id).toBe(again.body.session.id);
+    const audit = await store.listAudit({ accountId: bearer.account.id, limit: 100 });
+    for (const event of audit) expect(JSON.stringify(event)).not.toContain("ship_s_");
   });
 });
