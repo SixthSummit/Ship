@@ -271,6 +271,7 @@ describe('ShipCredentialAuth', () => {
               data: {
                 changed: true,
                 revoked: 1,
+                notified: true,
                 session: { ...session(), token: 'ship_s_rotated', id: 's-rotated' },
               },
             }

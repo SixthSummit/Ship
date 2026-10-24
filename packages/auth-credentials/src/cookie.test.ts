@@ -507,9 +507,36 @@ describe("cookie-mode sessions over HTTP", () => {
     );
     const staleCookie = staleJar.header() as string;
     expect(stale).toBe("ship_session=gone");
-    expect((await fixture.request("/auth/me", { headers: { cookie: staleCookie } })).status).toBe(
-      401,
+    // Refused, and the browser is told to drop the dead cookie; the presentation is audited once.
+    const refused = await fixture.request("/auth/me", { headers: { cookie: staleCookie } });
+    expect(refused.status).toBe(401);
+    expect(refused.headers.getSetCookie()).toEqual([
+      "ship_session=; Path=/; Max-Age=0; Secure; SameSite=Lax; HttpOnly",
+    ]);
+    expect(
+      fixture.store.auditEvents().filter((event) => event.event === "session.stale-cookie"),
+    ).toEqual([
+      expect.objectContaining({
+        outcome: "failure",
+        ip: "203.0.113.7",
+        details: { reason: "unknown", operation: "auth.me" },
+      }),
+    ]);
+    // The revoked cookie the browser still holds names its old session and account.
+    const revokedCookie = `ship_session=${client.jar.get("ship_session")?.value ?? ""}`;
+    const revokedSession = (await fixture.store.listSessions(bearer.account.id)).find(
+      (session) => session.id !== bearer.session.id,
     );
+    if (revokedCookie !== "ship_session=") {
+      const again = await fixture.request("/auth/sessions", { headers: { cookie: revokedCookie } });
+      expect(again.status).toBe(401);
+      expect(fixture.store.auditEvents().at(-1)).toMatchObject({
+        event: "session.stale-cookie",
+        accountId: bearer.account.id,
+        sessionId: revokedSession?.id,
+        details: { reason: "revoked", operation: "auth.sessions.list" },
+      });
+    }
     const replaced = await fixture.request("/auth/sign-in", {
       body: { email: EMAIL, password: PASSWORD, transport: "cookie" },
       headers: {
@@ -519,21 +546,32 @@ describe("cookie-mode sessions over HTTP", () => {
       },
     });
     expect(replaced.status).toBe(200);
-    expect(replaced.headers.getSetCookie()[0]).toMatch(/^ship_session=ship_s_/u);
+    // The fresh cookie alone: the clearing instruction never follows a replacement.
+    expect(replaced.headers.getSetCookie().filter((c) => c.startsWith("ship_session="))).toEqual([
+      expect.stringMatching(/^ship_session=ship_s_/u),
+    ]);
+    expect(fixture.store.auditEvents().at(-2)).toMatchObject({
+      event: "session.stale-cookie",
+      details: { reason: "unknown", operation: "auth.sign-in" },
+    });
     // A malformed cookie is also just absent on a public operation (the CSRF
-    // policy still gates the unsafe method, since a session cookie is present).
+    // policy still gates the unsafe method, since a session cookie is present),
+    // and it is cleared and audited like any other stale one.
+    const malformed = await fixture.request("/auth/resend-verification", {
+      body: { email: EMAIL },
+      headers: {
+        cookie: "ship_session=garbage; ship_csrf=x",
+        origin: APP_ORIGIN,
+        "x-csrf-token": "x",
+      },
+    });
+    expect(malformed.status).toBe(202);
+    expect(malformed.headers.getSetCookie()).toEqual([
+      "ship_session=; Path=/; Max-Age=0; Secure; SameSite=Lax; HttpOnly",
+    ]);
     expect(
-      (
-        await fixture.request("/auth/resend-verification", {
-          body: { email: EMAIL },
-          headers: {
-            cookie: "ship_session=garbage; ship_csrf=x",
-            origin: APP_ORIGIN,
-            "x-csrf-token": "x",
-          },
-        })
-      ).status,
-    ).toBe(202);
+      fixture.store.auditEvents().find((event) => event.details?.reason === "malformed"),
+    ).toMatchObject({ event: "session.stale-cookie" });
     expect(
       (
         await fixture.request("/auth/resend-verification", {
@@ -665,6 +703,7 @@ describe("cookie-mode sessions over HTTP", () => {
     expect(changed.body).toEqual({
       changed: true,
       revoked: 1,
+      notified: true,
       session: {
         transport: "cookie",
         id: expect.any(String),

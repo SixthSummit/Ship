@@ -290,15 +290,26 @@ export function createHonoAdapter<
       const requestId = readRequestId(context, options.generateRequestId);
       const policyHeaders: [string, string][] = [];
       const finish = (response: Response): Response => {
+        // A cookie the operation itself set wins over a policy's or the
+        // resolver's for the same name: a sign-in that replaces a stale
+        // session cookie must not be followed by the clearing instruction.
+        const operationCookies = new Set(response.headers.getSetCookie().map(cookieName));
         for (const [name, value] of policyHeaders) {
-          if (name.toLowerCase() === "set-cookie") response.headers.append(name, value);
-          else response.headers.set(name, value);
+          if (name.toLowerCase() === "set-cookie") {
+            if (!operationCookies.has(cookieName(value))) response.headers.append(name, value);
+          } else response.headers.set(name, value);
         }
         return response;
       };
       try {
         const authentication = await resolveActor(context, operation, requestId, options.auth);
-        if (!authentication.ok) return failureResponse(authentication.failure, operation);
+        if (authentication.headers) {
+          // A resolver may tell the client to drop a dead transport credential
+          // (a stale session cookie) whichever way the request goes.
+          responseHeaders(requestId, authentication.headers);
+          policyHeaders.push(...Object.entries(authentication.headers));
+        }
+        if (!authentication.ok) return finish(failureResponse(authentication.failure, operation));
 
         const accessFailure = checkOperationAccess(operation, authentication.actor, requestId);
         if (accessFailure) return failureResponse(accessFailure, operation);
@@ -507,8 +518,17 @@ async function resolveActor<TCredential>(
   requestId: string,
   auth: HonoAuthenticationOptions<TCredential> | undefined,
 ): Promise<
-  | { readonly ok: true; readonly actor?: OperationActor; readonly identity?: OperationIdentity }
-  | { readonly ok: false; readonly failure: OperationFailureResult }
+  | {
+      readonly ok: true;
+      readonly actor?: OperationActor;
+      readonly identity?: OperationIdentity;
+      readonly headers?: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly ok: false;
+      readonly failure: OperationFailureResult;
+      readonly headers?: Readonly<Record<string, string>>;
+    }
 > {
   if (!auth) return { ok: true };
   const credential = await auth.credentials.extract(context.req.raw);
@@ -527,15 +547,27 @@ async function resolveActor<TCredential>(
       `actor resolver ${JSON.stringify(auth.actors.id)} returned an invalid result`,
     );
   }
+  const headers = resolution.headers ? { headers: resolution.headers } : {};
   if (resolution.ok) {
     return {
       ok: true,
       ...(resolution.actor ? { actor: operationActor(resolution.actor) } : {}),
       ...(resolution.identity ? { identity: operationIdentity(resolution.identity) } : {}),
+      ...headers,
     };
   }
 
-  return { ok: false, failure: resolutionFailure(resolution.reason, undefined, requestId) };
+  return {
+    ok: false,
+    failure: resolutionFailure(resolution.reason, undefined, requestId),
+    ...headers,
+  };
+}
+
+/** The name a `Set-Cookie` value sets, for de-duplicating cookies from several sources. */
+function cookieName(value: string): string {
+  const separator = value.indexOf("=");
+  return (separator < 0 ? value : value.slice(0, separator)).trim();
 }
 
 /** The ADR-0004 projection of a resolution reason, shared by the resolver path and policy denials. */

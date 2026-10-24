@@ -44,7 +44,8 @@ provider objects afterwards and the purge ledger makes replays no-ops.
 
 Adapters: `./disk` (development; signed URLs served by
 `createDiskStorageHandler`), `./s3` (AWS S3, Cloudflare R2, MinIO; in-house
-SigV4, no SDK), `./gcs` (Google Cloud Storage through an injected
+SigV4, no SDK, static or resolver credentials, single-request uploads up to
+5 GiB), `./gcs` (Google Cloud Storage through an injected
 `@google-cloud/storage` client). `@sixthsummit/ship-testing/storage` ships an
 in-memory adapter and ledger plus `storageAdapterConformance`.
 

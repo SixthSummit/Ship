@@ -177,9 +177,19 @@ export interface ActorResolutionRequest<TCredential> {
 
 export type ActorResolutionFailureReason = "invalid-credential" | "forbidden" | "unavailable";
 
+/**
+ * Response headers a resolver may attach to its outcome, applied by the HTTP
+ * transport to the success response or the 401/403 it projects. Direct
+ * executor runs have no response and ignore them. The use case is a
+ * transport credential the resolver found dead (a stale session cookie): the
+ * resolver answers as it would anyway and tells the browser to drop it.
+ */
+export type ActorResolutionHeaders = Readonly<Record<string, string>>;
+
 export type ActorResolutionFailure = {
   readonly ok: false;
   readonly reason: ActorResolutionFailureReason;
+  readonly headers?: ActorResolutionHeaders;
 };
 
 /**
@@ -188,7 +198,12 @@ export type ActorResolutionFailure = {
  * `OperationActor` keeps compiling.
  */
 export type ActorResolution =
-  | { readonly ok: true; readonly identity?: OperationIdentity; readonly actor?: OperationActor }
+  | {
+      readonly ok: true;
+      readonly identity?: OperationIdentity;
+      readonly actor?: OperationActor;
+      readonly headers?: ActorResolutionHeaders;
+    }
   | ActorResolutionFailure;
 
 /** @deprecated Same as `ActorResolution`; kept for code written against 1.1 alphas. */
@@ -204,6 +219,7 @@ export type ActorResolutionResult =
       readonly ok: true;
       readonly identity?: OperationIdentity;
       readonly actor?: OperationActorInput;
+      readonly headers?: ActorResolutionHeaders;
     }
   | ActorResolutionFailure;
 
@@ -282,6 +298,9 @@ export function normalizeActorResolution(value: unknown): ActorResolution | unde
   ) {
     return undefined;
   }
+  const rawHeaders = Reflect.get(value, "headers");
+  const headers = rawHeaders === undefined ? undefined : normalizeResolutionHeaders(rawHeaders);
+  if (rawHeaders !== undefined && headers === undefined) return undefined;
   if (Reflect.get(value, "ok") === true) {
     const rawActor = Reflect.get(value, "actor");
     const identity = Reflect.get(value, "identity");
@@ -292,12 +311,23 @@ export function normalizeActorResolution(value: unknown): ActorResolution | unde
       ok: true,
       ...(actor ? { actor } : {}),
       ...(identity !== undefined ? { identity } : {}),
+      ...(headers ? { headers } : {}),
     };
   }
   const reason = Reflect.get(value, "reason");
   return reason === "invalid-credential" || reason === "forbidden" || reason === "unavailable"
-    ? { ok: false, reason }
+    ? { ok: false, reason, ...(headers ? { headers } : {}) }
     : undefined;
+}
+
+/** A frozen copy of resolver headers, or `undefined` when they are not a record of strings. */
+function normalizeResolutionHeaders(value: unknown): ActorResolutionHeaders | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value);
+  if (!entries.every(([name, header]) => name.length > 0 && typeof header === "string")) {
+    return undefined;
+  }
+  return Object.freeze(Object.fromEntries(entries));
 }
 
 /**

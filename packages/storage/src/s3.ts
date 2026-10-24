@@ -43,10 +43,20 @@ export interface S3StorageAdapterOptions {
   readonly forcePathStyle?: boolean;
   /** Base for `publicUrl()`; defaults to the bucket's own object URL. */
   readonly publicBaseUrl?: string;
+  /**
+   * The largest upload the adapter will grant. It signs single-request PUTs
+   * only (no multipart), and S3, R2 and MinIO cap a single PUT at 5 GiB, so
+   * the default is that cap; lower it to match a stricter bucket policy. An
+   * attachment whose declared size exceeds it is refused at intent time.
+   */
+  readonly maxSingleUploadBytes?: number;
   /** Injected for tests; defaults to `globalThis.fetch`. */
   readonly fetch?: typeof fetch;
   readonly now?: () => Date;
 }
+
+/** The single-request PUT ceiling on AWS S3, Cloudflare R2 and MinIO. */
+export const S3_MAX_SINGLE_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
 
 export interface S3StorageAdapter extends StorageAdapter {
   readonly adapter: "s3";
@@ -76,6 +86,7 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
 
   const credentials = async (): Promise<S3Credentials> =>
     typeof options.credentials === "function" ? options.credentials() : options.credentials;
+  const maxSingleUploadBytes = options.maxSingleUploadBytes ?? S3_MAX_SINGLE_UPLOAD_BYTES;
 
   const objectPath = (key: string): string =>
     `${basePath}${pathStyle ? `/${bucket}` : ""}/${encodeKey(key)}`;
@@ -205,6 +216,11 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): S3Stor
     objectUrl,
     signUpload: async (signRequest: StorageSignUploadRequest): Promise<StorageSignedUpload> => {
       assertKey(signRequest.key);
+      if (signRequest.size > maxSingleUploadBytes) {
+        throw new RangeError(
+          `s3 adapter grants single-request uploads only (no multipart): ${signRequest.size} bytes exceeds the ${maxSingleUploadBytes}-byte ceiling; lower the attachment's maxBytes`,
+        );
+      }
       const headers = Object.freeze({ "content-type": signRequest.contentType });
       const url = await presign("PUT", signRequest.key, signRequest.expiresAt, headers);
       return Object.freeze({
@@ -380,6 +396,15 @@ function assertOptions(options: S3StorageAdapterOptions): void {
     );
   }
   const credentials = options.credentials;
+  const ceiling = options.maxSingleUploadBytes;
+  if (
+    ceiling !== undefined &&
+    (!Number.isSafeInteger(ceiling) || ceiling <= 0 || ceiling > S3_MAX_SINGLE_UPLOAD_BYTES)
+  ) {
+    throw new TypeError(
+      `maxSingleUploadBytes must be a positive integer no larger than ${S3_MAX_SINGLE_UPLOAD_BYTES}`,
+    );
+  }
   if (
     typeof credentials !== "function" &&
     (typeof credentials?.accessKeyId !== "string" ||

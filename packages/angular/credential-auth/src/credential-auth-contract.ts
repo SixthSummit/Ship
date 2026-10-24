@@ -138,6 +138,8 @@ export interface ShipCredentialAuthContract {
         readonly 200: {
           readonly changed: true;
           readonly revoked: number;
+          /** Whether the password-changed notice was queued for the account's address. */
+          readonly notified: boolean;
           /** The rotated current session; the old token is revoked. */
           readonly session?: CredentialSessionToken;
         };

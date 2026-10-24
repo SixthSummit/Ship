@@ -51,6 +51,12 @@ export interface TokenPolicy {
   readonly resetPasswordTtlMs: number;
   /** Defaults to 1 hour. */
   readonly changeEmailTtlMs: number;
+  /**
+   * Lifetime of the reset link in the password-changed notice. Short by
+   * design: it exists so an owner who did not make the change can retake the
+   * account, and it is a live reset token in a mailbox. Defaults to 10 minutes.
+   */
+  readonly passwordChangedResetTtlMs: number;
 }
 
 export interface RecoveryCodePolicy {
@@ -112,6 +118,7 @@ export const DEFAULT_CREDENTIAL_AUTH_POLICIES: Omit<CredentialAuthPolicies, "mfa
     verifyEmailTtlMs: 24 * 60 * 60_000,
     resetPasswordTtlMs: 60 * 60_000,
     changeEmailTtlMs: 60 * 60_000,
+    passwordChangedResetTtlMs: 10 * 60_000,
   }),
   recoveryCodes: Object.freeze({ count: 10 }),
   requireVerifiedEmail: true,
@@ -177,6 +184,7 @@ function assertPolicies(policies: CredentialAuthPolicies): void {
   integer("tokens.verifyEmailTtlMs", policies.tokens.verifyEmailTtlMs, 1000);
   integer("tokens.resetPasswordTtlMs", policies.tokens.resetPasswordTtlMs, 1000);
   integer("tokens.changeEmailTtlMs", policies.tokens.changeEmailTtlMs, 1000);
+  integer("tokens.passwordChangedResetTtlMs", policies.tokens.passwordChangedResetTtlMs, 1000);
   integer("recoveryCodes.count", policies.recoveryCodes.count, 1, 50);
   const required = policies.mfa.required;
   if (required !== "never" && required !== "always" && typeof required !== "function") {

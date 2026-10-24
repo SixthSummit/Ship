@@ -225,6 +225,7 @@ export class ShipCredentialAuth {
     const result = await this.call<{
       changed: true;
       revoked: number;
+      notified: boolean;
       session?: CredentialSessionToken;
     }>('change-password', { body: { currentPassword, newPassword, signOutOtherSessions } });
     if (!result) return false;

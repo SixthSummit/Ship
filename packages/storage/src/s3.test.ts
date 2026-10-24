@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createS3StorageAdapter, S3StorageError } from "./s3.js";
+import { createS3StorageAdapter, S3_MAX_SINGLE_UPLOAD_BYTES, S3StorageError } from "./s3.js";
 
 interface Captured {
   readonly url: string;
@@ -32,6 +32,37 @@ function fakeFetch(respond: (request: Captured) => Response) {
 const AWS_EXAMPLE_NOW = new Date("2013-05-24T00:00:00.000Z");
 
 describe("createS3StorageAdapter", () => {
+  it("grants single-request uploads only and refuses a declared size above the ceiling", async () => {
+    const base = {
+      bucket: "vault",
+      region: "us-west-2",
+      credentials: { accessKeyId: "key", secretAccessKey: "secret" },
+      now: () => AWS_EXAMPLE_NOW,
+    };
+    expect(S3_MAX_SINGLE_UPLOAD_BYTES).toBe(5 * 1024 ** 3);
+    const adapter = createS3StorageAdapter(base);
+    const request = (size: number) => ({
+      key: "uploads/big.bin",
+      contentType: "application/octet-stream",
+      size,
+      expiresAt: new Date(AWS_EXAMPLE_NOW.getTime() + 60_000),
+    });
+    await expect(adapter.signUpload(request(S3_MAX_SINGLE_UPLOAD_BYTES))).resolves.toMatchObject({
+      method: "PUT",
+    });
+    await expect(adapter.signUpload(request(S3_MAX_SINGLE_UPLOAD_BYTES + 1))).rejects.toThrow(
+      /single-request uploads only \(no multipart\)/u,
+    );
+    const strict = createS3StorageAdapter({ ...base, maxSingleUploadBytes: 1024 });
+    await expect(strict.signUpload(request(1025))).rejects.toThrow(RangeError);
+    await expect(strict.signUpload(request(1024))).resolves.toMatchObject({ method: "PUT" });
+    for (const ceiling of [0, -1, 1.5, S3_MAX_SINGLE_UPLOAD_BYTES + 1]) {
+      expect(() => createS3StorageAdapter({ ...base, maxSingleUploadBytes: ceiling })).toThrow(
+        TypeError,
+      );
+    }
+  });
+
   it("reproduces the AWS documentation presigned GET signature", async () => {
     // https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
     const adapter = createS3StorageAdapter({

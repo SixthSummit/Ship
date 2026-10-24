@@ -15,7 +15,8 @@ export type CredentialMailMessage =
   | "verifyEmail"
   | "resetPassword"
   | "changeEmail"
-  | "existingAccount";
+  | "existingAccount"
+  | "passwordChanged";
 
 export interface CredentialAuthMailerOptions<TId extends string = "auth.mailer"> {
   /** Must be namespaced by the auth module id (`<moduleId>.mailer`). Defaults to `auth.mailer`. */
@@ -54,10 +55,15 @@ const defaultTemplates: Record<
     html: `<p>Someone tried to create a ${escapeHtml(appName)} account with this email address, but it already has one. If that was you, sign in instead; if you forgot your password, reset it from the sign-in page.</p><p><a href="${escapeHtml(url)}">Sign in</a></p><p>If this was not you, no action is needed; nothing about your account changed.</p>`,
     text: `Someone tried to create a ${appName} account with this email address, but it already has one. If that was you, sign in instead; if you forgot your password, reset it from the sign-in page.\n\n${url}\n\nIf this was not you, no action is needed; nothing about your account changed.`,
   }),
+  passwordChanged: ({ url, appName }) => ({
+    subject: `Your ${appName} password was changed`,
+    html: `<p>The password for your ${escapeHtml(appName)} account was just changed and your other sessions were signed out.</p><p>If that was you, there is nothing to do.</p><p>If it was not you, take the account back now: the link below lets you set a new password and signs every session out. It expires in a few minutes and works once.</p><p><a href="${escapeHtml(url)}">Secure my account</a></p>`,
+    text: `The password for your ${appName} account was just changed and your other sessions were signed out.\n\nIf that was you, there is nothing to do.\n\nIf it was not you, take the account back now: the link below lets you set a new password and signs every session out. It expires in a few minutes and works once.\n\n${url}`,
+  }),
 };
 
 /**
- * The four messages the credential flows send. Declare the result on the
+ * The five messages the credential flows send. Declare the result on the
  * auth module (the module does this for you) and register it with
  * `defineMailDelivery({ mailers })`.
  */
@@ -119,6 +125,17 @@ export function defineCredentialAuthMailer<const TId extends string = "auth.mail
           appName: options.appName,
         },
         render: template("existingAccount"),
+      },
+      passwordChanged: {
+        payload: credentialMailPayloadSchema,
+        description:
+          "Sent to the account's address after a password change; carries a short-lived reset link so the owner can retake the account if the change was not theirs.",
+        sample: {
+          email: "ada@example.test",
+          url: "https://app.example.test/reset/sample",
+          appName: options.appName,
+        },
+        render: template("passwordChanged"),
       },
     },
   });

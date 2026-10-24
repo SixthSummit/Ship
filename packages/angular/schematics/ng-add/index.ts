@@ -68,7 +68,7 @@ function addPackageDependencies(withSsr: boolean): Rule {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { version } = require('../../package.json') as { version: string };
     pkg.dependencies['@SixthSummit/Ship'] = `^${version}`;
-    pkg.dependencies['zod'] = '^3.23.0';
+    pkg.dependencies['zod'] = '^4.6.7';
 
     if (withSsr) {
       pkg.dependencies['@angular/ssr'] = '^20.0.0';
