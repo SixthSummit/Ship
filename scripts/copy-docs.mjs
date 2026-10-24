@@ -114,6 +114,12 @@ const ALLOW_LIST = [
   { src: "docs/v4/features/mail.md", target: "features/mail.md" },
   { src: "docs/v4/features/auth-credentials.md", target: "features/auth-credentials.md" },
   { src: "docs/v4/features/rich-text.md", target: "features/rich-text.md" },
+  { src: "docs/v4/features/console.md", target: "features/console.md" },
+
+  // Kernel wire contracts (realtime and streaming); the compat streaming
+  // page keeps its features/ slug.
+  { src: "docs/v4/realtime.md", target: "kernel/realtime.md", title: "Realtime publication" },
+  { src: "docs/v4/streaming.md", target: "kernel/streaming.md", title: "Streaming responses" },
 ];
 
 /**
