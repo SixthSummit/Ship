@@ -51,6 +51,8 @@ const passwordChangedSchema = z.object({
   changed: z.literal(true),
   /** How many other sessions were revoked. */
   revoked: z.number().int().nonnegative(),
+  /** Whether the password-changed notice was queued for the account's address. */
+  notified: z.boolean(),
   /**
    * The rotated current session, present when the request came through a
    * credential session: a bearer client adopts the new token, a cookie
@@ -175,7 +177,7 @@ export function definePasswordOperations<const TId extends string>(
     errors: [authInvalidCredentials, authAccountLocked, authAccountDisabled, authPasswordPolicy],
     access: authenticatedAccess(),
     transaction: "none",
-    dependencies: { store: runtime.store },
+    dependencies: { store: runtime.store, mail: runtime.mail },
     handler: async ({ input, services, context }) => {
       assertPasswordPolicy(runtime, input.body.newPassword);
       const account = await requireAccount(services.store, context.actor.id);
@@ -242,11 +244,42 @@ export function definePasswordOperations<const TId extends string>(
           ...(rotated ? { rotatedTo: rotated.session.id } : {}),
         },
       });
-      if (!rotated) return { changed: true as const, revoked };
+      // The owner hears about the change whoever made it. Pending reset links
+      // die with the old password; the notice carries a fresh, short-lived
+      // one so an owner who did not do this can retake the account. The
+      // change itself stands even if the queue refuses the notice; that
+      // refusal is audited rather than reported as a failed change.
+      await services.store.revokeTokens({ accountId: account.id, purpose: "reset-password", now });
+      const noticeToken = generateToken(ACTION_TOKEN_PREFIX);
+      const notice = await services.store.createToken({
+        accountId: account.id,
+        purpose: "reset-password",
+        tokenHash: hashToken(noticeToken),
+        expiresAt: new Date(now.getTime() + runtime.policies.tokens.passwordChangedResetTtlMs),
+        now,
+      });
+      let notified = true;
+      try {
+        await sendCredentialMail(runtime, services.mail, "passwordChanged", {
+          to: account.email,
+          url: runtime.links.resetPassword(noticeToken),
+          idempotencyKey: `${id}:password-changed:${account.id}:${notice.id}`,
+        });
+      } catch {
+        notified = false;
+        await audit(runtime, services.store, context.requestId, {
+          event: "password.changed-notice",
+          outcome: "failure",
+          accountId: account.id,
+          details: { reason: "mail-queue-full" },
+        });
+      }
+      if (!rotated) return { changed: true as const, revoked, notified };
       const transport = requestTransport(runtime, context.requestId) ?? "bearer";
       const body = {
         changed: true as const,
         revoked,
+        notified,
         session: sessionTokenView(rotated, transport),
       };
       const headers = sessionCookieHeaders(runtime, rotated, transport, now);

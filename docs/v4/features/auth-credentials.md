@@ -80,14 +80,15 @@ module; `createHonoAdapter` projects `/auth/*`.
 | `auth.sign-out`, `auth.me` | `POST /auth/sign-out`, `GET /auth/me` | authenticated | current session |
 | `auth.sessions.list` / `.revoke` / `.revoke-all` | `GET /auth/sessions`, `POST /auth/sessions/revoke`, `/auth/sessions/revoke-all` | authenticated | `{ keepCurrent }` on revoke-all |
 | `auth.forgot-password` / `auth.reset-password` | `POST /auth/password/forgot`, `/auth/password/reset` | public | 202 always; reset clears the lock and signs every session out |
-| `auth.change-password` | `POST /auth/password/change` | authenticated | `{ currentPassword, newPassword, signOutOtherSessions? }`; password re-entry under the lockout policy; 200 `{ changed, revoked, session }` where `session` is the rotated current session (new bearer token, or a new cookie in `Set-Cookie`) and every other session is revoked unless `signOutOtherSessions: false`; `AUTH_INVALID_CREDENTIALS` 401, `AUTH_ACCOUNT_LOCKED` 423, `AUTH_PASSWORD_POLICY` 422 |
+| `auth.change-password` | `POST /auth/password/change` | authenticated | `{ currentPassword, newPassword, signOutOtherSessions? }`; password re-entry under the lockout policy; 200 `{ changed, revoked, session }` where `session` is the rotated current session (new bearer token, or a new cookie in `Set-Cookie`), every other session is revoked unless `signOutOtherSessions: false`, and the account's address receives the `passwordChanged` notice (`notified`); `AUTH_INVALID_CREDENTIALS` 401, `AUTH_ACCOUNT_LOCKED` 423, `AUTH_PASSWORD_POLICY` 422 |
 | `auth.change-email` / `auth.confirm-email-change` | `POST /auth/email/change`, `/auth/email/confirm` | authenticated / public | password re-entry; mail to the new address |
 | `auth.totp.enrol` / `auth.totp.confirm` | `POST /auth/totp/enrol`, `/auth/totp/confirm` | authenticated | password re-entry; confirm returns the recovery codes once and, for a cookie session, the rotated `session` |
 
 Every flow writes an audit row (`register`, `sign-in`, `sign-in.locked`,
 `mfa.challenged`, `mfa.verify`, `mfa.recover`, `mfa.enrolled`,
-`password.reset`, `password.changed`, `email.changed`, `session.revoke`,
-`sessions.revoke-all`, …)
+`password.reset`, `password.changed`, `password.changed-notice`,
+`email.changed`, `session.revoke`, `sessions.revoke-all`,
+`session.stale-cookie`, …)
 with outcome, request id, ip and user agent, never a secret.
 
 ## 3. The actor provider
@@ -307,6 +308,19 @@ Pass `hasher: scryptPasswordHasher()` to keep scrypt, or any `PasswordHasher`.
 The argon2id hasher also verifies `$scrypt$` hashes and reports them through
 `needsRehash`, so an installation that started on scrypt upgrades each account
 on its next successful sign-in with no migration.
+
+### The password-changed notice
+
+Every successful `change-password` mails the account's address the
+`passwordChanged` message, whoever made the change: if the owner did not, this
+is how they find out. The notice carries a reset link so an owner who was
+locked out by someone else can retake the account in one step (reset signs
+every session out). That link is a live reset token in a mailbox, so it is
+short-lived by design: `policies.tokens.passwordChangedResetTtlMs`, 10
+minutes by default, and any earlier reset link dies when the password
+changes. The change stands even when the mail queue refuses the notice; the
+response says `notified: false` and the refusal is audited as
+`password.changed-notice`.
 
 ### Registering an email that already has an account
 

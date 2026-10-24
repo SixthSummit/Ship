@@ -236,6 +236,14 @@ A password change (`auth.change-password`, password re-entry under the
 lockout policy) rotates the current session whatever its transport, since a
 stolen token is the very token the request carries, and revokes every other
 session unless asked not to. Password reset already signs every session out.
+The owner is told by mail whoever made the change (`passwordChanged`), and
+the notice carries a short-lived reset link (ten minutes by default,
+`tokens.passwordChangedResetTtlMs`) so an owner locked out by someone else
+retakes the account in one step; earlier reset links die with the change.
+A sign-in link was rejected for the notice because a victim whose password
+was just changed cannot use it, and the exposure of a reset token in a
+mailbox is the forgot-password flow's already-accepted exposure, narrowed by
+the short lifetime.
 
 `@sixthsummit/ship-angular/credential-auth` makes `cookieSessionStorage()`
 the default: the client asks for the cookie transport, never holds a token,

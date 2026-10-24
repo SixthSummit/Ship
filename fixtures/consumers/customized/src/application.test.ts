@@ -1442,7 +1442,13 @@ describe("customized transactional mail", () => {
         id: "auth.mailer",
         moduleId: "auth",
         from: "Portfolio <auth@example.test>",
-        messages: ["changeEmail", "existingAccount", "resetPassword", "verifyEmail"],
+        messages: [
+          "changeEmail",
+          "existingAccount",
+          "passwordChanged",
+          "resetPassword",
+          "verifyEmail",
+        ],
       },
       {
         id: "reports.mailer",
@@ -1458,6 +1464,7 @@ describe("customized transactional mail", () => {
       operations: {
         enqueuedBy: [
           "auth.change-email",
+          "auth.change-password",
           "auth.forgot-password",
           "auth.register",
           "auth.resend-verification",
@@ -1468,7 +1475,13 @@ describe("customized transactional mail", () => {
     const contract = projectClientContract(app);
     expect(contract.mailers).toEqual({
       "auth.mailer": {
-        messages: ["changeEmail", "existingAccount", "resetPassword", "verifyEmail"],
+        messages: [
+          "changeEmail",
+          "existingAccount",
+          "passwordChanged",
+          "resetPassword",
+          "verifyEmail",
+        ],
       },
       "reports.mailer": { messages: ["digestReady"] },
     });
@@ -1570,6 +1583,7 @@ describe("customized transactional mail", () => {
               { name: "resetPassword", hasSample: true },
               { name: "changeEmail", hasSample: true },
               { name: "existingAccount", hasSample: true },
+              { name: "passwordChanged", hasSample: true },
             ],
           },
           { id: "reports.mailer", messages: [{ name: "digestReady", hasSample: true }] },
@@ -1579,6 +1593,7 @@ describe("customized transactional mail", () => {
     const subjects: Record<string, string> = {
       "auth.mailer/changeEmail": "Confirm your new Portfolio email",
       "auth.mailer/existingAccount": "You already have a Portfolio account",
+      "auth.mailer/passwordChanged": "Your Portfolio password was changed",
       "auth.mailer/resetPassword": "Reset your Portfolio password",
       "auth.mailer/verifyEmail": "Verify your email for Portfolio",
       "reports.mailer/digestReady": "Portfolio digest for 2026-09-18",

@@ -583,6 +583,7 @@ describe("password change", () => {
     expect(kept.body).toEqual({
       changed: true,
       revoked: 0,
+      notified: true,
       session: {
         transport: "bearer",
         token: expect.stringMatching(/^ship_s_/u),
@@ -641,6 +642,57 @@ describe("password change", () => {
       (await fixture.request("/auth/sign-in", { body: { email: EMAIL, password: PASSWORD } }))
         .status,
     ).toBe(200);
+
+    // Every change notifies the owner with a short-lived reset link that retakes the account.
+    const notices = (await fixture.deliverMail()).filter(
+      (mail) => mail.message === "passwordChanged",
+    );
+    expect(notices).toHaveLength(2);
+    expect(notices[1]).toMatchObject({ to: [EMAIL] });
+    // The earlier notice's link died with the next change; the latest one works once.
+    expect(
+      (
+        await fixture.request("/auth/password/reset", {
+          body: { token: notices[0]?.token, password: "retaken by the owner" },
+        })
+      ).status,
+    ).toBe(400);
+    const retaken = await fixture.request("/auth/password/reset", {
+      body: { token: notices[1]?.token, password: "retaken by the owner" },
+    });
+    expect(retaken.status).toBe(200);
+    expect((await fixture.request("/auth/me", { token: changed.body.session.token })).status).toBe(
+      401,
+    );
+    expect(
+      (
+        await fixture.request("/auth/sign-in", {
+          body: { email: EMAIL, password: "retaken by the owner" },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it("expires the password-changed reset link after its own short lifetime", async () => {
+    const fixture = createFixture({ policies: { tokens: { passwordChangedResetTtlMs: 60_000 } } });
+    await fixture.start();
+    const signedIn = await registerAndSignIn(fixture);
+    const changed = await fixture.request("/auth/password/change", {
+      token: signedIn.session.token,
+      body: { currentPassword: PASSWORD, newPassword: "another correct horse" },
+    });
+    expect(changed.status).toBe(200);
+    const [notice] = (await fixture.deliverMail()).filter(
+      (mail) => mail.message === "passwordChanged",
+    );
+    fixture.advance(60_001);
+    expect(
+      (
+        await fixture.request("/auth/password/reset", {
+          body: { token: notice?.token, password: "too late to retake it" },
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 

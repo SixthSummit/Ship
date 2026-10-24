@@ -703,6 +703,7 @@ describe("cookie-mode sessions over HTTP", () => {
     expect(changed.body).toEqual({
       changed: true,
       revoked: 1,
+      notified: true,
       session: {
         transport: "cookie",
         id: expect.any(String),
