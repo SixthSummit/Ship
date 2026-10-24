@@ -200,8 +200,13 @@ hand.
 **A stale cookie** (revoked, expired, idle, cut off, malformed) resolves
 anonymously on a public operation and is refused on an authenticated one: the
 browser keeps sending it after a revoke-all, and sign-in must stay reachable
-to replace it. A present invalid *bearer* is still refused everywhere
-(ADR-0004).
+to replace it. The response carries a clearing `Set-Cookie` either way, so
+the browser stops presenting the dead cookie, and the presentation is audited
+once as `session.stale-cookie` with its reason (`revoked`, `expired`,
+`idle`, `cut-off`, `unknown`, `malformed`) and the operation it reached.
+Pass `sessions` to `credentialAuthentication()` (the examples do) for the
+clearing; without it the cookie is ignored silently. A present invalid
+*bearer* is still refused everywhere (ADR-0004).
 
 **Definition-time rules.** `secure: false` is refused unless
 `sessions.environment` is `"development"`; a `__Host-` name requires

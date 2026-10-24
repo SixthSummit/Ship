@@ -203,8 +203,12 @@ The Hono credential adapter reads the cookie when no bearer header is
 present; a bearer always wins. A cookie session the resolver cannot verify
 counts as absent on a public operation and is refused on an authenticated
 one: the cookie is ambient, the browser keeps sending it after a revoke-all,
-and sign-in must stay reachable to replace it. A present invalid bearer keeps
-the ADR-0004 rule and is refused everywhere.
+and sign-in must stay reachable to replace it. The degradation is neither
+silent nor repeated: the resolver attaches a clearing `Set-Cookie` to its
+outcome (a resolver may now carry response headers, which the Hono adapter
+applies to the success response and to its own 401/403) and audits the
+presentation once as `session.stale-cookie` with the reason. A present
+invalid bearer keeps the ADR-0004 rule and is refused everywhere.
 
 CSRF protection is `credentialSessionCsrfPolicy()`, a SAPI-476 pre-validation
 policy registered under the new `"*"` key of `createHonoAdapter({ preValidationPolicies })`

@@ -368,6 +368,88 @@ describe("createHonoAdapter", () => {
     ).toThrow(TypeError);
   });
 
+  it("applies resolver headers to the success response and to its own 401, letting an operation's cookie win", async () => {
+    const open = defineOperation({
+      id: "fixtures.open",
+      transport: http.post("/open"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const signIn = defineOperation({
+      id: "fixtures.sign-in",
+      transport: http.post("/sign-in"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () =>
+        respond(200, { ok: true as const }, { headers: { "set-cookie": "session=fresh; Path=/" } }),
+    });
+    const guarded = defineOperation({
+      id: "fixtures.guarded",
+      transport: http.get("/guarded"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: authenticatedAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const application = defineApp({
+      id: "fixture-api",
+      modules: [
+        defineModule({
+          id: "fixtures",
+          operations: [open, signIn, guarded],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    const clearing = { "set-cookie": "session=; Path=/; Max-Age=0", "x-session": "stale" };
+    const auth: HonoAuthenticationOptions<string | undefined> = {
+      credentials: defineHonoCredentialAdapter<string | undefined>({
+        id: "fixtures.cookie",
+        extract: (request) => request.headers.get("cookie") ?? undefined,
+      }),
+      actors: defineActorResolver<string | undefined>({
+        id: "fixtures.actors",
+        resolve: ({ credential, operation }) => {
+          if (credential !== "session=stale") return { ok: true };
+          return operation.access.kind === "public"
+            ? { ok: true, headers: clearing }
+            : { ok: false, reason: "invalid-credential", headers: clearing };
+        },
+      }),
+    };
+    const app = createHonoAdapter(application, { auth });
+    const stale = { cookie: "session=stale" };
+    const anonymous = await app.request("/open", { method: "POST", headers: stale });
+    expect(anonymous.status).toBe(200);
+    expect(anonymous.headers.getSetCookie()).toEqual(["session=; Path=/; Max-Age=0"]);
+    expect(anonymous.headers.get("x-session")).toBe("stale");
+    const refused = await app.request("/guarded", { headers: stale });
+    expect(refused.status).toBe(401);
+    expect(refused.headers.getSetCookie()).toEqual(["session=; Path=/; Max-Age=0"]);
+    expect(refused.headers.get("x-request-id")).toBeTruthy();
+    const replaced = await app.request("/sign-in", { method: "POST", headers: stale });
+    expect(replaced.status).toBe(200);
+    expect(replaced.headers.getSetCookie()).toEqual(["session=fresh; Path=/"]);
+    expect((await app.request("/open", { method: "POST" })).headers.getSetCookie()).toEqual([]);
+  });
+
   it("passes the operation ID to centralized failure projection", async () => {
     const operation = defineOperation({
       id: "fixtures.validation",

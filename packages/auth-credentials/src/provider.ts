@@ -18,6 +18,7 @@ import {
   type CredentialSessionCookiePolicy,
   type CredentialSessionPolicy,
   type CredentialSessionTransport,
+  clearSessionCookie,
   credentialSessionCsrfRequirement,
   readSessionCookie,
 } from "./cookie.js";
@@ -141,9 +142,24 @@ export interface CredentialActorResolverOptions {
   readonly moduleId?: string;
   /** Idle timeout and touch interval come from the module policies; pass the same values. */
   readonly session?: { readonly idleTimeoutMs?: number; readonly touchIntervalMs?: number };
+  /**
+   * The module's resolved `sessions` policy. With a cookie transport the
+   * resolver answers a stale session cookie with a clearing `Set-Cookie`, so
+   * the browser stops presenting it, and audits the presentation once.
+   */
+  readonly sessions?: CredentialSessionPolicy;
   readonly clients?: RequestClientRegistry;
   readonly clock?: () => Date;
 }
+
+/** Why a presented session could not be resolved; recorded on the audit row. */
+export type StaleSessionReason =
+  | "malformed"
+  | "unknown"
+  | "revoked"
+  | "expired"
+  | "idle"
+  | "cut-off";
 
 /**
  * Resolves a session bearer to an actor: the session must be live and not
@@ -155,7 +171,10 @@ export interface CredentialActorResolverOptions {
  * revoked, expired, idle, cut off, malformed) counts as absent on a public
  * operation and is refused on an authenticated one. The cookie is ambient:
  * the browser keeps sending it after a revoke-all, and sign-in must still be
- * reachable to replace it. A bearer is presented deliberately and keeps the
+ * reachable to replace it. Either way the response clears the cookie (when
+ * `sessions` is given) and the presentation is audited as
+ * `session.stale-cookie` with its reason, so the degradation is neither
+ * silent nor repeated. A bearer is presented deliberately and keeps the
  * ADR-0004 rule that a present invalid credential is refused everywhere.
  */
 export function credentialActorResolver(
@@ -174,6 +193,9 @@ export function credentialActorResolver(
   );
   const idleTimeoutMs = options.session?.idleTimeoutMs ?? 0;
   const touchIntervalMs = options.session?.touchIntervalMs ?? 60_000;
+  const cookiePolicy = options.sessions?.transports.includes("cookie")
+    ? options.sessions.cookie
+    : undefined;
 
   return defineActorResolver({
     id: "ship-credentials.actors",
@@ -193,32 +215,63 @@ export function credentialActorResolver(
       if (credential === undefined || credential.kind === "ship-credentials.anonymous") {
         return anonymousAllowed ? { ok: true } : { ok: false, reason: "invalid-credential" };
       }
-      const stale = (): ActorResolution =>
-        credential.transport === "cookie" && anonymousAllowed
-          ? { ok: true }
-          : { ok: false, reason: "invalid-credential" };
-      if (credential.kind === "ship-credentials.invalid") return stale();
+      const now = clock();
+      const stale = async (
+        reason: StaleSessionReason,
+        known?: { readonly session: AuthSession; readonly account: AuthAccount },
+      ): Promise<ActorResolution> => {
+        const fromCookie = credential.transport === "cookie";
+        if (fromCookie) {
+          // Audited once per presentation; the clearing cookie below makes a
+          // browser stop presenting it, so the row is not repeated.
+          try {
+            await options.store.recordAudit({
+              event: "session.stale-cookie",
+              outcome: "failure",
+              ...(known ? { accountId: known.account.id, sessionId: known.session.id } : {}),
+              requestId: request.requestId,
+              ...(credential.client.ip !== undefined ? { ip: credential.client.ip } : {}),
+              ...(credential.client.userAgent !== undefined
+                ? { userAgent: credential.client.userAgent }
+                : {}),
+              details: { reason, operation: request.operation.id },
+              createdAt: now,
+            });
+          } catch {
+            // Bookkeeping must never decide the request.
+          }
+        }
+        const headers =
+          fromCookie && cookiePolicy
+            ? { headers: { "set-cookie": clearSessionCookie(cookiePolicy) } }
+            : {};
+        return fromCookie && anonymousAllowed
+          ? { ok: true, ...headers }
+          : { ok: false, reason: "invalid-credential", ...headers };
+      };
+      if (credential.kind === "ship-credentials.invalid") return stale("malformed");
       if (request.signal?.aborted) return { ok: false, reason: "unavailable" };
 
       let session: AuthSession | undefined;
       let account: AuthAccount | undefined;
-      const now = clock();
       try {
         session = await options.store.findSessionByTokenHash(hashToken(credential.token));
         account = session ? await options.store.findAccount(session.accountId) : undefined;
       } catch {
         return { ok: false, reason: "unavailable" };
       }
-      if (!session || !account) return stale();
-      if (session.revokedAt || session.expiresAt.getTime() <= now.getTime()) return stale();
+      if (!session || !account) return stale("unknown");
+      const known = { session, account };
+      if (session.revokedAt) return stale("revoked", known);
+      if (session.expiresAt.getTime() <= now.getTime()) return stale("expired", known);
       if (idleTimeoutMs > 0 && now.getTime() - session.lastSeenAt.getTime() > idleTimeoutMs) {
-        return stale();
+        return stale("idle", known);
       }
       if (
         account.sessionsInvalidBefore !== undefined &&
         session.createdAt.getTime() < account.sessionsInvalidBefore.getTime()
       ) {
-        return stale();
+        return stale("cut-off", known);
       }
       if (account.status !== "active") return { ok: false, reason: "forbidden" };
       if (session.mfaState === "pending-enrolment" && !enrolment.has(request.operation.id)) {
