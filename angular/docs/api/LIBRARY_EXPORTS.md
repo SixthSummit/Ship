@@ -152,8 +152,7 @@ failure to `OperationApiError` at an exception-oriented presentation boundary.
 Optional TanStack Query integration for reads, mutations, infinite queries,
 actor/tenant-scoped cache identity, and SSR hydration. Install the exact optional
 peer version declared in the package manifest. See the
-[TanStack Query guide](../guides/TANSTACK_QUERY.md); this entrypoint is pending
-release on `dev` and is not part of the previously released 4.1.0 package.
+[TanStack Query guide](../guides/TANSTACK_QUERY.md). Shipped in 4.2.0.
 
 ## `/push`
 
@@ -161,3 +160,77 @@ Optional Web Push: `provideShipPush`, `injectPush`, `SHIP_PUSH`, `ShipPush`,
 `ShipPushOptions`, `ShipPushSubscription`, `PushNotificationClick`, and redacted
 `ShipPushError`/`ShipPushErrorCode`. Requires Angular's optional service-worker peer
 and an application-owned PWA setup. See [Web Push](../guides/WEB_PUSH.md).
+
+## `/storage`
+
+Managed attachment uploads against ShipAPI's storage module. `createAttachmentUpload`
+validates the file against the declared policy, asks for a signed intent, PUTs with progress
+to an allowlisted provider origin (the allowlist is required), and completes the upload;
+`status`, `pending`, `progress`, `result`, `object`, `error`, and `intent` are signals and
+`cancel()` aborts the transfer. `attachmentPolicyFromManifest` reads the policy from the
+client manifest and throws `AttachmentPolicyError` for an undeclared attachment;
+`attachmentUploadFailure` narrows a failed result to the stage that failed for template
+branching. `STORAGE_CREATE_INTENT_OPERATION_ID` and `STORAGE_COMPLETE_OPERATION_ID` name the
+module's operations. Types: `AttachmentManifest`, `AttachmentUploadPolicy`, `AttachmentUpload`,
+`AttachmentUploadBinding`, `AttachmentUploadCallOptions`, `AttachmentUploadResult`,
+`AttachmentUploadStatus`, `CreateAttachmentUploadOptions`, `StorageContract`,
+`StorageIntentData`, and `StorageCompletionData`. See
+[Managed storage](../../../docs/v4/features/storage.md#contract-and-clients).
+
+## `/rich-text`
+
+`ShipRichTextEditorComponent` (`<ship-rich-text-editor>`) is a `ControlValueAccessor` over
+TipTap whose value is the document model, never HTML; `@tiptap/core`, `@tiptap/pm`, and
+`@tiptap/starter-kit` are optional peers of this entry alone. `richTextFieldFromManifest`
+builds the field policy from the client manifest and throws `RichTextPolicyError` for a schema
+version this entrypoint does not build; `createRichTextExtensions` turns that policy into the
+editor schema; `createRichTextAttachmentUploader` routes dropped and pasted images through a
+managed `/storage` upload. `normalizeRichTextDocument`, `emptyRichTextDocument`,
+`isRichTextDocument`, `RICH_TEXT_SCHEMA_VERSION`, `RICH_TEXT_BASE_NODE_ATTRS`, and
+`RICH_TEXT_BASE_MARK_ATTRS` cover the document model. Types: `RichTextDocument`,
+`RichTextNode`, `RichTextMark`, `RichTextAttrValue`, `RichTextManifest`, `RichTextFieldPolicy`,
+`RichTextExtensionSpec`, `RichTextNodeSpec`, `RichTextMarkSpec`, `RichTextAttrSpec`,
+`RichTextAttachmentUploader`, `RichTextAttachmentPreview`, `RichTextNodeLabel`, and
+`CreateRichTextExtensionsOptions`. See
+[Rich text](../../../docs/v4/features/rich-text.md#6-contract-and-the-angular-editor).
+
+## `/console`
+
+Operator console over `@sixthsummit/ship-console`: `provideShipConsole`, `injectConsole`,
+`SHIP_CONSOLE`, and the signal-first `ShipConsole` (`panels`, `jobs`, `runs`, `schedules`,
+`receipts`, `realtime`, `outboxes`, `outboxRecords`, `busy`, `failure`; options in
+`ShipConsoleOptions`, default mount in `DEFAULT_CONSOLE_PREFIX`). `shipConsoleRoutes`
+(`ShipConsoleRoutesOptions`) mounts the panels under an application route and refuses an
+empty guard list; `ShipConsoleAppComponent` bootstraps the console as its own application;
+`ShipConsoleShellComponent` hosts `ShipConsoleJobsPanelComponent`,
+`ShipConsoleCronPanelComponent`, `ShipConsoleWebhooksPanelComponent`,
+`ShipConsoleRealtimePanelComponent`, and `ShipConsoleOutboxPanelComponent`. `formatInstant`,
+`formatJson`, and `formatTrigger` are the display helpers. `ShipConsoleContract` types a client
+over the default mount and `ShipConsoleClient` is the untyped client for another prefix;
+`ConsoleOperation`, `ShipConsoleCallResult`, `ConsoleFrameworkErrorCode`, and the `Console*`
+view types (`ConsolePanels`, `ConsoleJobsOverview`, `ConsoleRun`, `ConsoleSchedule`,
+`ConsoleReceipt`, `ConsoleRealtime`, `ConsoleOutboxes`, `ConsoleFailure`, and the rest)
+describe the wire shapes. See [Operator console](../../../docs/v4/features/console.md#angular).
+
+## `/credential-auth`
+
+Sign-in, MFA challenge, recovery and audit screens over `@sixthsummit/ship-auth-credentials`:
+`provideShipCredentialAuth`, `injectCredentialAuth`, `SHIP_CREDENTIAL_AUTH`, and the
+signal-first `ShipCredentialAuth` (`state`, `account`, `failure`, `sessions`,
+`recoveryCodes`; `credential()` is the matching request-policy capability; options in
+`ShipCredentialAuthOptions`, default mount in `DEFAULT_CREDENTIAL_AUTH_PREFIX`). Session
+transport: `cookieSessionStorage` (the default: `httpOnly` cookie, no token in state, `me` on
+`initialize()`), `cookieCredentialCapability` (credentials included and the CSRF cookie echoed
+on unsafe operations), `memorySessionStorage` and `browserSessionStorage` (bearer),
+`readBrowserCookie`, and the `ShipCredentialSessionStorage`, `ShipCookieSessionStorage`,
+`CookieSessionOptions`, and `CredentialSessionTransport` types. Screens: `ShipSignInComponent`,
+`ShipMfaChallengeComponent`, `ShipRecoveryCodeComponent`, and `ShipAuthAuditPanelComponent`
+(mounted under the console shell with `SHIP_AUTH_AUDIT_CLIENT` provided).
+`ShipCredentialAuthContract` and `ShipAuthAuditContract` type the clients;
+`ShipCredentialAuthClient`, `ShipCredentialAuthCallResult`, `CredentialAuthOperation`,
+`CredentialAuthFrameworkErrorCode`, and the `Credential*` view types (`CredentialAuthState`,
+`CredentialAccount`, `CredentialMe`, `CredentialSignInResult`, `CredentialChallenge`,
+`CredentialChallengePassed`, `CredentialSessionView`, `CredentialSessionToken`,
+`CredentialSessionMfaState`, `CredentialTotpEnrolment`, `CredentialAuditEvent`, and
+`CredentialFailure`) describe the wire shapes. See
+[Credential auth](../../../docs/v4/features/auth-credentials.md#7-angular-screens).

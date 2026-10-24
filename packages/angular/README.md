@@ -29,11 +29,13 @@ response, protocol, and programmer failures remain exceptional.
 - `/push` — optional Angular service worker subscriptions and notification messages/clicks
 - `/storage` — managed attachment uploads against ShipAPI's storage module (signed intent, PUT with progress, completion)
 - `/rich-text` — TipTap editor bound to declared `richText` fields: schema from the manifest, document model out, image upload through managed storage
+- `/console` — operator console panels (jobs, cron, webhook receipts, realtime channels, outboxes) over `@sixthsummit/ship-console`
 - `/realtime` — manifest-declared subscriptions and presence
 - `/operations` — unary client kernel, request policy, DI, resources, and mutations
 - `/ship-api` — adapter for ShipAPI's browser-safe structural client and manifest
 - `/auth` — operation-backed session authentication
 - `/firebase-auth` — optional Firebase frontend authentication adapter
+- `/credential-auth` — sign-in, MFA challenge, recovery-code and auth-audit screens over `@sixthsummit/ship-auth-credentials`
 - `/forms` — operation input forms and browser-safe codecs
 - `/upload`, `/download`, `/stream`, `/socket` — explicit transport capabilities
 - `/testing` — runner-independent conformance utilities
@@ -45,8 +47,8 @@ The root entrypoint retains general Angular/auth/REST APIs for current consumers
 third-party REST. New ShipAPI work should not use root Hono thunks or duplicate fetch
 wrappers.
 
-The `/query` entrypoint is pending release on `dev` and is not in the previously
-released 4.1.0 package.
+The `/query` entrypoint shipped in 4.2.0; it needs the exact optional TanStack Angular
+peer version declared in the package manifest.
 
 ## Schematics
 
