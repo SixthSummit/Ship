@@ -1,5 +1,32 @@
 # @sixthsummit/ship-api
 
+## 4.2.1
+
+### Patch Changes
+
+- 63eef39: Require `zod` `^4.6.7` (GHSA-mrhx-c7xc-m3w5: memory exhaustion while validating oversized constrained collections) and resolve `body-parser` to `2.4.0` under the MCP server's Express dependency (GHSA-27r3-jxmh-p828). No API change; the Angular library now runs its own suite against zod 4 and the Angular scaffold template asks for `zod ^4.6.7`.
+- Updated dependencies [d86f629]
+- Updated dependencies [4ad58d6]
+- Updated dependencies [3e368c2]
+- Updated dependencies [4639db8]
+- Updated dependencies [71e9bcf]
+- Updated dependencies [d86f629]
+- Updated dependencies [b612767]
+- Updated dependencies [b612767]
+- Updated dependencies [b612767]
+- Updated dependencies [b350b5d]
+- Updated dependencies [b350b5d]
+- Updated dependencies [faab83c]
+- Updated dependencies [5e2858d]
+- Updated dependencies [5e2858d]
+- Updated dependencies [3e368c2]
+- Updated dependencies [63eef39]
+  - @sixthsummit/ship-core@1.2.0
+  - @sixthsummit/ship-hono@1.3.0
+  - @sixthsummit/ship-contract@1.4.0
+  - @sixthsummit/ship-cli@1.3.0
+  - @sixthsummit/ship-drizzle@1.3.0
+
 ## 4.2.0
 
 ### Minor Changes

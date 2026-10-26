@@ -1,18 +1,24 @@
 import {
+  type AttachmentCapability,
   cacheBackendDependency,
   channelPublisherProvider,
   defineApp,
+  defineAttachment,
   defineChannel,
   defineModule,
   defineOperation,
   defineOutbox,
   defineOutboxDispatcher,
+  defineRichText,
+  defineRichTextExtension,
   effectDependency,
   idempotencyStoreDependency,
   outboxIntent,
   publicAccess,
   type RealtimePublishBackend,
+  type RichTextCapability,
   type RuntimeSchema,
+  STORAGE_MODULE_ID,
   valueProvider,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
@@ -562,5 +568,217 @@ describe("projectClientContract cache policy", () => {
       ],
     });
     expect(projectClientContract(app).operations[0]).not.toHaveProperty("cache");
+  });
+});
+
+describe("projectClientContract attachments", () => {
+  it("projects the upload policy of declared attachments without provider detail", () => {
+    const photo = defineAttachment({
+      id: "gallery.photo",
+      cardinality: "many",
+      contentTypes: ["image/png", "image/jpeg"],
+      maxBytes: 5_000_000,
+      visibility: "private",
+      maxCount: 12,
+      variants: { thumb: { width: 200, height: 200, fit: "cover", format: "webp" } },
+    });
+    const capability: AttachmentCapability = {
+      kind: "ship.attachment-capability",
+      attachmentId: photo.id,
+      withScope: () => {
+        throw new Error("unused");
+      },
+    };
+    const add = defineOperation({
+      id: "gallery.add",
+      transport: http.post("/gallery/:ownerId/photos"),
+      input: {
+        params: z.object({ ownerId: z.string() }),
+        body: z.object({ objectId: z.string().uuid() }),
+      },
+      output: { 201: z.object({ attached: z.literal(true) }) },
+      successStatus: 201,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: { photos: photo.binding },
+      attachments: [photo],
+      handler: () => ({ attached: true as const }),
+    });
+    const app = defineApp({
+      id: "contract-attachments",
+      modules: [
+        defineModule({
+          id: "gallery",
+          operations: [add],
+          providers: [],
+          imports: [STORAGE_MODULE_ID],
+          exports: [],
+          attachments: [photo],
+        }),
+        defineModule({
+          id: STORAGE_MODULE_ID,
+          operations: [],
+          providers: [valueProvider(photo.binding, capability)],
+          imports: [],
+          exports: [photo.binding],
+        }),
+      ],
+    });
+
+    const contract = projectClientContract(app);
+    expect(contract.attachments).toEqual({
+      "gallery.photo": {
+        cardinality: "many",
+        contentTypes: ["image/jpeg", "image/png"],
+        maxBytes: 5_000_000,
+        visibility: "private",
+        maxCount: 12,
+        variants: ["thumb"],
+      },
+    });
+    expect(contract.operations[0]?.attachments).toEqual(["gallery.photo"]);
+    const serialized = JSON.stringify(contract);
+    for (const forbidden of ["providerId", "intentTtlMs", "gallery.photo.attachment", "disk"]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    const withoutAttachments = projectClientContract(
+      defineApp({
+        id: "contract-attachments",
+        modules: [
+          defineModule({ id: "gallery", operations: [], providers: [], imports: [], exports: [] }),
+        ],
+      }),
+    );
+    expect(withoutAttachments.attachments).toEqual({});
+    expect(withoutAttachments.fingerprint).not.toBe(contract.fingerprint);
+  });
+});
+
+describe("projectClientContract rich text", () => {
+  it("projects the schema version, attachment, limits and extension specs without renderers", () => {
+    const image = defineAttachment({
+      id: "documents.image",
+      cardinality: "many",
+      contentTypes: ["image/png"],
+      maxBytes: 1_000_000,
+      visibility: "private",
+    });
+    const mergeField = defineRichTextExtension({
+      name: "merge-field",
+      nodes: {
+        mergeField: {
+          spec: {
+            group: "inline",
+            atom: true,
+            attrs: { key: { type: "string", required: true, maxLength: 64 } },
+          },
+          renderHtml: () => "<span>SERVER_ONLY_HTML</span>",
+          renderText: () => "SERVER_ONLY_TEXT",
+        },
+      },
+    });
+    const body = defineRichText({
+      id: "documents.body",
+      attachment: image,
+      extensions: [mergeField],
+      maxBytes: 1024,
+    });
+    const capability: RichTextCapability = {
+      kind: "ship.rich-text-capability",
+      fieldId: body.id,
+      attachmentId: image.id,
+      withScope: () => {
+        throw new Error("unused");
+      },
+    };
+    const attachmentCapability: AttachmentCapability = {
+      kind: "ship.attachment-capability",
+      attachmentId: image.id,
+      withScope: () => {
+        throw new Error("unused");
+      },
+    };
+    const save = defineOperation({
+      id: "documents.save",
+      transport: http.put("/documents/:id"),
+      input: { params: z.object({ id: z.string() }), body: z.object({ document: z.unknown() }) },
+      output: { 200: z.object({ saved: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: { body: body.binding },
+      handler: () => ({ saved: true as const }),
+    });
+    const app = defineApp({
+      id: "contract-rich-text",
+      modules: [
+        defineModule({
+          id: "documents",
+          operations: [save],
+          providers: [valueProvider(body.binding, capability)],
+          imports: [STORAGE_MODULE_ID],
+          exports: [],
+          attachments: [image],
+          richText: [body],
+        }),
+        defineModule({
+          id: STORAGE_MODULE_ID,
+          operations: [],
+          providers: [valueProvider(image.binding, attachmentCapability)],
+          imports: [],
+          exports: [image.binding],
+        }),
+      ],
+    });
+
+    const contract = projectClientContract(app);
+    expect(contract.richText).toEqual({
+      "documents.body": {
+        schemaVersion: 1,
+        attachment: "documents.image",
+        maxBytes: 1024,
+        maxDepth: 32,
+        extensions: [
+          {
+            name: "merge-field",
+            nodes: {
+              mergeField: {
+                group: "inline",
+                atom: true,
+                attrs: { key: { type: "string", required: true, maxLength: 64 } },
+              },
+            },
+            marks: {},
+          },
+        ],
+      },
+    });
+    expect(contract.operations[0]?.richText).toEqual(["documents.body"]);
+    const serialized = JSON.stringify(contract);
+    for (const forbidden of [
+      "SERVER_ONLY",
+      "renderHtml",
+      "documents.body.rich-text",
+      "onInvalid",
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    const withoutRichText = projectClientContract(
+      defineApp({
+        id: "contract-rich-text",
+        modules: [
+          defineModule({
+            id: "documents",
+            operations: [],
+            providers: [],
+            imports: [],
+            exports: [],
+          }),
+        ],
+      }),
+    );
+    expect(withoutRichText.richText).toBeUndefined();
   });
 });

@@ -38,11 +38,17 @@ depending on an agent prompt or framework-specific base class.
 | `@sixthsummit/ship-drizzle` | Transaction-scoped capabilities and explicit repository primitives |
 | `@sixthsummit/ship-contract` | Browser-safe structural client, manifest, codecs, and OpenAPI projection |
 | `@sixthsummit/ship-auth-firebase` | Optional Firebase credential and actor adapter |
+| `@sixthsummit/ship-auth-credentials` | First-party credential auth: password accounts, verification, MFA, sessions, audit log; actor provider beside Firebase |
 | `@sixthsummit/ship-cache-redis` | Optional Redis backend for declared read caching |
 | `@sixthsummit/ship-jobs-bullmq` | Optional BullMQ jobs backend |
 | `@sixthsummit/ship-realtime-socketio` | Socket.IO + Redis realtime gateway |
 | `@sixthsummit/ship-push` | Optional encrypted VAPID Web Push delivery |
+| `@sixthsummit/ship-mail` | Declared transactional mail: typed sender, send ledger, allowlist interceptor, previews, log and Resend adapters |
+| `@sixthsummit/ship-console` | Operator console: jobs, cron, webhook receipts, realtime channels and outboxes behind `console.operate` |
+| `@sixthsummit/ship-rich-text` | Declared rich text fields: versioned document allowlist, server-side rendering, embedded managed attachments |
+| `@sixthsummit/ship-storage` | Declared managed storage: signed uploads, variants, durable purge; disk, S3/R2, GCS adapters |
 | `@sixthsummit/ship-webhooks` | Provider webhook signature verifiers |
+| `@sixthsummit/ship-schema-lint` | Migration linter, schema snapshot check, gated release preset and boot guard |
 | `@sixthsummit/ship-observability-otel` | Optional OpenTelemetry integration |
 | `@sixthsummit/ship-testing` | Parity fixtures and disposable PostgreSQL support |
 | `@sixthsummit/ship-cli` | Graph checks, inspection, impact, contract emission, and route migration |
@@ -139,6 +145,8 @@ pnpm run audit:runtime
 ## Documentation and release status
 
 - [Quick start](docs/v4/quick-start.md)
+- [Feature pages](docs/v4/features/) for storage, mail, console, credential auth, rich text, schema safety and observability; [realtime](docs/v4/realtime.md) and [streaming](docs/v4/streaming.md)
+- [Consumer migration playbook](docs/MIGRATION_V3_TO_V4.md) and [upgrade notes](docs/UPGRADING.md)
 - [Public API surface](docs/PUBLIC_API_SURFACE.md)
 - [Architecture decisions](docs/rearchitecture/decisions/README.md)
 - [Implementation status and dated evidence](docs/V4_STATUS.md)
@@ -166,14 +174,22 @@ packages/
   drizzle/             @sixthsummit/ship-drizzle
   contract/            @sixthsummit/ship-contract
   auth-firebase/       Firebase adapter
+  auth-credentials/    first-party credential auth
   cache-redis/         Redis cache backend adapter
   jobs-bullmq/         BullMQ jobs backend
   realtime-socketio/   Socket.IO + Redis gateway
-  webhooks/           provider webhook verifiers
+  webhooks/            provider webhook verifiers
+  push/                Web Push sender
+  storage/             managed storage
+  mail/                transactional mail
+  console/             operator console
+  rich-text/           rich text fields
+  schema-lint/         schema safety tooling
   observability-otel/  OpenTelemetry adapter
   testing/             development-only fixtures
   cli/                 graph and contract tooling
   core/                @sixthsummit/ship-api compatibility distribution
+  angular/             @sixthsummit/ship-angular
 fixtures/consumers/    packed minimal and customized consumers
 docs/rearchitecture/   RFC execution records, ADRs, gates, and changelog
 apps/docs/             generated Starlight documentation site

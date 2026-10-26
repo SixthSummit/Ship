@@ -1,6 +1,6 @@
 # Contributing to ShipAPI
 
-Thanks for your interest. ShipAPI is in pre-GA (`4.0.0-alpha.x`) and the surface is still settling, so contributions are most useful in these shapes:
+Thanks for your interest. The operation kernel and its adapters have stable releases, `dev` publishes alpha snapshots of pending work, and the route-first compatibility distribution stays supported through the v4 migration window. Contributions are most useful in these shapes:
 
 - **Bug reports + reproductions** for the framework, CLI, plugin, or MCP server.
 - **Documentation fixes** — typos, broken links, stale code samples, missing concepts.
@@ -11,14 +11,16 @@ For larger changes (new modules, new CLI commands, public-API changes), open a d
 
 ## Repo layout
 
-The framework + plugin + MCP server are a pnpm-workspaces monorepo:
+Ship is a pnpm + Turborepo monorepo. The package table in [`AGENTS.md`](AGENTS.md) is the map; in short:
 
-- `packages/core/` — `@sixthsummit/ship-api` framework
-- `packages/claude-plugin/` — `@sixthsummit/ship-api-claude-plugin`
-- `packages/mcp-server/` — `@sixthsummit/ship-api-mcp-server`
-- `apps/docs/` — Astro + Starlight docs site
-- `modules/` — built-in feature modules (accounts, oauth, outbox)
-- `libraries/` — shared libraries (ai, chunking, email, weaviate)
+- `packages/kernel/` — `@sixthsummit/ship-core`, the operation kernel
+- `packages/hono/`, `packages/drizzle/`, `packages/contract/`, `packages/cli/`, `packages/testing/` — transport, database, contract, tooling and test adapters
+- `packages/auth-firebase/`, `packages/auth-credentials/`, `packages/jobs-bullmq/`, `packages/realtime-socketio/`, `packages/webhooks/`, `packages/cache-redis/`, `packages/storage/`, `packages/mail/`, `packages/console/`, `packages/rich-text/`, `packages/schema-lint/`, `packages/push/`, `packages/observability-otel/` — optional capabilities and adapters
+- `packages/core/` — `@sixthsummit/ship-api`, the route-first compatibility distribution (with `modules/` and `libraries/` as its copied-in references)
+- `packages/claude-plugin/`, `packages/mcp-server/` — compatibility-line agent tooling (ADR-0020 proposes their replacement)
+- `packages/angular/` — `@sixthsummit/ship-angular`; guidance in [`angular/AGENTS.md`](angular/AGENTS.md)
+- `apps/docs/`, `apps/angular-docs/` — Astro + Starlight docs sites projected from `docs/` and `angular/docs/`
+- `fixtures/consumers/` — the minimal and customized golden consumers
 
 Read [`AGENTS.md`](AGENTS.md) before touching code — it's the entry-point doc for the monorepo (where things live, common pitfalls, how to verify your work).
 
@@ -29,8 +31,8 @@ locked test and documentation toolchain; older Node 22 patches are rejected befo
 
 ```sh
 # 1. Fork + clone
-git clone git@github.com:<you>/ship-api.git
-cd ship-api
+git clone git@github.com:<you>/Ship.git
+cd Ship
 
 # 2. Install
 corepack enable

@@ -2,23 +2,33 @@ export type {
   CreateHonoAdapterOptions,
   HonoAdapterDiagnosticCode,
   HonoFailureProjectionContext,
+  HonoPreValidationPolicies,
   HonoPreValidationPolicy,
   HonoPreValidationPolicyContext,
   HonoPreValidationPolicyResult,
   HonoUnexpectedErrorContext,
   ShipHttpErrorEnvelope,
 } from "./adapter.js";
-export { createHonoAdapter, HonoAdapterError } from "./adapter.js";
+export {
+  createHonoAdapter,
+  definePreValidationPolicy,
+  GLOBAL_PRE_VALIDATION_POLICY,
+  HonoAdapterError,
+  preValidationPolicyIds,
+} from "./adapter.js";
 export type {
   HeaderCredential,
   HonoAuthenticationOptions,
   HonoCredentialAdapter,
+  HonoPolicyRequirement,
 } from "./auth.js";
 export {
   defineHonoCredentialAdapter,
   isHonoCredentialAdapter,
   requestHeadersCredential,
 } from "./auth.js";
+export type { HonoCorsOptions } from "./cors.js";
+export { assertCorsOptions } from "./cors.js";
 export type {
   JobLivenessResponse,
   JobLivenessResponseEntry,

@@ -6,6 +6,60 @@ listed, it had no consumer-facing migration. For the full v3 → v4 move, see
 [MIGRATION_V3_TO_V4.md](./MIGRATION_V3_TO_V4.md).
 
 ---
+## Kernel line — `createHonoAdapter({ cors })` (ship-hono minor, ship-cli minor)
+
+**Who's affected:** kernel-line apps with a browser client on another origin.
+Until now the adapter emitted no `Access-Control-*` headers and every app wired
+`hono/cors` by hand (the Ship project template's `apps/api/src/http.ts`
+workaround); compat-tier apps already had `createApp({ cors })`.
+
+**What you change.**
+
+- **Pass `cors` to the adapter** with the same object the compat tier takes:
+  `createHonoAdapter(app, { cors: { origin: env.CORS_ORIGINS, credentials: true } })`.
+  Preflights are answered for operation, streaming and webhook routes;
+  `X-Request-Id`, `X-Ship-Cache` and every declared error header are exposed
+  to the browser. Delete any hand-rolled `app.use("*", cors(...))` wrapper.
+- **A wildcard origin with `credentials: true` now fails at boot**
+  (`SHIP_HONO_CORS_INVALID`). List the origins explicitly.
+- **An operation cannot set `Access-Control-*` headers through `respond()`**;
+  they were never honoured consistently and are now reserved like
+  `X-Request-Id`.
+- **New scaffolds read `CORS_ORIGINS`** (comma-separated) in `src/http.ts`.
+  Existing apps can copy that file.
+
+---
+## Kernel line — `hono`, `drizzle-orm` and `ioredis` become peer dependencies of the adapters (minor)
+
+**Who's affected:** apps that install `@sixthsummit/ship-hono` without listing
+`hono`, `@sixthsummit/ship-drizzle` or `@sixthsummit/ship-testing` without
+listing `drizzle-orm`, or `@sixthsummit/ship-jobs-bullmq` /
+`@sixthsummit/ship-realtime-socketio` without listing `ioredis`. The
+`@sixthsummit/ship-api` compatibility distribution is unchanged.
+
+**Why it changed.** Every app that mounts its own middleware imports Hono; every
+app defines its schema with `drizzle-orm`; every app that runs jobs or the
+realtime gateway constructs its own `ioredis` client. As regular dependencies of
+the adapters those runtimes could resolve twice. It happened in the Ship project
+template: a caret bump of the Ship packages pulled a newer `ship-hono` while the
+app's exact `hono` pin stayed behind, two Hono type trees landed, and types
+stopped lining up. The rule is recorded in
+[VERSIONING.md](./VERSIONING.md#shared-runtimes-are-peer-dependencies).
+
+**What you change.**
+
+- **Add the runtime to your own `dependencies`** if you relied on the
+  transitive copy: `hono` with the caret range `ship-hono` declares as its peer
+  (`^4.13.13` today), `drizzle-orm` with `ship-drizzle`'s range, `ioredis` with
+  the adapter's range. npm 7+ and pnpm install a missing peer automatically, so
+  nothing breaks if you don't, but the app should own the version.
+- **Never pin `hono` exactly next to caret Ship packages.** The scaffold now
+  writes exact Ship pins and a caret `hono`; the pack and golden-consumer gates
+  fail on a second copy.
+- **If `npm install` reports `ERESOLVE` on `hono`**, your pin is outside the
+  adapter's peer range. Move it into the range; don't pass `--legacy-peer-deps`.
+
+---
 ## Kernel line — ship-core and ship-hono become peer dependencies of the adapters (minor)
 
 **Who's affected:** apps that install any of `ship-hono`, `ship-drizzle`,

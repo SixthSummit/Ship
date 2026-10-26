@@ -1,4 +1,11 @@
 import type { OperationAccess } from "./access.js";
+import {
+  type AttachmentGraphNode,
+  checkOperationAttachments,
+  collectAttachmentOwners,
+  isAttachmentDependencyToken,
+  projectAttachments,
+} from "./attachment.js";
 import type { CacheScope } from "./cache.js";
 import { cacheControlHeader, isCacheBackendDependencyToken } from "./cache.js";
 import { cacheInvalidationOutbox } from "./cache-invalidation.js";
@@ -18,6 +25,7 @@ import {
   JOB_BACKEND_ID,
   JOB_LOCK_PROVIDER_ID,
 } from "./job.js";
+import { collectMailerOwners, type MailerGraphNode, projectMailers } from "./mail.js";
 import type { AnyModule } from "./module.js";
 import { isShipModule } from "./module.js";
 import type {
@@ -40,6 +48,15 @@ import {
   type PublicationDelivery,
   publicationDelivery,
 } from "./realtime-publication.js";
+import {
+  checkOperationRichText,
+  collectRichTextOwners,
+  isRichTextDependencyToken,
+  projectRichText,
+  type RichTextGraphNode,
+  richTextBindingsOf,
+  richTextForBinding,
+} from "./rich-text.js";
 
 const APPLICATION_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
 const WORKER_MODES = new Set<JobWorkerMode>(["api", "worker", "all"]);
@@ -111,7 +128,24 @@ export type ApplicationDiagnosticCode =
   | "SHIP_JOB_HTTP_TRIGGER_UNBOUND"
   | "SHIP_JOB_SINGLE_RUNNER_UNKEYED"
   | "SHIP_PROVIDER_JOB_FORBIDDEN"
-  | "SHIP_OPERATION_PUBLISH_DISPATCHER_MISSING";
+  | "SHIP_OPERATION_PUBLISH_DISPATCHER_MISSING"
+  | "SHIP_ATTACHMENT_ID_DUPLICATE"
+  | "SHIP_ATTACHMENT_MODULE_ID_MISMATCH"
+  | "SHIP_ATTACHMENT_STORAGE_MODULE_MISSING"
+  | "SHIP_ATTACHMENT_UNDECLARED"
+  | "SHIP_ATTACHMENT_IMPORT_REQUIRED"
+  | "SHIP_ATTACHMENT_PROVIDER_LIFETIME_INVALID"
+  | "SHIP_RICH_TEXT_ID_DUPLICATE"
+  | "SHIP_RICH_TEXT_MODULE_ID_MISMATCH"
+  | "SHIP_RICH_TEXT_ATTACHMENT_UNDECLARED"
+  | "SHIP_RICH_TEXT_PROVIDER_MISSING"
+  | "SHIP_RICH_TEXT_UNDECLARED"
+  | "SHIP_RICH_TEXT_IMPORT_REQUIRED"
+  | "SHIP_RICH_TEXT_PROVIDER_LIFETIME_INVALID"
+  | "SHIP_OPERATION_ATTACHMENT_UNBOUND"
+  | "SHIP_OPERATION_ATTACHMENT_UNDECLARED"
+  | "SHIP_MAILER_ID_DUPLICATE"
+  | "SHIP_MAILER_ID_MISMATCH";
 
 export type ApplicationDiagnosticSeverity = "error" | "warning";
 
@@ -200,6 +234,12 @@ export interface ApplicationGraph {
   readonly diagnostics?: readonly ApplicationDiagnostic[];
   readonly channels: readonly ChannelGraphNode[];
   readonly jobs: readonly JobGraphNode[];
+  /** Declared managed attachments; absent provider detail by design. */
+  readonly attachments: readonly AttachmentGraphNode[];
+  /** Declared mailers and their message names; templates and payload schemas are never projected. */
+  readonly mailers: readonly MailerGraphNode[];
+  /** Declared rich text fields with their schema version and extension specs; renderers are never projected. */
+  readonly richText: readonly RichTextGraphNode[];
 }
 
 export interface JobGraphNode {
@@ -291,6 +331,9 @@ export interface ModuleGraphNode {
   readonly providers: readonly string[];
   readonly exports: readonly string[];
   readonly channels: readonly string[];
+  readonly attachments: readonly string[];
+  readonly mailers: readonly string[];
+  readonly richText: readonly string[];
 }
 
 export interface OperationGraphNode {
@@ -316,6 +359,10 @@ export interface OperationGraphNode {
   readonly job?: readonly OperationJobGraphNode[];
   /** Present when the operation publishes: immediate on `none`, through the outbox on `write`. */
   readonly publicationDelivery?: PublicationDelivery;
+  /** Managed attachment ids this operation binds. */
+  readonly attachments?: readonly string[];
+  /** Rich text field ids this operation binds. */
+  readonly richText?: readonly string[];
 }
 
 export interface EffectGraphNode {
@@ -328,14 +375,30 @@ export interface ProviderGraphNode {
   readonly moduleId: string;
   readonly lifetime: "singleton" | "operation";
   readonly dependencies: readonly DependencyGraphNode[];
-  readonly scope?: "unit-of-work" | "effect" | "outbox" | "idempotency" | "cache" | "job";
+  readonly scope?:
+    | "unit-of-work"
+    | "effect"
+    | "outbox"
+    | "idempotency"
+    | "cache"
+    | "job"
+    | "attachment"
+    | "rich-text";
   readonly delivery?: "immediate";
 }
 
 export interface DependencyGraphNode {
   readonly name: string;
   readonly providerId: string;
-  readonly scope?: "unit-of-work" | "effect" | "outbox" | "idempotency" | "cache" | "job";
+  readonly scope?:
+    | "unit-of-work"
+    | "effect"
+    | "outbox"
+    | "idempotency"
+    | "cache"
+    | "job"
+    | "attachment"
+    | "rich-text";
   readonly role?: "writer" | "backend" | "enqueue" | "lock";
   /** For job enqueue bindings: the job that will be enqueued. */
   readonly jobId?: string;
@@ -599,6 +662,9 @@ function compileDiagnostics(
   }
 
   const channelOwners = collectChannelOwners(appId, sortedModules, diagnostics);
+  const attachmentOwners = collectAttachmentOwners(appId, sortedModules, diagnostics);
+  collectMailerOwners(appId, sortedModules, diagnostics);
+  const richTextOwners = collectRichTextOwners(appId, sortedModules, diagnostics);
 
   for (const module of sortedModules) {
     for (const importedId of [...module.imports].sort()) {
@@ -635,11 +701,25 @@ function compileDiagnostics(
       checkOperationStream(appId, module, operation, diagnostics);
       checkOperationCache(appId, module, operation, diagnostics);
       checkOperationPublications(appId, module, operation, channelOwners, diagnostics);
+      checkOperationAttachments(appId, module, operation, attachmentOwners, diagnostics);
+      checkOperationRichText(appId, module, operation, richTextOwners, diagnostics);
       checkOperationJobBindings(appId, module, operation, diagnostics);
       checkDependencies(
         appId,
         module,
         operation.dependencies,
+        providerOwners,
+        modulesById,
+        diagnostics,
+        { operationId: operation.id, pathPrefix: "dependencies" },
+      );
+      // A rich text field with embedded objects is scoped by the executor
+      // together with its attachment capability, so that capability must be
+      // reachable from the binding operation exactly like a direct binding.
+      checkDependencies(
+        appId,
+        module,
+        embeddedAttachmentBindings(operation),
         providerOwners,
         modulesById,
         diagnostics,
@@ -706,6 +786,36 @@ function compileDiagnostics(
             "SHIP_IDEMPOTENCY_PROVIDER_LIFETIME_INVALID",
             `idempotency store provider ${JSON.stringify(provider.token.id)} must use singleton lifetime`,
             "A per-operation store cannot observe duplicate or in-flight keys across invocations.",
+            {
+              appId,
+              moduleId: module.id,
+              providerId: provider.token.id,
+              path: "providers.lifetime",
+            },
+          ),
+        );
+      }
+      if (isRichTextDependencyToken(provider.token) && provider.lifetime !== "singleton") {
+        diagnostics.push(
+          diagnostic(
+            "SHIP_RICH_TEXT_PROVIDER_LIFETIME_INVALID",
+            `rich text capability provider ${JSON.stringify(provider.token.id)} must use singleton lifetime`,
+            "Bind one capability per field; the executor scopes it to each run's transaction.",
+            {
+              appId,
+              moduleId: module.id,
+              providerId: provider.token.id,
+              path: "providers.lifetime",
+            },
+          ),
+        );
+      }
+      if (isAttachmentDependencyToken(provider.token) && provider.lifetime !== "singleton") {
+        diagnostics.push(
+          diagnostic(
+            "SHIP_ATTACHMENT_PROVIDER_LIFETIME_INVALID",
+            `attachment capability provider ${JSON.stringify(provider.token.id)} must use singleton lifetime`,
+            "Bind one capability per attachment; the executor scopes it to each run's transaction.",
             {
               appId,
               moduleId: module.id,
@@ -958,6 +1068,17 @@ function checkDependencies(
       );
     }
   }
+}
+
+/** The attachment bindings a rich text field with embedded objects implies, keyed next to the field binding. */
+function embeddedAttachmentBindings(operation: AnyOperation): DependencyBindings {
+  const bindings: Record<string, DependencyToken> = {};
+  for (const [name, token] of Object.entries(operation.dependencies)) {
+    if (!isRichTextDependencyToken(token)) continue;
+    const field = richTextForBinding(token);
+    if (field?.attachment) bindings[`${name}.attachment`] = field.attachment.binding;
+  }
+  return bindings;
 }
 
 function checkOperationJobBindings(
@@ -1624,6 +1745,9 @@ function projectGraph(
         providers: Object.freeze(module.providers.map((item) => item.token.id).sort()),
         exports: Object.freeze(module.exports.map((item) => item.id).sort()),
         channels: Object.freeze(module.channels.map((item) => item.id).sort()),
+        attachments: Object.freeze(module.attachments.map((item) => item.id).sort()),
+        mailers: Object.freeze((module.mailers ?? []).map((item) => item.id).sort()),
+        richText: Object.freeze((module.richText ?? []).map((item) => item.id).sort()),
       }),
     );
 
@@ -1648,6 +1772,9 @@ function projectGraph(
     ...(diagnostics.length > 0 ? { diagnostics: Object.freeze([...diagnostics]) } : {}),
     channels: projectChannels(modules),
     jobs: projectJobs(modules),
+    attachments: projectAttachments(modules),
+    mailers: projectMailers(modules),
+    richText: projectRichText(modules),
   });
 }
 
@@ -1902,8 +2029,18 @@ function projectOperation(moduleId: string, operation: AnyOperation): OperationG
         }
       : {}),
     publishes: Object.freeze(operation.publishes.map((channel) => channel.id).sort()),
+    ...(richTextBindingsOf(operation).length > 0
+      ? { richText: richTextBindingsOf(operation) }
+      : {}),
     ...(operation.publishes.length > 0
       ? { publicationDelivery: publicationDelivery(operation) }
+      : {}),
+    ...(operation.attachments.length > 0
+      ? {
+          attachments: Object.freeze(
+            operation.attachments.map((attachment) => attachment.id).sort(),
+          ),
+        }
       : {}),
     ...(operation.cache ? { cache: projectOperationCache(operation) } : {}),
     ...(operation.invalidates && operation.invalidates.length > 0
@@ -1952,7 +2089,9 @@ function projectProvider(moduleId: string, provider: AnyProvider): ProviderGraph
         : provider.token.scope === "outbox" ||
             provider.token.scope === "idempotency" ||
             provider.token.scope === "cache" ||
-            provider.token.scope === "job"
+            provider.token.scope === "job" ||
+            provider.token.scope === "attachment" ||
+            provider.token.scope === "rich-text"
           ? { scope: provider.token.scope }
           : {}),
   });
@@ -1981,7 +2120,9 @@ function projectDependencies(dependencies: DependencyBindings): readonly Depende
                           role: token.role,
                           ...(isJobEnqueueDependencyToken(token) ? { jobId: token.job.id } : {}),
                         }
-                      : {}),
+                      : token.scope === "attachment" || token.scope === "rich-text"
+                        ? { scope: token.scope }
+                        : {}),
         }),
       )
       .sort(compareBy((item) => item.name)),

@@ -31,6 +31,11 @@ interface Contract {
             };
           };
     };
+    readonly 'oauth.callback': {
+      readonly transport: 'http';
+      readonly input: { readonly query: { readonly code: string; readonly state: string } };
+      readonly result: { readonly ok: true; readonly status: 302; readonly data: undefined };
+    };
   };
 }
 
@@ -43,6 +48,12 @@ const manifest: ShipApiClientContractManifest = {
       id: 'accounts.get',
       success: [{ status: 200 }],
       errors: [{ code: 'ACCOUNT_NOT_FOUND', status: 404 }],
+    },
+    {
+      id: 'oauth.callback',
+      transport: { kind: 'http', metadata: { response: 'redirect' } },
+      success: [{ status: 302 }],
+      errors: [],
     },
   ],
 };
@@ -349,6 +360,78 @@ describe('createShipApiClientExecutor', () => {
     });
   });
 
+  it('exposes the Location of a declared redirect result as response metadata', async () => {
+    const location = 'https://app.example.test/oauth?connected=true';
+    const client = fixtureClient(async () => ({
+      ok: true,
+      status: 302,
+      data: undefined,
+      requestId: 'request-redirect',
+      metadata: {
+        requestId: 'request-redirect',
+        headers: { 'x-request-id': 'request-redirect', Location: location },
+        location,
+      },
+    }));
+    const executor = createShipApiClientExecutor<Contract>(manifest, () => client);
+
+    const result = await executor.call(
+      'oauth.callback',
+      { query: { code: 'code-1', state: 'state-1' } },
+      execution({ credentials: 'include' })
+    );
+    expect(result).toEqual({
+      ok: true,
+      status: 302,
+      data: undefined,
+      headers: {
+        headers: { location, 'x-request-id': 'request-redirect' },
+        requestId: 'request-redirect',
+        location,
+      },
+    });
+    if (result.ok && result.notModified !== true) {
+      const status: 302 = result.status;
+      expect(status).toBe(302);
+    }
+  });
+
+  it('reads a redirect Location from the header map when the client omits the field', async () => {
+    const client = fixtureClient(async () => ({
+      ok: true,
+      status: 302,
+      data: undefined,
+      requestId: 'request-redirect-header',
+      metadata: { headers: { location: '/oauth/done' } },
+    }));
+    const executor = createShipApiClientExecutor<Contract>(manifest, () => client);
+
+    await expect(
+      executor.call('oauth.callback', { query: { code: 'c', state: 's' } }, execution())
+    ).resolves.toMatchObject({ ok: true, status: 302, headers: { location: '/oauth/done' } });
+  });
+
+  it('reports an opaque browser redirect as a protocol failure instead of inventing a 3xx', async () => {
+    const opaque = Object.assign(new Error('browser fetch cannot inspect the redirect'), {
+      name: 'OperationClientError',
+      code: 'SHIP_CLIENT_REDIRECT_OPAQUE',
+      operationId: 'oauth.callback',
+    });
+    const executor = createShipApiClientExecutor<Contract>(manifest, () =>
+      fixtureClient(async () => {
+        throw opaque;
+      })
+    );
+
+    const error = await executor
+      .call('oauth.callback', { query: { code: 'c', state: 's' } }, execution())
+      .catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(ProtocolError);
+    expect(error).toMatchObject({ name: 'ProtocolError', reason: 'opaque-redirect' });
+    expect((error as ProtocolError).status).toBeUndefined();
+    expect((error as ProtocolError).metadata).toBeUndefined();
+  });
+
   it('redacts network failures while preserving abort and stable ShipAPI diagnostics', async () => {
     const network = createShipApiClientExecutor<Contract>(manifest, () =>
       fixtureClient(async () => {
@@ -382,7 +465,7 @@ describe('createShipApiClientExecutor', () => {
 
 function fixtureClient(
   responder: (
-    operation: 'accounts.get',
+    operation: 'accounts.get' | 'oauth.callback',
     input: { readonly params: { readonly accountId: string } },
     options?: {
       readonly signal?: AbortSignal;

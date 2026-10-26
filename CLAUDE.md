@@ -1,6 +1,6 @@
-# ship-api
+# Ship
 
-TypeScript backend framework on Hono + Drizzle + pluggable AuthProvider + BullMQ + OpenTelemetry + Claude Code plugin. Currently `4.0.0-alpha.2` — the v4 line ships clean (no v3 paths in `main`). npm-workspaces monorepo: framework at `packages/core/` (published as `@sixthsummit/ship-api`), Claude Code plugin at `packages/claude-plugin/`, MCP server at `packages/mcp-server/`, feature modules under `modules/`, shared libraries under `libraries/`, Astro + Starlight docs site at `apps/docs/`. See `AGENTS.md` for the agent entry-point, `docs/V4_STATUS.md` for what's shipped / outstanding, and `docs/MIGRATION_V3_TO_V4.md` for consumer migration from v3.
+pnpm + Turborepo monorepo for ShipAPI and ShipAngular. ShipAPI is an operation kernel (`packages/kernel`, published as `@sixthsummit/ship-core`) with focused adapter and capability packages under `packages/` (Hono, Drizzle, contract, auth, jobs, realtime, webhooks, cache, storage, mail, console, rich text, schema lint, observability, testing, CLI); `packages/core` is the route-first `@sixthsummit/ship-api` compatibility distribution; `packages/angular` is `@sixthsummit/ship-angular`. Docs sites live in `apps/docs/` and `apps/angular-docs/`, projected from `docs/` and `angular/docs/`. See `AGENTS.md` for the package table and agent entry-point, `docs/V4_STATUS.md` for what's shipped, `docs/rearchitecture/decisions/` for the ADRs, and `docs/MIGRATION_V3_TO_V4.md` for consumer migration. Never put customer or product names in this public repository.
 
 ## Agent onboarding
 

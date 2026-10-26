@@ -24,7 +24,13 @@ import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createHonoAdapter, HonoAdapterError, serializeFailure } from "./adapter.js";
+import {
+  createHonoAdapter,
+  definePreValidationPolicy,
+  HonoAdapterError,
+  preValidationPolicyIds,
+  serializeFailure,
+} from "./adapter.js";
 import { defineHonoCredentialAdapter, type HonoAuthenticationOptions } from "./auth.js";
 import { http } from "./transport.js";
 
@@ -176,6 +182,272 @@ describe("createHonoAdapter", () => {
     const unavailable = await thrown.request("/policy");
     expect(unavailable.status).toBe(500);
     expect(JSON.stringify(await unavailable.json())).not.toContain("backend secret");
+  });
+
+  it("runs the global policy before the operation policy, projects reason denials and merges Set-Cookie", async () => {
+    const guarded = defineOperation({
+      id: "fixtures.guarded",
+      transport: http.post("/guarded"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () =>
+        respond(200, { ok: true as const }, { headers: { "set-cookie": "session=a; HttpOnly" } }),
+    });
+    const other = defineOperation({
+      id: "fixtures.other",
+      transport: http.get("/other"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const application = defineApp({
+      id: "fixture-api",
+      modules: [
+        defineModule({
+          id: "fixtures",
+          operations: [guarded, other],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    const order: string[] = [];
+    const app = createHonoAdapter(application, {
+      preValidationPolicies: {
+        "*": ({ request, operationId }) => {
+          order.push(`global:${operationId}`);
+          if (request.headers.get("x-deny") === "forbidden") {
+            return { allowed: false, reason: "forbidden", message: "CSRF check failed" };
+          }
+          if (request.headers.get("x-deny") === "credential") {
+            return { allowed: false, reason: "invalid-credential" };
+          }
+          return { allowed: true, headers: { "set-cookie": "csrf=b; Path=/", "x-global": "1" } };
+        },
+        "fixtures.guarded": ({ operationId }) => {
+          order.push(`specific:${operationId}`);
+          return { allowed: true, headers: { "x-global": "2" } };
+        },
+      },
+    });
+    const allowed = await app.request("/guarded", { method: "POST" });
+    expect(allowed.status).toBe(200);
+    expect(order).toEqual(["global:fixtures.guarded", "specific:fixtures.guarded"]);
+    expect(allowed.headers.getSetCookie()).toEqual(["session=a; HttpOnly", "csrf=b; Path=/"]);
+    expect(allowed.headers.get("x-global")).toBe("2");
+
+    expect((await app.request("/other")).status).toBe(200);
+    expect(order).toEqual([
+      "global:fixtures.guarded",
+      "specific:fixtures.guarded",
+      "global:fixtures.other",
+    ]);
+
+    const forbidden = await app.request("/guarded", {
+      method: "POST",
+      headers: { "x-deny": "forbidden" },
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toEqual({
+      success: false,
+      error: { code: "AUTHORIZATION_ERROR", message: "CSRF check failed" },
+    });
+    expect(forbidden.headers.get("x-request-id")).toBeTruthy();
+    const unauthenticated = await app.request("/guarded", {
+      method: "POST",
+      headers: { "x-deny": "credential" },
+    });
+    expect(unauthenticated.status).toBe(401);
+    expect(await unauthenticated.json()).toMatchObject({
+      error: { code: "AUTHENTICATION_ERROR", message: "Authentication failed" },
+    });
+  });
+
+  it("refuses a credential adapter whose required policy is not registered, and accepts a named policy alone or in a list", async () => {
+    const open = defineOperation({
+      id: "fixtures.open",
+      transport: http.post("/open"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const application = defineApp({
+      id: "fixture-api",
+      modules: [
+        defineModule({
+          id: "fixtures",
+          operations: [open],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    const auth: HonoAuthenticationOptions<string | undefined> = {
+      credentials: defineHonoCredentialAdapter<string | undefined>({
+        id: "fixtures.cookie",
+        extract: (request) => request.headers.get("cookie") ?? undefined,
+        requires: [
+          {
+            key: "*",
+            policyId: "fixtures.csrf",
+            message:
+              'fixtures.cookie reads a cookie and requires the fixtures.csrf policy under "*"',
+          },
+        ],
+      }),
+      actors: defineActorResolver<string | undefined>({
+        id: "fixtures.actors",
+        resolve: () => ({ ok: true }),
+      }),
+    };
+    const unnamed = () => ({ allowed: true }) as const;
+    const csrf = definePreValidationPolicy("fixtures.csrf", () => ({
+      allowed: true,
+      headers: { "set-cookie": "csrf=1; Path=/" },
+    }));
+    const other = definePreValidationPolicy("fixtures.other", ({ request }) =>
+      request.headers.get("x-deny") === "1"
+        ? { allowed: false, reason: "forbidden", message: "denied by other" }
+        : { allowed: true, headers: { "set-cookie": "other=1; Path=/", "x-other": "1" } },
+    );
+    expect(preValidationPolicyIds(csrf)).toEqual(["fixtures.csrf"]);
+    expect(preValidationPolicyIds(unnamed)).toEqual([]);
+    expect(() => definePreValidationPolicy("Bad Id", csrf)).toThrow(TypeError);
+
+    const missing = expect.objectContaining({
+      code: "SHIP_HONO_OPTIONS_INVALID",
+      message: expect.stringContaining("requires the fixtures.csrf policy"),
+    });
+    expect(() => createHonoAdapter(application, { auth })).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "*": unnamed } }),
+    ).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "fixtures.open": csrf } }),
+    ).toThrow(missing);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "*": csrf } }),
+    ).not.toThrow();
+
+    const list = [other, csrf];
+    expect(preValidationPolicyIds(list)).toEqual(["fixtures.other", "fixtures.csrf"]);
+    expect(() =>
+      createHonoAdapter(application, { auth, preValidationPolicies: { "*": [] } }),
+    ).toThrow(expect.objectContaining({ code: "SHIP_HONO_OPTIONS_INVALID" }));
+    const app = createHonoAdapter(application, { auth, preValidationPolicies: { "*": list } });
+    const allowed = await app.request("/open", { method: "POST" });
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.getSetCookie()).toEqual(["other=1; Path=/", "csrf=1; Path=/"]);
+    expect(allowed.headers.get("x-other")).toBe("1");
+    const denied = await app.request("/open", { method: "POST", headers: { "x-deny": "1" } });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ error: { message: "denied by other" } });
+    expect(() =>
+      defineHonoCredentialAdapter({
+        id: "fixtures.bad",
+        extract: () => undefined,
+        requires: [{ key: "*", policyId: "Bad", message: "x" }],
+      }),
+    ).toThrow(TypeError);
+  });
+
+  it("applies resolver headers to the success response and to its own 401, letting an operation's cookie win", async () => {
+    const open = defineOperation({
+      id: "fixtures.open",
+      transport: http.post("/open"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const signIn = defineOperation({
+      id: "fixtures.sign-in",
+      transport: http.post("/sign-in"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () =>
+        respond(200, { ok: true as const }, { headers: { "set-cookie": "session=fresh; Path=/" } }),
+    });
+    const guarded = defineOperation({
+      id: "fixtures.guarded",
+      transport: http.get("/guarded"),
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: authenticatedAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: () => ({ ok: true as const }),
+    });
+    const application = defineApp({
+      id: "fixture-api",
+      modules: [
+        defineModule({
+          id: "fixtures",
+          operations: [open, signIn, guarded],
+          providers: [],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+    const clearing = { "set-cookie": "session=; Path=/; Max-Age=0", "x-session": "stale" };
+    const auth: HonoAuthenticationOptions<string | undefined> = {
+      credentials: defineHonoCredentialAdapter<string | undefined>({
+        id: "fixtures.cookie",
+        extract: (request) => request.headers.get("cookie") ?? undefined,
+      }),
+      actors: defineActorResolver<string | undefined>({
+        id: "fixtures.actors",
+        resolve: ({ credential, operation }) => {
+          if (credential !== "session=stale") return { ok: true };
+          return operation.access.kind === "public"
+            ? { ok: true, headers: clearing }
+            : { ok: false, reason: "invalid-credential", headers: clearing };
+        },
+      }),
+    };
+    const app = createHonoAdapter(application, { auth });
+    const stale = { cookie: "session=stale" };
+    const anonymous = await app.request("/open", { method: "POST", headers: stale });
+    expect(anonymous.status).toBe(200);
+    expect(anonymous.headers.getSetCookie()).toEqual(["session=; Path=/; Max-Age=0"]);
+    expect(anonymous.headers.get("x-session")).toBe("stale");
+    const refused = await app.request("/guarded", { headers: stale });
+    expect(refused.status).toBe(401);
+    expect(refused.headers.getSetCookie()).toEqual(["session=; Path=/; Max-Age=0"]);
+    expect(refused.headers.get("x-request-id")).toBeTruthy();
+    const replaced = await app.request("/sign-in", { method: "POST", headers: stale });
+    expect(replaced.status).toBe(200);
+    expect(replaced.headers.getSetCookie()).toEqual(["session=fresh; Path=/"]);
+    expect((await app.request("/open", { method: "POST" })).headers.getSetCookie()).toEqual([]);
   });
 
   it("passes the operation ID to centralized failure projection", async () => {
@@ -2161,3 +2433,233 @@ function fakeAuthentication(): HonoAuthenticationOptions<string> {
     }),
   };
 }
+
+describe("declared HTTP redirects", () => {
+  const location = "https://app.example.test/oauth?connected=true";
+  const invalidState = operationError({
+    code: "OAUTH_STATE_INVALID",
+    status: 400,
+    message: "OAuth state is invalid",
+  });
+
+  function callbackOperation(
+    handler: (arguments_: {
+      readonly input: { readonly query: { readonly code: string; readonly state: string } };
+    }) => unknown,
+    options: {
+      readonly status?: 301 | 302 | 303 | 307 | 308;
+      readonly access?: OperationAccess;
+      readonly method?: "get" | "post";
+    } = {},
+  ) {
+    const status = options.status ?? 302;
+    const transport =
+      options.method === "post"
+        ? http.post("/oauth/callback", { response: "redirect" })
+        : http.get("/oauth/callback", { response: "redirect", queryParsing: "first-value" });
+    return defineOperation({
+      id: "fixtures.oauth-callback",
+      transport,
+      input: { query: z.object({ code: z.string().min(1), state: z.string().min(1) }) },
+      output: { [status]: z.undefined() } as Record<302, z.ZodUndefined>,
+      successStatus: status as 302,
+      errors: [invalidState],
+      access: options.access ?? publicAccess(),
+      transaction: "none",
+      dependencies: {},
+      handler: handler as never,
+    });
+  }
+
+  const query = "?code=code-1&state=state-1";
+
+  it.each([
+    301, 302, 303, 307, 308,
+  ] as const)("serializes an empty %s with Location and the request id and no content type", async (status) => {
+    const operation = callbackOperation(
+      () => respond(status, undefined, { headers: { Location: location } }),
+      { status },
+    );
+    const response = await createHonoAdapter(fixtureApp(operation)).request(
+      `/oauth/callback${query}`,
+      { headers: { "x-request-id": `redirect-${status}` } },
+    );
+
+    expect(response.status).toBe(status);
+    expect(response.headers.get("location")).toBe(location);
+    expect(response.headers.get("x-request-id")).toBe(`redirect-${status}`);
+    expect(response.headers.get("content-type")).toBeNull();
+    expect(response.headers.get("x-ship-cache")).toBeNull();
+    expect(response.headers.get("cache-control")).toBeNull();
+    expect(await response.text()).toBe("");
+  });
+
+  it("redirects after a POST with a declared 303", async () => {
+    const operation = callbackOperation(
+      () => respond(303, undefined, { headers: { Location: "/oauth/done" } }),
+      { status: 303, method: "post" },
+    );
+    const response = await createHonoAdapter(fixtureApp(operation)).request(
+      `/oauth/callback${query}`,
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/oauth/done");
+    expect(await response.text()).toBe("");
+  });
+
+  it("keeps safe operation headers on a redirect and rejects reserved ones", async () => {
+    const withHeaders = callbackOperation(() =>
+      respond(302, undefined, {
+        headers: { Location: location, "Cache-Control": "no-store", "X-OAuth-Provider": "google" },
+      }),
+    );
+    const response = await createHonoAdapter(fixtureApp(withHeaders)).request(
+      `/oauth/callback${query}`,
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-oauth-provider")).toBe("google");
+
+    const reserved = callbackOperation(() =>
+      respond(302, undefined, {
+        headers: { Location: location, "Content-Type": "text/html" },
+      }),
+    );
+    const rejected = await createHonoAdapter(fixtureApp(reserved)).request(
+      `/oauth/callback${query}`,
+    );
+    expect(rejected.status).toBe(500);
+    expect(rejected.headers.get("location")).toBeNull();
+  });
+
+  it("reads a mixed scalar and bracket callback query by its first scalar value", async () => {
+    const operation = callbackOperation(({ input: { query: parsed } }) =>
+      respond(302, undefined, {
+        headers: {
+          Location: `https://app.example.test/oauth?code=${parsed.code}&state=${parsed.state}`,
+        },
+      }),
+    );
+    const response = await createHonoAdapter(fixtureApp(operation)).request(
+      "/oauth/callback?code=first&code=second&code%5B%5D=third&state%5Bextra%5D=x&state=s1&scope=email",
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.test/oauth?code=first&state=s1",
+    );
+  });
+
+  it("lets the handler answer a failure redirect while every other failure stays JSON", async () => {
+    const operation = callbackOperation(({ input: { query: parsed } }) => {
+      if (parsed.state === "revoked") throw operationFailure(invalidState);
+      if (parsed.state !== "state-1") {
+        return respond(302, undefined, {
+          headers: { Location: "https://app.example.test/oauth?error=invalid_state" },
+        });
+      }
+      return respond(302, undefined, { headers: { Location: location } });
+    });
+    const app = createHonoAdapter(fixtureApp(operation));
+
+    const failureRedirect = await app.request("/oauth/callback?code=code-1&state=tampered");
+    expect(failureRedirect.status).toBe(302);
+    expect(failureRedirect.headers.get("location")).toBe(
+      "https://app.example.test/oauth?error=invalid_state",
+    );
+    expect(await failureRedirect.text()).toBe("");
+
+    const declared = await app.request("/oauth/callback?code=code-1&state=revoked", {
+      headers: { "x-request-id": "declared-1" },
+    });
+    expect(declared.status).toBe(400);
+    expect(declared.headers.get("location")).toBeNull();
+    expect(declared.headers.get("content-type")).toMatch(/^application\/json/u);
+    expect(declared.headers.get("x-request-id")).toBe("declared-1");
+    expect(await declared.json()).toMatchObject({
+      success: false,
+      error: { code: "OAUTH_STATE_INVALID", message: "OAuth state is invalid" },
+    });
+
+    const validation = await app.request("/oauth/callback?state=state-1");
+    expect(validation.status).toBe(400);
+    expect(validation.headers.get("location")).toBeNull();
+    expect(await validation.json()).toMatchObject({
+      success: false,
+      error: {
+        code: "VALIDATION_ERROR",
+        details: { issues: [{ path: ["query", "code"] }] },
+      },
+    });
+
+    const missing = await app.request("/oauth/callback?code=code-1&state=state-1", {
+      method: "POST",
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("location")).toBeNull();
+  });
+
+  it("answers an unauthenticated protected redirect with the JSON 401 envelope", async () => {
+    const operation = callbackOperation(
+      () => respond(302, undefined, { headers: { Location: location } }),
+      { access: authenticatedAccess() },
+    );
+    const app = createHonoAdapter(fixtureApp(operation), { auth: fakeAuthentication() });
+
+    const anonymous = await app.request(`/oauth/callback${query}`);
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers.get("location")).toBeNull();
+    expect(await anonymous.json()).toMatchObject({
+      success: false,
+      error: { code: "AUTHENTICATION_ERROR" },
+    });
+
+    const authenticated = await app.request(`/oauth/callback${query}`, {
+      headers: { authorization: "Bearer read" },
+    });
+    expect(authenticated.status).toBe(302);
+    expect(authenticated.headers.get("location")).toBe(location);
+  });
+
+  it.each([
+    ["a protocol-relative URL", "//evil.example"],
+    ["a backslash protocol-relative URL", "/\\evil.example"],
+    ["a javascript: URL", "javascript:alert(1)"],
+    ["embedded credentials", "https://user:pass@app.example.test/"],
+    ["a control character", "https://app.example.test/\u0000"],
+  ])("answers a safe 500 without Location for %s", async (_name, unsafe) => {
+    const observer = vi.fn();
+    const operation = callbackOperation(() =>
+      respond(302, undefined, { headers: { Location: unsafe } }),
+    );
+    const response = await createHonoAdapter(fixtureApp(operation), {
+      onUnexpectedError: observer,
+    }).request(`/oauth/callback${query}`, { headers: { "x-request-id": "unsafe-1" } });
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-request-id")).toBe("unsafe-1");
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: "INTERNAL_SERVER_ERROR" },
+    });
+    expect(observer).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a safe 500 when the handler returns a body or no Location", async () => {
+    for (const handler of [
+      () => respond(302, { ok: true } as never, { headers: { Location: location } }),
+      () => respond(302, undefined),
+      () => undefined,
+    ]) {
+      const response = await createHonoAdapter(fixtureApp(callbackOperation(handler))).request(
+        `/oauth/callback${query}`,
+      );
+      expect(response.status).toBe(500);
+      expect(response.headers.get("location")).toBeNull();
+      expect(await response.json()).toMatchObject({ error: { code: "INTERNAL_SERVER_ERROR" } });
+    }
+  });
+});

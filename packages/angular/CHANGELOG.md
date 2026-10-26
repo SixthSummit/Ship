@@ -1,5 +1,36 @@
 # @sixthsummit/ship-angular
 
+## 5.0.0
+
+### Major Changes
+
+- d86f629: `zod` peer dependency narrowed to `^4.0.0`. The library's own suite runs on zod 4 and zod 3 is affected by GHSA-mrhx-c7xc-m3w5 with no patched 3.x release. Consumers on zod 3 upgrade to zod 4 (`^4.6.7` or later) before taking this version; the `ng-add` schematic now writes that range.
+
+### Minor Changes
+
+- 8b5633c: `/credential-auth`: `ShipCredentialAuth.changePassword(currentPassword, newPassword, signOutOtherSessions = true)` calls `auth.change-password`, adopts the rotated session the server returns (a bearer client stores the new token; a cookie client keeps the cookie the response installed) and drops the other sessions from `sessions()` when they were signed out. The contract gains `auth.change-password`.
+- 4639db8: `/credential-auth` defaults to cookie mode. `cookieSessionStorage()` (now the default `storage`) asks the server for the cookie transport on sign-in, TOTP verify and recovery consume, never holds the session token, asks `me` on `initialize()` so a reload restores the session from the `httpOnly` cookie, always calls sign-out so the server clears the cookie, and adopts the rotated session TOTP confirmation returns. `cookieCredentialCapability({ csrfCookieName?, csrfHeaderName? })` and `ShipCredentialAuth.credential()` give the policy client the `kind: "cookie"` capability (credentials included, the CSRF cookie echoed in `x-csrf-token`); `readBrowserCookie` is exported. `memorySessionStorage()` and `browserSessionStorage()` keep the bearer transport for native shells and non-browser hosts. `CredentialSessionToken` carries `transport` and `token` is optional; the sign-in and challenge bodies accept `transport`, and `auth.totp.confirm` may return `session`.
+- b350b5d: Add the `/storage` entrypoint: `createAttachmentUpload(client, { attachment, policy }, { allowedProviderOrigins })` validates a file against the policy read from the manifest with `attachmentPolicyFromManifest`, obtains a signed intent from `ship-storage.create-intent`, PUTs the bytes to the provider with progress through the signed-upload lifecycle, settles through `ship-storage.complete`, and exposes the settled `object` signal for the application's own attach operation. `attachmentUploadFailure` narrows a failed result to its stage.
+- faab83c: Add the `/rich-text` entrypoint: `ShipRichTextEditorComponent`, a `ControlValueAccessor` over TipTap that emits the document model (never HTML) with `schemaVersion` from the manifest, builds its schema from `richTextFieldFromManifest` (the base version 1 set plus every declared extension node and mark) so pasted content outside the allowlist is dropped by the schema itself, uploads dropped or pasted images through `createRichTextAttachmentUploader` on the storage entrypoint and inserts `attachment` nodes referencing the settled object id, and resolves previews by object id. Optional peers: `@tiptap/core`, `@tiptap/pm`, `@tiptap/starter-kit`.
+- 4ad58d6: Harden declared HTTP 3xx redirect results (SAPI-653). `defineOperation` rejects a
+  redirect output schema that cannot produce an empty body at definition time
+  (`SHIP_OPERATION_OUTPUT_INVALID`); the executor, Hono adapter and contract client keep
+  validating every result, so an unsafe `Location` (protocol-relative, credentials,
+  non-HTTP scheme, whitespace or control characters) or a redirect with a body is never
+  serialized and HTTP answers the safe 500 envelope without `Location`. The Hono matrix,
+  a compat-versus-kernel parity test and the contract suite now pin every redirect
+  status, `POST` to `303`, header pass-through, the `first-value` callback query policy
+  and failure redirects next to JSON declared failures. ShipAngular exposes `location`
+  on `ResponseMetadata`, reports an opaque browser redirect as `ProtocolError` with
+  reason `opaque-redirect` instead of inventing a status, and its packed conformance
+  fixture executes a declared `302` case.
+- 96dc12d: Add the `/credential-auth` entrypoint (SAPI-755): `provideShipCredentialAuth({ client, prefix?, storage? })`, the signal-first `ShipCredentialAuth` service over any structural operation client (sign-in through the MFA challenge and recovery steps, enrolment, sessions, reset and change-email, with declared failures and `Retry-After` kept as values), `ShipCredentialAuthContract` and `ShipAuthAuditContract` for typed clients, `memorySessionStorage`/`browserSessionStorage`, and the standalone `OnPush` `ShipSignInComponent`, `ShipMfaChallengeComponent`, `ShipRecoveryCodeComponent` and `ShipAuthAuditPanelComponent`.
+- 5e2858d: Add the `/console` entrypoint for the ops console (SAPI-757): `provideShipConsole({ client, prefix? })`, the signal-first `ShipConsole` service over any structural operation client, `ShipConsoleContract` for a typed client, standalone `OnPush` panel components for jobs, cron, webhooks, realtime and outbox, `ShipConsoleShellComponent`, `shipConsoleRoutes({ canActivate })` for embedding under an application route, and `ShipConsoleAppComponent` for a console deployed next to the API.
+
+### Patch Changes
+
+- 63eef39: Require `zod` `^4.6.7` (GHSA-mrhx-c7xc-m3w5: memory exhaustion while validating oversized constrained collections) and resolve `body-parser` to `2.4.0` under the MCP server's Express dependency (GHSA-27r3-jxmh-p828). No API change; the Angular library now runs its own suite against zod 4 and the Angular scaffold template asks for `zod ^4.6.7`.
+
 ## 4.3.0
 
 ### Minor Changes

@@ -17,7 +17,7 @@ const releaseManifest = {
   },
   dependencies: {
     "@hono/node-server": "^1.19.14",
-    hono: "4.12.25",
+    hono: "^4.13.13",
     zod: "^4.3.6",
   },
   devDependencies: {
@@ -65,9 +65,13 @@ describe("operation-native scaffold", () => {
     expect(manifest).toMatchObject({
       name: "billing-api",
       packageManager: "pnpm@10.34.5",
-      dependencies: releaseManifest.packages,
+      dependencies: { ...releaseManifest.packages, hono: "^4.13.13" },
       devDependencies: { "@sixthsummit/ship-cli": "0.2.0-alpha.1" },
     });
+    for (const [name, version] of Object.entries(releaseManifest.packages)) {
+      expect(manifest.dependencies[name], `${name} must be pinned exactly`).toBe(version);
+      expect(version).not.toMatch(/^[\^~]/u);
+    }
     expect(
       await readFile(
         resolve(temporaryDirectory, "billing-api/src/modules/system/health.operation.ts"),

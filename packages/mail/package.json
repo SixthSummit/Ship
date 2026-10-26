@@ -1,0 +1,61 @@
+{
+  "name": "@sixthsummit/ship-mail",
+  "version": "0.2.0",
+  "description": "Declared transactional mail delivery for Ship applications: typed mailers sent through the jobs capability with a send ledger, provider adapters, a non-production interceptor and development previews",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./resend": {
+      "types": "./lib/resend.d.ts",
+      "import": "./lib/resend.js",
+      "default": "./lib/resend.js"
+    },
+    "./conformance": {
+      "types": "./lib/conformance.d.ts",
+      "import": "./lib/conformance.js",
+      "default": "./lib/conformance.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/mail/src --exclude '**/*.integration.test.ts'",
+    "test:coverage": "vitest run --root ../.. packages/mail/src --exclude '**/*.integration.test.ts' --coverage"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-drizzle": "workspace:^",
+    "@sixthsummit/ship-testing": "workspace:^",
+    "drizzle-orm": "^0.45.2",
+    "zod": "^4.6.7"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/mail"
+  }
+}

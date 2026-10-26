@@ -39,6 +39,18 @@ const entrypoints = [
     types: 'realtime/index.d.ts',
   },
   { name: './push', file: 'sixthsummit-ship-angular-push', types: 'push/index.d.ts' },
+  { name: './storage', file: 'sixthsummit-ship-angular-storage', types: 'storage/index.d.ts' },
+  { name: './console', file: 'sixthsummit-ship-angular-console', types: 'console/index.d.ts' },
+  {
+    name: './credential-auth',
+    file: 'sixthsummit-ship-angular-credential-auth',
+    types: 'credential-auth/index.d.ts',
+  },
+  {
+    name: './rich-text',
+    file: 'sixthsummit-ship-angular-rich-text',
+    types: 'rich-text/index.d.ts',
+  },
   { name: './forms', file: 'sixthsummit-ship-angular-forms', types: 'forms/index.d.ts' },
   { name: './testing', file: 'sixthsummit-ship-angular-testing', types: 'testing/index.d.ts' },
   { name: './hono-v4', file: 'sixthsummit-ship-angular-hono-v4', types: 'hono-v4/index.d.ts' },

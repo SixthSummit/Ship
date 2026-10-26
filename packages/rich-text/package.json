@@ -1,0 +1,48 @@
+{
+  "name": "@sixthsummit/ship-rich-text",
+  "version": "0.1.0",
+  "description": "Rich content fields for Ship applications: a versioned, kernel-owned document allowlist with server-side HTML rendering, plain-text projection, named extensions and embedded managed attachments whose purge follows the owning record",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "default": "./lib/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "lib/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/clean-package.mjs && tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run --root ../.. packages/rich-text/src --exclude '**/*.integration.test.ts'",
+    "test:coverage": "vitest run --root ../.. packages/rich-text/src --exclude '**/*.integration.test.ts' --coverage"
+  },
+  "peerDependencies": {
+    "@sixthsummit/ship-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@sixthsummit/ship-core": "workspace:*",
+    "@sixthsummit/ship-testing": "workspace:^"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SixthSummit/Ship.git",
+    "directory": "packages/rich-text"
+  }
+}

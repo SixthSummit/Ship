@@ -31,6 +31,73 @@ export interface ClientContract {
   readonly operations: readonly ClientContractOperation[];
   /** Declared realtime channels keyed by id. Carries no transport detail. Absent in pre-realtime manifests. */
   readonly channels?: Readonly<Record<string, ClientContractChannel>>;
+  /** Declared managed attachments keyed by id. Carries no provider detail. Absent in pre-storage manifests. */
+  readonly attachments?: Readonly<Record<string, ClientContractAttachment>>;
+  /**
+   * Declared mailers keyed by id, with message names only. Templates, sender
+   * addresses and payload schemas never reach the client. Absent when the
+   * application declares no mailer, so older manifests keep their fingerprint.
+   */
+  readonly mailers?: Readonly<Record<string, ClientContractMailer>>;
+  /**
+   * Declared rich text fields keyed by id: the schema version, the embedded
+   * attachment id, the limits and the structural spec of every extension, so
+   * an editor builds the same schema the server validates against. Renderers
+   * never reach the client. Absent when the application declares none.
+   */
+  readonly richText?: Readonly<Record<string, ClientContractRichText>>;
+}
+
+export interface ClientContractRichTextAttr {
+  readonly type: "string" | "integer" | "boolean";
+  readonly required?: boolean;
+  readonly nullable?: boolean;
+  readonly default?: string | number | boolean | null;
+  readonly enum?: readonly (string | number)[];
+  readonly maxLength?: number;
+}
+
+export interface ClientContractRichTextNode {
+  readonly group: "block" | "inline";
+  readonly content?: string;
+  readonly atom?: boolean;
+  readonly attrs?: Readonly<Record<string, ClientContractRichTextAttr>>;
+  readonly marks?: "all" | "none";
+}
+
+export interface ClientContractRichTextMark {
+  readonly attrs?: Readonly<Record<string, ClientContractRichTextAttr>>;
+}
+
+export interface ClientContractRichTextExtension {
+  readonly name: string;
+  readonly nodes: Readonly<Record<string, ClientContractRichTextNode>>;
+  readonly marks: Readonly<Record<string, ClientContractRichTextMark>>;
+}
+
+/** What an editor needs to build the field's schema and what it may submit. */
+export interface ClientContractRichText {
+  readonly schemaVersion: number;
+  /** The managed attachment embedded objects are uploaded to; absent for text-only fields. */
+  readonly attachment?: string;
+  readonly maxBytes: number;
+  readonly maxDepth: number;
+  readonly extensions: readonly ClientContractRichTextExtension[];
+}
+
+/** The upload policy a client validates against before it asks for a signed intent. */
+export interface ClientContractAttachment {
+  readonly cardinality: "single" | "many";
+  readonly contentTypes: readonly string[];
+  readonly maxBytes: number;
+  readonly visibility: "private" | "public";
+  readonly maxCount: number;
+  /** Declared variant names; generation is lazy and server-side. */
+  readonly variants: readonly string[];
+}
+
+export interface ClientContractMailer {
+  readonly messages: readonly string[];
 }
 
 export type ClientContractChannelScope = "actor" | "tenant" | "resource";
@@ -59,6 +126,10 @@ export interface ClientContractOperation {
   readonly response?: ClientContractStreamResponse;
   /** Channel ids this operation publishes to. Absent in pre-realtime manifests. */
   readonly publishes?: readonly string[];
+  /** Managed attachment ids this operation binds. Absent when it binds none. */
+  readonly attachments?: readonly string[];
+  /** Rich text field ids this operation binds. Absent when it binds none. */
+  readonly richText?: readonly string[];
 }
 
 export interface ClientContractCache {

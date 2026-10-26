@@ -48,6 +48,19 @@ export default defineConfig({
           ],
         },
         {
+          label: "Kernel Capabilities",
+          items: [
+            { label: "Realtime publication", slug: "kernel/realtime" },
+            { label: "Streaming responses", slug: "kernel/streaming" },
+            { label: "Managed storage", slug: "features/storage" },
+            { label: "Transactional mail", slug: "features/mail" },
+            { label: "Operator console", slug: "features/console" },
+            { label: "Credential auth", slug: "features/auth-credentials" },
+            { label: "Rich text fields", slug: "features/rich-text" },
+            { label: "Schema safety", slug: "features/schema-safety" },
+          ],
+        },
+        {
           label: "Compatibility Concepts",
           items: [
             { label: "App lifecycle & bootstrap", slug: "concepts/lifecycle" },
@@ -71,7 +84,6 @@ export default defineConfig({
             { label: "Background jobs", slug: "features/jobs" },
             { label: "Observability", slug: "features/observability" },
             { label: "Caching", slug: "features/cache" },
-            { label: "Storage adapters", slug: "features/storage" },
             { label: "Rate limiting", slug: "features/rate-limit" },
             { label: "Idempotency", slug: "features/idempotency" },
             { label: "Webhooks", slug: "features/webhooks" },

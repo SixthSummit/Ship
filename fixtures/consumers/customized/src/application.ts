@@ -1,5 +1,17 @@
+import type {
+  CredentialStore,
+  RequestClientRegistry,
+  SecretKeyRing,
+} from "@sixthsummit/ship-auth-credentials";
+import {
+  createInMemoryCredentialStore,
+  createRequestClientRegistry,
+} from "@sixthsummit/ship-auth-credentials";
+import { credentialAuthConsoleExtension } from "@sixthsummit/ship-auth-credentials/console";
+import { defineConsoleModule } from "@sixthsummit/ship-console";
 import { contractSchema } from "@sixthsummit/ship-contract/schema";
 import {
+  type AttachmentLedger,
   type CacheBackend,
   cacheBackendDependency,
   createTenantScopeAuthority,
@@ -17,6 +29,11 @@ import {
   jobBackendDependency,
   type LockProvider,
   lockProviderDependency,
+  type MailInterceptor,
+  type MailLedger,
+  type MailProvider,
+  mailLedgerDependency,
+  mailProviderDependency,
   type OutboxBackend,
   operationError,
   operationFailure,
@@ -24,6 +41,8 @@ import {
   permission,
   REALTIME_PUBLICATION_MODULE_ID,
   type RealtimePublishBackend,
+  STORAGE_MODULE_ID,
+  type StorageAdapter,
   TenantCapabilityError,
   type UnitOfWork,
   unitOfWorkDependency,
@@ -31,15 +50,27 @@ import {
   type WebhookEventStore,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
+import { defineMailDelivery, defineMailPreview } from "@sixthsummit/ship-mail";
+import { richTextProvider } from "@sixthsummit/ship-rich-text";
+import {
+  createPassthroughImageProcessor,
+  defineStorageModule,
+  type ImageProcessor,
+} from "@sixthsummit/ship-storage";
+import { storageHttpTransports } from "@sixthsummit/ship-storage/hono";
 import { z } from "zod";
+import { defineProjectPhotoOperations, projectPhoto } from "./attachments.js";
 import {
   notificationDelivered,
   projectActivity,
   publishedChannels,
   reportRequested,
 } from "./channels.js";
+import { authMailer, createCredentialAuthModule } from "./credential-auth.js";
+import { defineDocumentOperations, documentBody, documentImage } from "./documents.js";
 import type { PaymentEventSink, ReportNotifier } from "./effects.js";
 import { defineReportJobs } from "./jobs.js";
+import { reportsMailer } from "./mail.js";
 import { paymentSink, paymentsOutbox, reportNotifier, reportsOutbox } from "./outbox.js";
 import { type PortfolioCapabilities, workItemStates } from "./repository.js";
 import {
@@ -135,6 +166,38 @@ const notificationAcceptedSchema = contractSchema(
       properties: {
         accepted: { type: "boolean", const: true },
         adapter: { type: "string" },
+      },
+    },
+  },
+);
+const emailBodySchema = contractSchema(
+  z.object({
+    recipient: z.string().email(),
+    period: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    projectCount: z.number().int().nonnegative(),
+  }),
+  {
+    jsonSchema: {
+      type: "object",
+      required: ["recipient", "period", "projectCount"],
+      properties: {
+        recipient: { type: "string", format: "email" },
+        period: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        projectCount: { type: "integer", minimum: 0 },
+      },
+    },
+  },
+);
+const emailAcceptedSchema = contractSchema(
+  z.object({ accepted: z.literal(true), sendId: z.string(), deduplicated: z.boolean() }),
+  {
+    jsonSchema: {
+      type: "object",
+      required: ["accepted", "sendId", "deduplicated"],
+      properties: {
+        accepted: { type: "boolean", const: true },
+        sendId: { type: "string" },
+        deduplicated: { type: "boolean" },
       },
     },
   },
@@ -236,6 +299,11 @@ const tenantAccessDenied = operationError({
   message: "Tenant access denied",
   details: tenantDeniedDetailsSchema,
 });
+const mailQueueFull = operationError({
+  code: "MAIL_QUEUE_FULL",
+  status: 503,
+  message: "Mail delivery queue is full; retry later",
+});
 
 const portfolioUnitOfWork = unitOfWorkDependency<PortfolioCapabilities>("database.portfolio");
 const idempotencyStore = idempotencyStoreDependency("platform.idempotency");
@@ -309,6 +377,35 @@ export interface CustomizedInfrastructure {
   readonly webhookSecrets: WebhookSecrets;
   readonly jobs: JobBackend;
   readonly locks: LockProvider;
+  /** Object storage for the declared `portfolio.photo` attachment. */
+  readonly storage: StorageAdapter;
+  /** Intent, object and purge bookkeeping for managed storage. */
+  readonly attachmentLedger: AttachmentLedger;
+  /** Durable storage for object purge intents recorded when a photo is removed. */
+  readonly purgeOutbox: OutboxBackend;
+  /** Renders the declared `thumb` variant; a passthrough encoder keeps tests native-free. */
+  readonly imageProcessor?: ImageProcessor;
+  /** How long a completed upload may stay unattached before the sweep purges it. */
+  readonly unattachedGraceMs?: number;
+  /** Transactional mail: the provider adapter, the send ledger and the non-production guard. */
+  readonly mailProvider: MailProvider;
+  readonly mailLedger: MailLedger;
+  readonly mailInterceptor?: MailInterceptor;
+  /**
+   * Credential auth (ADR-0025): accounts, sessions, MFA secrets and the audit
+   * log. Defaults to the in-memory store so existing compositions (the
+   * capacity harness) keep working; production binds the Drizzle store.
+   */
+  readonly credentialStore?: CredentialStore;
+  /** Key ring sealing TOTP secrets; defaults to the development ring. */
+  readonly authSecrets?: SecretKeyRing;
+  /**
+   * Shared with the HTTP credential adapter so sessions and audit rows carry
+   * ip and user agent, and so cookie mode knows how a request authenticated.
+   * `createCustomizedHttpApplication` always supplies one; a direct
+   * composition gets a private registry.
+   */
+  readonly authClients?: RequestClientRegistry;
   /** Tenants the scheduled digest job fans out to. */
   readonly scheduledTenants?: readonly string[];
   readonly digestRecipient?: string;
@@ -494,11 +591,94 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       return { tenantId: scope.tenantId, steps: total };
     },
   });
+  // Transactional mail: `reports.email` enqueues `mail.deliver` through the
+  // typed sender; the job renders, claims the ledger row and calls the
+  // provider once per idempotency key. The interceptor is only bound outside
+  // production so staging never emails a real customer.
+  const mail = defineMailDelivery({
+    mailers: [reportsMailer, authMailer],
+    ...(infrastructure.mailInterceptor ? { interceptor: infrastructure.mailInterceptor } : {}),
+    clock,
+  });
+  const mailPreview = defineMailPreview({ mailers: [reportsMailer, authMailer] });
+  const email = defineOperation({
+    id: "reports.email",
+    transport: http.post("/tenants/:tenantId/report-emails"),
+    input: { params: tenantParamsSchema, body: emailBodySchema },
+    output: { 202: emailAcceptedSchema },
+    successStatus: 202,
+    errors: [tenantAccessDenied, mailQueueFull],
+    access: permission("reports:notify"),
+    transaction: "none",
+    dependencies: { mail: mail.dependency },
+    handler: async ({ input, services, context }) => {
+      const scope = await authorizeTenant(input.params.tenantId, context);
+      const sent = await services.mail.send(reportsMailer, "digestReady", {
+        to: input.body.recipient,
+        payload: {
+          tenantId: scope.tenantId,
+          period: input.body.period,
+          projectCount: input.body.projectCount,
+        },
+        idempotencyKey: `digest-email:${scope.tenantId}:${input.body.period}:${input.body.recipient}`,
+        tenantId: scope.tenantId,
+      });
+      if (!sent.accepted) throw operationFailure(mailQueueFull);
+      return { accepted: true as const, sendId: sent.sendId, deduplicated: sent.deduplicated };
+    },
+  });
   const reportJobs = defineReportJobs({
     scheduledTenants,
     recipient: infrastructure.digestRecipient ?? "reports@example.test",
     authorizeTenant,
     tenantAccessDenied,
+    clock,
+  });
+  // Managed storage: the portfolio module declares the attachment and owns
+  // the operations that attach, remove and list photos; the framework module
+  // owns intents, completion, the sweep, variants and the durable purge.
+  const photos = defineProjectPhotoOperations({
+    portfolioUnitOfWork,
+    authorizeTenant,
+    tenantAccessDenied,
+  });
+  // Rich text: the portfolio module owns the document body field and the
+  // attachment its embedded images belong to; `save` attaches and detaches
+  // them in the same transaction as the row and `delete` clears them, so
+  // the storage purge outbox removes the bytes exactly when the row goes.
+  const documents = defineDocumentOperations({
+    portfolioUnitOfWork,
+    authorizeTenant,
+    tenantAccessDenied,
+  });
+  const storage = defineStorageModule({
+    attachments: [projectPhoto, documentImage],
+    adapter: infrastructure.storage,
+    ledger: infrastructure.attachmentLedger,
+    outbox: infrastructure.purgeOutbox,
+    transports: storageHttpTransports({ basePath: "/storage" }),
+    variants: {
+      processor: infrastructure.imageProcessor ?? createPassthroughImageProcessor(),
+      jobs,
+      cache,
+    },
+    sweep: {
+      trigger: { kind: "interval", everyMs: 5 * 60_000 },
+      ...(infrastructure.unattachedGraceMs !== undefined
+        ? { unattachedGraceMs: infrastructure.unattachedGraceMs }
+        : {}),
+    },
+    purge: { batchSize: DISPATCH_BATCH_SIZE },
+    clock,
+  });
+  // First-party credential auth beside the session directory: register,
+  // verify, sign in (with lockout and TOTP), sessions and recovery as declared
+  // operations under `/auth/*`; the store token is exported for the console.
+  const credentialAuth = createCredentialAuthModule({
+    store: infrastructure.credentialStore ?? createInMemoryCredentialStore(),
+    mail: mail.dependency,
+    ...(infrastructure.authSecrets ? { secrets: infrastructure.authSecrets } : {}),
+    clients: infrastructure.authClients ?? createRequestClientRegistry(),
     clock,
   });
   // One retention sweep covers job runs and both outboxes; no outbox cleanup
@@ -513,14 +693,23 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
   const management = defineJobManagement({ clock });
   const portfolioModule = defineModule({
     id: "portfolio",
-    operations: [summary],
+    operations: [
+      summary,
+      photos.attach,
+      photos.remove,
+      photos.list,
+      documents.save,
+      documents.read,
+      documents.remove,
+    ],
     providers: [
       valueProvider(portfolioUnitOfWork, unitOfWork),
       valueProvider(portfolioCache, cache),
       valueProvider(jobBackendDependency(), jobs),
       valueProvider(lockProviderDependency(), locks),
+      richTextProvider(documentBody),
     ],
-    imports: [],
+    imports: [STORAGE_MODULE_ID],
     exports: [
       portfolioUnitOfWork,
       portfolioCache,
@@ -528,6 +717,8 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       lockProviderDependency(),
     ],
     channels: [projectActivity],
+    attachments: [projectPhoto, documentImage],
+    richText: [documentBody],
   });
   const reportsModule = defineModule({
     id: "reports",
@@ -535,6 +726,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       notify,
       request,
       progress,
+      email,
       ...dispatcher.operations,
       reportJobs.deliver,
       reportJobs.digest,
@@ -547,6 +739,17 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
     imports: ["portfolio", "ship-cache", REALTIME_PUBLICATION_MODULE_ID],
     exports: [idempotencyStore, reportsOutbox.writer],
     channels: [notificationDelivered, reportRequested],
+    mailers: [reportsMailer],
+  });
+  const mailModule = defineModule({
+    id: "mail",
+    operations: [mail.job, ...mailPreview.operations],
+    providers: [
+      valueProvider(mailProviderDependency(), infrastructure.mailProvider),
+      valueProvider(mailLedgerDependency(), infrastructure.mailLedger),
+    ],
+    imports: ["portfolio"],
+    exports: [],
   });
   const paymentsModule = defineModule({
     id: "payments",
@@ -562,7 +765,7 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       valueProvider(webhookEvents, infrastructure.webhookEvents),
     ],
     imports: ["portfolio", "reports"],
-    exports: [paymentsOutbox.writer],
+    exports: [paymentsOutbox.writer, webhookEvents],
   });
   const messagingModule = defineModule({
     id: "messaging",
@@ -578,6 +781,25 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
     imports: ["portfolio", "reports", "payments"],
     exports: [],
   });
+  // The operator console: every panel is a declared operation under
+  // `/console/*`, gated by `console.operate` alone. It binds the tokens the
+  // imported modules export (job backend, outbox writers, webhook store and
+  // unit of work) and never widens what `ship.jobs:manage` or
+  // `ship.webhooks:replay` holders may do.
+  const consoleModule = defineConsoleModule({
+    imports: ["portfolio", "reports", "payments", credentialAuth.id],
+    jobs: true,
+    outboxes: [reportsOutbox, paymentsOutbox],
+    webhooks: {
+      webhooks: [payments.stripe, messaging.inboundSms, messaging.smsStatus],
+      store: webhookEvents,
+      unitOfWork: portfolioUnitOfWork,
+    },
+    realtime: { backend: realtime, channels: [...publishedChannels, projectActivity] },
+    // The auth-audit panel lands through the extension seam: same `console.operate` slug.
+    extensions: [credentialAuthConsoleExtension({ clock })],
+    clock,
+  });
   return defineApp({
     id: "golden-customized",
     modules: [
@@ -588,7 +810,13 @@ export function createCustomizedApplication(infrastructure: CustomizedInfrastruc
       paymentsModule,
       messagingModule,
       jobsModule,
+      consoleModule,
+      storage,
+      mailModule,
+      credentialAuth,
     ],
     runtime: { workers: { mode: "api" } },
   });
 }
+
+export { documentBody, documentImage, projectPhoto };

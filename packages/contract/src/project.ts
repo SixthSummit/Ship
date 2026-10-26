@@ -4,13 +4,19 @@ import type {
   AnyChannel,
   AnyModule,
   AnyOperation,
+  AttachmentGraphNode,
   CompiledApplication,
   OperationGraphNode,
+  RichTextGraphNode,
 } from "@sixthsummit/ship-core";
 import type {
   ClientContract,
+  ClientContractAttachment,
   ClientContractChannel,
+  ClientContractMailer,
   ClientContractOperation,
+  ClientContractRichText,
+  ClientContractRichTextAttr,
   ClientContractStreamResponse,
   ClientContractSuccess,
 } from "./manifest.js";
@@ -19,11 +25,18 @@ import { projectContractSchema, stableJson } from "./schema.js";
 export type {
   ClientContract,
   ClientContractAccess,
+  ClientContractAttachment,
   ClientContractCache,
   ClientContractChannel,
   ClientContractChannelScope,
   ClientContractError,
+  ClientContractMailer,
   ClientContractOperation,
+  ClientContractRichText,
+  ClientContractRichTextAttr,
+  ClientContractRichTextExtension,
+  ClientContractRichTextMark,
+  ClientContractRichTextNode,
   ClientContractStreamLimits,
   ClientContractStreamResponse,
   ClientContractSuccess,
@@ -54,11 +67,26 @@ export function projectClientContract<
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((channel) => [channel.id, projectChannel(channel)]),
   );
+  const attachments = Object.fromEntries(
+    application.graph.attachments.map((node) => [node.id, projectAttachment(node)]),
+  );
+  const mailers: Record<string, ClientContractMailer> = Object.fromEntries(
+    application.graph.mailers.map((mailer) => [
+      mailer.id,
+      Object.freeze({ messages: Object.freeze([...mailer.messages]) }),
+    ]),
+  );
+  const richText: Record<string, ClientContractRichText> = Object.fromEntries(
+    (application.graph.richText ?? []).map((node) => [node.id, projectRichText(node)]),
+  );
   const unsigned = stableJson({
     schemaVersion: 1,
     appId: application.id,
     operations,
     channels,
+    attachments,
+    ...(Object.keys(mailers).length > 0 ? { mailers } : {}),
+    ...(Object.keys(richText).length > 0 ? { richText } : {}),
   });
   const fingerprint = `sha256:${createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
   return deepFreeze({ ...unsigned, fingerprint }) as unknown as ClientContract;
@@ -142,6 +170,8 @@ function projectOperation(
       : {}),
     ...(node.invalidates ? { invalidates: [...node.invalidates] } : {}),
     publishes: operation.publishes.map((channel) => channel.id).sort(),
+    ...(node.attachments ? { attachments: [...node.attachments] } : {}),
+    ...(node.richText ? { richText: [...node.richText] } : {}),
     ...(operation.transport
       ? {
           transport: {
@@ -207,6 +237,67 @@ function projectChannel(channel: AnyChannel): ClientContractChannel {
     }),
     presence: channel.presence,
   });
+}
+
+/** The upload policy only: never the provider, the key layout or the ledger binding. */
+function projectAttachment(node: AttachmentGraphNode): ClientContractAttachment {
+  return deepFreeze({
+    cardinality: node.cardinality,
+    contentTypes: [...node.contentTypes],
+    maxBytes: node.maxBytes,
+    visibility: node.visibility,
+    maxCount: node.maxCount,
+    variants: [...node.variants],
+  });
+}
+
+/** The structural specs only: what the editor needs to agree with the server, never a renderer or validator. */
+function projectRichText(node: RichTextGraphNode): ClientContractRichText {
+  return deepFreeze({
+    schemaVersion: node.schemaVersion,
+    ...(node.attachmentId ? { attachment: node.attachmentId } : {}),
+    maxBytes: node.maxBytes,
+    maxDepth: node.maxDepth,
+    extensions: node.extensions.map((extension) => ({
+      name: extension.name,
+      nodes: Object.fromEntries(
+        Object.entries(extension.nodes).map(([name, spec]) => [
+          name,
+          {
+            group: spec.group,
+            ...(spec.content !== undefined ? { content: spec.content } : {}),
+            ...(spec.atom !== undefined ? { atom: spec.atom } : {}),
+            ...(spec.marks !== undefined ? { marks: spec.marks } : {}),
+            ...(spec.attrs !== undefined ? { attrs: projectAttrs(spec.attrs) } : {}),
+          },
+        ]),
+      ),
+      marks: Object.fromEntries(
+        Object.entries(extension.marks).map(([name, spec]) => [
+          name,
+          { ...(spec.attrs !== undefined ? { attrs: projectAttrs(spec.attrs) } : {}) },
+        ]),
+      ),
+    })),
+  });
+}
+
+function projectAttrs(
+  attrs: Readonly<Record<string, ClientContractRichTextAttr>>,
+): Readonly<Record<string, ClientContractRichTextAttr>> {
+  return Object.fromEntries(
+    Object.entries(attrs).map(([name, spec]) => [
+      name,
+      {
+        type: spec.type,
+        ...(spec.required !== undefined ? { required: spec.required } : {}),
+        ...(spec.nullable !== undefined ? { nullable: spec.nullable } : {}),
+        ...(spec.default !== undefined ? { default: spec.default } : {}),
+        ...(spec.enum !== undefined ? { enum: [...spec.enum] } : {}),
+        ...(spec.maxLength !== undefined ? { maxLength: spec.maxLength } : {}),
+      },
+    ]),
+  );
 }
 
 function deepFreeze<TValue>(value: TValue): TValue {

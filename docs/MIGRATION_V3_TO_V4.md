@@ -175,6 +175,14 @@ Use `@sixthsummit/ship-auth-firebase` only for reusable Firebase verification.
 Keep application-specific account and permission lookup in the consumer. The
 kernel enforces the same access declaration for direct and HTTP execution.
 
+An application that cannot take a Firebase dependency, or whose MFA, lockout
+and session-cutoff rules are bespoke code today, has a first-party
+alternative: `@sixthsummit/ship-auth-credentials` turns those rules into
+configuration and supplies an actor provider with the same `ActorResolver`
+contract, so `resolveActor` stays the one piece you write. The two providers
+can sit in one adapter, dispatched on credential kind. See
+[First-party credential auth](#first-party-credential-auth) under section 6b.
+
 ### Framework permissions
 
 Some framework modules generate operations gated by permission slugs of their
@@ -184,9 +192,11 @@ that asserts the full permission set will fail the first time you mount one.
 
 | Slug                   | Introduced by                                                                                                              | Gates                                                         |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `ship.outbox:manage`   | every `defineOutboxDispatcher` with `deadLetter: true`, including `defineCacheInvalidationModule` and `defineRealtimePublicationModule` | `<outbox>.list-failed`, `<outbox>.retry`, `<outbox>.discard` |
+| `ship.outbox:manage`   | every `defineOutboxDispatcher` with `deadLetter: true`, including `defineCacheInvalidationModule`, `defineRealtimePublicationModule` and `defineStorageModule` (its purge outbox) | `<outbox>.list-failed`, `<outbox>.retry`, `<outbox>.discard` |
 | `ship.jobs:manage`     | `defineJobManagement`                                                                                                      | `<prefix>.list-failed`, `.retry`, `.discard`, `.health`       |
 | `ship.webhooks:replay` | `defineWebhookReplay`                                                                                                      | the generated replay operation                                |
+| `ship.mail:preview`    | `defineMailPreview` (unless you pass another non-public `access`)                                                          | `<prefix>.preview-list`, `<prefix>.preview-render`           |
+| `console.operate`      | `defineConsoleModule` and every console extension; never derived from the three `ship.*` management slugs                 | every console operation                                       |
 
 Declared caching adds no slug of its own; mounting `ship-cache` brings
 `ship.outbox:manage`. The slugs are colon-separated; if your slug grammar
@@ -216,6 +226,44 @@ For every data-backed slice:
 7. fingerprint relevant rows before and after any baseline operation.
 
 Never treat an empty generated diff alone as data-safety evidence.
+
+### Schema safety
+
+Once the Drizzle mappings exist, put the generated migrations under
+`@sixthsummit/ship-schema-lint` ([schema safety](./v4/features/schema-safety.md),
+[ADR-0021](rearchitecture/decisions/0021-schema-safety-gates.md)). The package
+is default-off and installs nothing at runtime; it gives the rules above
+executable form.
+
+- **Lint.** `ship-schema-lint check drizzle --allowlist schema-lint.allowlist.json`
+  reads the migrations in journal order and refuses table and column drops,
+  renames, retypes, `NOT NULL` without a default, `SET NOT NULL` on an
+  existing table, non-concurrent indexes and backfills inside a DDL
+  transaction, printing the safe recipe for each. A deliberate exception
+  names the migration tag and the rule with a justification, in the allowlist
+  file or inline (`-- ship-schema-lint: allow <rule> <why>`); an entry that
+  matches nothing fails the check. Set `baseline` to the last historical
+  migration so linting starts with the first migration you write on v4.
+- **Snapshot.** `ship-schema-lint snapshot write` captures `schema.snapshot.json`
+  from `pg_catalog` (tables, columns, defaults, constraints, indexes, enums);
+  `snapshot check` diffs it in CI. A diff with no migration change in the
+  same commit is a hand edit.
+- **Release step.** `SHIP_RELEASE_STEP=1 ship-schema-lint release --migrations
+  drizzle --allowlist … --snapshot …` runs guard, lint, `drizzle-kit migrate`
+  and the snapshot check in order; without the variable it exits `3` and
+  applies nothing, so an entrypoint that still calls it fails loudly. Replace
+  the boot-time `migrate()` call with `assertMigrationsApplied({ client,
+  migrationsDir })`, which throws `PendingMigrationsError` and never applies
+  anything (`ship-schema-lint pending` is the same check for a container
+  entrypoint).
+- **CI.** The composite action `.github/actions/schema-safety` wraps the
+  preset against a disposable PostgreSQL service as a required check, and
+  the deploy job runs the same preset against the target database.
+
+Migrations never run at boot on the kernel line. Every package-owned table in
+section 6b (storage ledger, mail sends, credential auth, `ship_job_control`)
+arrives through this path like your own tables: spread the table factories
+into your schema, `drizzle-kit generate`, lint, release.
 
 ## 6. Make effects visible
 
@@ -350,6 +398,378 @@ operation's `publishes` so frontends type their subscriptions. Transactional
 publishes wait for the outbox composition (ADR-0017 §9). Wire protocol:
 [docs/v4/realtime.md](./v4/realtime.md).
 
+## 6b. Declared capabilities that replace per-app plumbing
+
+Each of the following was application code in v3 and still is on the
+route-first compatibility tier: a storage key layout with its own cleanup
+table, an email service with its own retry, a JWT and refresh-token stack, an
+HTML sanitizer at every display edge, and an operator reading logs and SQL.
+On the kernel line each is a declaration on a module plus an optional
+package. The compatibility counterparts stay supported through the migration
+window; what follows is what each becomes, what behaves differently, and the
+evidence to keep.
+
+### Managed storage
+
+v3 uploads buffer the bytes in the handler (`parseUpload` + `fileSchema`,
+[uploads](./v4/features/uploads.md)) and hand them to a `StorageService`
+adapter (`DiskStorageAdapter`, `S3StorageAdapter`, `GCSStorageAdapter`), and
+everything above the adapter is yours: the key layout, the table that
+remembers which object belongs to which row, the cleanup that runs when the
+row goes, the fence against a late upload resurrecting a deleted object, and
+the thumbnail pipeline. All of that stays supported; the compatibility
+adapters, `parseUpload` and `fileSchema` are untouched, and
+`http.body.multipart()` remains for an operation that wants the bytes.
+
+Port each file field to a declaration ([managed storage](./v4/features/storage.md),
+[ADR-0022](rearchitecture/decisions/0022-declared-managed-storage.md)):
+
+```ts
+export const projectPhoto = defineAttachment({
+  id: "portfolio.photo",            // <moduleId>.<field>
+  cardinality: "many",              // or "single"
+  contentTypes: ["image/png", "image/jpeg", "image/webp"],
+  maxBytes: 5_000_000,
+  visibility: "private",            // signed URLs; "public" has a stable URL
+  maxCount: 12,
+  intentTtlMs: 15 * 60 * 1000,
+  variants: { thumb: { width: 320, height: 320, fit: "cover", format: "webp" } },
+});
+```
+
+The owning module lists it under `attachments`; an operation that touches it
+declares `attachments: [projectPhoto]`, binds `projectPhoto.binding` and
+receives a capability scoped to the running transaction (`attach`, `detach`,
+`list`, `read`, `url`, `variant`). `attach` and `detach` require
+`transaction: "write"` (`SHIP_ATTACHMENT_SCOPE_REQUIRED`): the ledger change
+and the purge intent commit with the owning row. Mount
+`defineStorageModule({ attachments, adapter, ledger, outbox, transports, variants?, sweep? })`
+from `@sixthsummit/ship-storage` once; it serves every attachment through
+`ship-storage.create-intent`, `ship-storage.complete`, the `ship-storage.sweep`
+job, the `ship-storage.purge` outbox and `ship-storage.generate-variant`.
+Adapters: `@sixthsummit/ship-storage/disk` (development; signed URLs served by
+`createDiskStorageHandler`), `/s3` (AWS S3, Cloudflare R2, MinIO; in-house
+SigV4 over Web Crypto, no SDK, single-request uploads up to 5 GiB) and `/gcs`
+(an injected `@google-cloud/storage` client). The ledger tables
+(`shipStorageIntentsTable`, `shipStorageObjectsTable`,
+`shipStoragePurgesTable` from `@sixthsummit/ship-drizzle`, plus the shared
+`shipOutboxTable`) go into your schema and through the gated migration path
+in section 5; `ship_storage_objects` keeps `purged` rows as an audit trail.
+
+What behaves differently:
+
+- **Bytes never pass through the application server.** The client asks for
+  an intent, PUTs to the provider's signed URL, then calls `complete`, which
+  re-checks size and type (`UPLOAD_REJECTED` 422 deletes the bytes). An
+  expired or already settled intent answers `INTENT_EXPIRED` 410 and deletes
+  whatever arrived late, so the sweep and a late completion never both win.
+- **Purge is eventual and at-least-once.** Between commit and dispatch the
+  object still exists at the provider, but the ledger says `purging` and
+  `url()` returns `undefined`. The sweep (a keyed single-runner job) and the
+  `ship-storage.purge.dispatch` runner must run; without them `pending`
+  intents and `purging` rows accumulate, and `ledger.health()` reports the
+  owed purges. Mounting introduces `ship.outbox:manage` and needs a
+  `LockProvider`.
+- **Variants render lazily.** `variant(objectId, "thumb")` answers
+  `{ status: "pending" }` and enqueues the render on first request; the
+  first viewer sees the original until the job runs.
+- **Tenant isolation is still yours.** `attach` trusts the handler's
+  `ownerId`; fold the authentic tenant into it (`<tenantId>/<projectId>`) and
+  authorize in the operation as for any repository.
+
+Keep as evidence: an intent left uncompleted moves to `abandoned` after
+`intentTtlMs`; deleting an owner records a purge row and the provider object
+disappears after dispatch, with a replay a no-op; two tenants with the same
+input cannot see each other's objects; `storageAdapterConformance` from
+`@sixthsummit/ship-testing/storage` passes for any adapter you write. The
+customized golden consumer's `portfolio.photo` (`fixtures/consumers/customized/src/attachments.ts`)
+is the reference shape. Angular drives the whole flow from
+`@sixthsummit/ship-angular/storage` (`createAttachmentUpload`), with a required
+provider-origin allowlist.
+
+### Transactional mail
+
+v3 mail is `libraries/email`: a Resend-backed `EmailService` with a string
+template registry, injected and called inline from handlers. Its failure
+modes are the ones every consumer has hit: a send inside a transaction that
+later rolls back, a retried job that emails the customer twice, staging
+mailing a real customer, and no way to answer "did this person get this
+email" without asking the provider. The compatibility `EmailService` stays
+untouched during the overlap.
+
+Port each message to a mailer on the module that owns it
+([transactional mail](./v4/features/mail.md),
+[ADR-0023](rearchitecture/decisions/0023-declared-transactional-mail.md)):
+`defineMailer({ id, from, replyTo?, messages })`, where each message carries a
+`payload` schema, a pure `render(payload) => { subject, html, text }` and a
+`sample`; list it under `mailers` on the module. There is no template
+language: `render` is a TypeScript function, type-checked against the
+payload, and the same function serves the preview, the unit test and the
+production send. Then compile delivery once with
+`defineMailDelivery({ mailers, interceptor?, retry? })` from
+`@sixthsummit/ship-mail`: it produces `delivery.job` (`mail.deliver`, an
+ordinary `defineJob` with trigger `enqueue` and `transaction: "none"`) to add
+to a module's operations, next to value providers for
+`mailProviderDependency()` (`resendMailProvider` from
+`@sixthsummit/ship-mail/resend`, or `logMailProvider` for tests) and
+`mailLedgerDependency()` (`createDrizzleMailLedger`). An operation binds
+`delivery.dependency` and calls
+`services.mail.send(mailer, "verifyEmail", { to, payload, idempotencyKey, tenantId? })`;
+the message name and payload are checked by TypeScript, and queue backpressure
+is a result (`{ accepted: false }`), not an exception. `shipMailSendsTable()`
+(`ship_mail_sends`) goes through the gated migration path.
+
+What behaves differently:
+
+- **There is no synchronous send.** `send` enqueues when it is called, not
+  at commit. A `transaction: "write"` operation that must not send if it
+  rolls back records an outbox intent in the transaction and sends from the
+  dispatcher, exactly as for any other external effect (section 6).
+- **One provider call per idempotency key.** The key you choose
+  (`verify:${accountId}:${tokenId}`) deduplicates while a run is live and is
+  the ledger's primary key forever after: a retry, a replay or a second
+  enqueue answers `duplicate` without touching the provider. The only
+  remaining window is a crash between the provider call and `markSent`,
+  which the Resend adapter closes by forwarding the key as `Idempotency-Key`.
+- **Staging cannot mail a customer.** `allowlistInterceptor({ allow, redirectTo })`
+  replaces every recipient outside the allowlist, drops non-allowlisted
+  `cc`/`bcc` and carries the originals in `X-Ship-Original-To`; the ledger
+  row records both the addressed and the delivered recipients plus
+  `intercepted`. Bind it from your validated configuration; the framework
+  never reads `NODE_ENV`.
+- **Previews are operations.** `defineMailPreview({ mailers })` adds
+  `mail.preview-list` and `mail.preview-render` behind `ship.mail:preview`
+  (see *Framework permissions*); attach transports where previews belong.
+
+Keep as evidence: enqueue, drain and replay yield one `sent` ledger row and
+one provider call; the interceptor case is a row with `intercepted: true`,
+not a screenshot; `mailProviderConformance` and `mailLedgerConformance` from
+`@sixthsummit/ship-mail/conformance` pass for any adapter you write. The
+customized golden consumer's `reports.mailer` and `reports.email`
+(`fixtures/consumers/customized/src/mail.ts`) are the reference shape.
+
+### First-party credential auth
+
+The compatibility line authenticates with `JwtSigner`, `AuthFlow`,
+`RefreshTokenStore`, the auth cookies and the `csrf()` middleware over
+account tables the application owns, and whatever MFA, lockout or
+session-cutoff policy exists is bespoke code. That stack stays as it is; the
+kernel package has no compatibility counterpart and is default-off. An
+application that cannot take a Firebase dependency, or wants those policies
+as configuration, composes `@sixthsummit/ship-auth-credentials`
+([credential auth](./v4/features/auth-credentials.md),
+[ADR-0025](rearchitecture/decisions/0025-first-party-credential-auth.md)
+including its 2026-10-23 addendum). The package is held at proof stage under
+the two-consumer rule and publishes as `0.x`; pin it exactly like every other
+Ship package.
+
+The pieces: `shipAuthTables()` from `@sixthsummit/ship-auth-credentials/drizzle`
+returns the seven `ship_auth_*` tables to spread into your schema and migrate
+through the gated release step; `createDrizzleCredentialStore({ database, tables })`
+binds the store (`credentialStoreConformance` proves any other).
+`defineCredentialAuthMailer({ from, appName })` is one more mailer on the
+application's single `defineMailDelivery`. Then
+`defineCredentialAuthModule({ store, mailer, mail, links, secrets, policies, sessions?, defaultRoles, clients })`
+composes `/auth/*` as declared operations: register, verify-email, sign-in
+(`signed-in` | `mfa-required` | `mfa-enrolment-required`), sessions list,
+revoke and revoke-all, forgot and reset password, change-password,
+change-email, TOTP enrol/confirm/verify and recovery-code consume, every
+outcome written to an audit row that never carries a secret. Policies are
+configuration: `password`, `lockout`, `session` (absolute age and idle
+timeout), `mfa.required` as a function of the account, token TTLs,
+`requireVerifiedEmail` and `onExistingEmail`. Rate limiting is
+`credentialAuthRateLimitPolicies()` under `preValidationPolicies`.
+
+The actor provider is `credentialAuthentication({ store, clients, session, sessions, resolveActor })`,
+passed to `createHonoAdapter` as `auth` with the same `ActorResolver`
+contract as the Firebase adapter: the identity is the session
+(`ship-credentials.session`), the actor comes from your `resolveActor`, and
+per-surface MFA is a line in it (`session.mfaState === "verified"` before
+granting `console.operate`). To run beside Firebase, dispatch on the
+credential kind as the customized golden consumer's `auth.ts` does, and
+forward the adapter's `requires` when you wrap it.
+
+What behaves differently from the compatibility stack:
+
+- **Sessions are opaque hashed tokens, not JWTs**, so revoke-all, the
+  account cutoff and a disabled account take effect on the next request and
+  sessions are listable. Bearer (`Authorization: Bearer ship_s_…`) is the
+  server default for native and machine clients.
+- **Browsers use a cookie.** `sessions: { transport: "cookie" | "both" }`
+  issues an `httpOnly`, `Secure`, `SameSite=Lax` session cookie, and the
+  adapter then requires `credentialSessionCsrfPolicy({ auth, trustedOrigins })`
+  under the `"*"` pre-validation key; `createHonoAdapter` refuses to
+  construct without it (`SHIP_HONO_OPTIONS_INVALID`). Trusted origins are
+  your CORS allowlist. Cookie mode is a same-site deployment: one origin
+  behind a proxy, or sibling hosts with `cookie.domain` and
+  `cors: { origin: [APP_ORIGIN], credentials: true }`.
+- **A stale cookie is cleared, not ignored.** A revoked, expired or idle
+  cookie resolves anonymously on a public operation and is refused on an
+  authenticated one; either way the response carries a clearing
+  `Set-Cookie` and the presentation is audited once as
+  `session.stale-cookie`. A present invalid bearer is still refused
+  everywhere.
+- **argon2id by default** from `node:crypto`, with `needsRehash` upgrading
+  scrypt hashes on the next sign-in, so an existing scrypt store needs no
+  migration; `scryptPasswordHasher` and any `PasswordHasher` can be bound.
+- **Registering an existing email conceals it** (`onExistingEmail:
+  "conceal"`, the default): `register` answers `201` and the owner is mailed
+  instead, so the endpoint does not enumerate accounts; `links.signIn` is
+  required in this mode, and `"reject"` restores the `409`.
+- **A password change rotates the current session** whatever its transport,
+  revokes the others unless `signOutOtherSessions: false`, and mails the
+  owner the `passwordChanged` notice with a short-lived reset link
+  (`tokens.passwordChangedResetTtlMs`, ten minutes by default). The change
+  stands even if the mail queue refuses the notice (`notified: false`,
+  audited as `password.changed-notice`).
+
+Keep as evidence: the migration generated from the spread tables; lockout,
+expired and replayed tokens, replayed TOTP steps and recovery codes refused;
+revoke-all ending a session during an in-flight request; the CSRF matrix
+(missing header, mismatched token, untrusted origin, login CSRF) refused with
+a declared `403`; a browser cookie session beside a native bearer. The
+customized golden consumer (`fixtures/consumers/customized/src/credential-auth.ts`)
+runs both transports with the CSRF policy under `"*"` and forces its `sre`
+role through TOTP enrolment before the session reaches the console. Angular
+screens come from `@sixthsummit/ship-angular/credential-auth`, where
+`cookieSessionStorage()` is the default.
+
+### Rich text fields
+
+v3 formatted content is an HTML string in a `text` column, sanitized in the
+client or at whichever display edge remembered to, with pasted images as
+bare URLs nobody purges. The kernel line stores a document model instead
+([rich text](./v4/features/rich-text.md),
+[ADR-0026](rearchitecture/decisions/0026-declared-rich-text-fields.md)):
+ProseMirror JSON plus `schemaVersion`, never HTML, validated against a
+kernel-owned, versioned allowlist (`RICH_TEXT_SCHEMA_VERSION`; paragraphs,
+headings 2–3, lists, blockquote, code block, hard break, `attachment`, and
+the `bold`, `italic`, `code` and `link` marks with `https:`/`mailto:` hrefs
+only). Tables, images by URL, underline, colour and `h1` are deliberately
+absent.
+
+Declare the field on the module that owns the record, with the attachment
+its embedded images belong to:
+
+```ts
+export const documentBody = defineRichText({
+  id: "documents.body",          // <moduleId>.<field>
+  attachment: documentImage,     // a defineAttachment on the same module
+  extensions: [mergeField],      // defineRichTextExtension: named widenings
+  maxBytes: 256 * 1024,
+  links: { rel: "noopener noreferrer" },
+  onInvalid: "reject",           // or "sanitize"
+});
+```
+
+List it under `richText` on the module and add
+`richTextProvider(documentBody)` from `@sixthsummit/ship-rich-text` to its
+providers. An operation validates the body at the input boundary with
+`richTextDocumentSchema(documentBody)`, binds `documentBody.binding` and
+receives a capability scoped to the running transaction: `validate`,
+`sanitize`, `text` (the plain-text projection for search and previews),
+`render` (HTML, with signed URLs for embedded objects resolved at render
+time and never stored), `save`, `clear` and `migrate`. The table is yours: a
+`jsonb` column for the document and a `text` column for the projection; the
+framework adds no table for rich text.
+
+What behaves differently:
+
+- **Embedded images are managed objects.** `save({ ownerId, document })`
+  inside the write transaction attaches every newly referenced upload of the
+  field's attachment and detaches the ones the previous document no longer
+  references, recording their purge intents with the row; `clear({ ownerId })`
+  on delete. An image lives exactly as long as the owning record. A document
+  that references an unknown, purged or foreign object is refused
+  (`SHIP_RICH_TEXT_ATTACHMENT_UNAVAILABLE`) or, under `onInvalid: "sanitize"`,
+  loses the node.
+- **Widening is a declaration.** `defineRichTextExtension({ name, nodes, marks })`
+  adds named nodes and marks with a structural `spec` (projected to the
+  contract so the editor builds the same schema) and server-only
+  `renderHtml` / `renderText`; it cannot redefine a base name.
+- **A schema bump is a release step.** `validate`, `render` and `save`
+  refuse a document at any other `schemaVersion`
+  (`SHIP_RICH_TEXT_SCHEMA_VERSION_UNSUPPORTED`); the field declares
+  `migrations: [{ from, to, migrate }]` and a release step rewrites stored
+  rows through `migrate`. Nothing migrates at render time.
+- **Converting stored HTML is application work.** The package ships no
+  HTML importer. Add the `jsonb` and `text` columns beside the HTML column
+  and backfill under the schema-safety recipes rather than retyping in
+  place.
+
+Keep as evidence: a refused save changes nothing; dropping an image from a
+document and deleting the document both commit the row change and the purge
+intent together, and the dispatch deletes the bytes; the XSS corpus in
+`packages/rich-text` covers the render path, so your tests cover the
+extensions you add (everything an extension emits from `node.attrs` goes
+through `context.escape` / `context.attribute`). The customized golden
+consumer's `portfolio.document-body` (`fixtures/consumers/customized/src/documents.ts`)
+is the reference shape, including the `merge-field` extension. The Angular
+editor (`@sixthsummit/ship-angular/rich-text`, `ShipRichTextEditorComponent`)
+builds its TipTap schema from the manifest via `richTextFieldFromManifest`,
+emits the document model and never HTML, and uploads dropped or pasted images
+as managed attachments through `createRichTextAttachmentUploader`.
+
+### Operator console
+
+v3 operations meant Cloud Logging when something stuck, SQL against the
+outbox and receipt tables, and the optional `createBullBoardApp`
+(`@bull-board/hono` behind an API key) for queues. The kernel line composes
+one authenticated surface from declared operations
+([operator console](./v4/features/console.md),
+[ADR-0024](rearchitecture/decisions/0024-kernel-ops-console.md)); it has no
+compatibility counterpart and is default-off until mounted:
+
+```ts
+const console = defineConsoleModule({
+  imports: ["portfolio", "reports", "payments"],   // modules exporting the bound tokens
+  jobs: true,                                      // over jobBackendDependency()
+  outboxes: [reportsOutbox, paymentsOutbox],
+  webhooks: { webhooks: [stripe, inboundSms], store: webhookEvents, unitOfWork },
+  realtime: { backend: realtime, channels: [...publishedChannels] },
+});
+```
+
+`@sixthsummit/ship-console` mounts, under `console` and `/console`, panels for
+jobs (overview, runs, one run, retry, discard, retry-all, pause and resume),
+cron (schedules, trigger now), webhooks (receipts with the outbox record each
+spawned, one receipt, replay), realtime (channels with subscriber counts) and
+outboxes (overview, records, retry, discard). `createHonoAdapter` projects
+them like any other operation, so direct execution, HTTP and the generated
+client share one access policy and one audit trail.
+
+What to carry into your migration:
+
+- **`console.operate` is never implied.** Every console operation declares
+  `permission("console.operate")` (`CONSOLE_OPERATE_PERMISSION`), and the slug
+  is not derived from `ship.jobs:manage`, `ship.outbox:manage`,
+  `ship.webhooks:replay` or an admin role; grant it explicitly to the role
+  that operates the system (see *Framework permissions*). The package proves
+  an actor holding every `ship.*` management slug is refused on every console
+  operation.
+- **Panels degrade per adapter capability.** Introspection is optional on
+  each backend contract; a missing one is the declared failure
+  `CONSOLE_CAPABILITY_UNAVAILABLE` (501), never a failed mount. Pause and
+  resume on the PostgreSQL job backend need the opt-in `shipJobControlTable()`
+  (`ship_job_control`) through a gated migration and `controlTable` on
+  `createDrizzleJobBackend`.
+- **Rejected and duplicate webhook outcomes are process-local.** Stored
+  receipts are the verified ones; `createConsoleWebhookObserver()` keeps a
+  bounded ring of the others per process.
+- **Extensions cannot widen the mount.** `extensions: [{ id, title, operations }]`
+  are refused unless every operation is namespaced
+  `<consoleId>.<extensionId>.` and declares `consoleAccess()`;
+  `credentialAuthConsoleExtension()` from
+  `@sixthsummit/ship-auth-credentials/console` is the first.
+
+Keep as evidence: the refusal of your existing operator role on every console
+operation, directly and over HTTP; one dead-lettered run retried and one
+paused and resumed through the console against your real backend; one
+verified receipt listed with its spawned record and replayed. The Angular
+console (`@sixthsummit/ship-angular/console`: `provideShipConsole`,
+`shipConsoleRoutes({ canActivate })`, `ShipConsoleAppComponent`) runs over the
+application's own operation client and refuses an empty guard list.
+
 ## Workers and scheduled jobs
 
 v3 cron entries and ad-hoc queue consumers become declared jobs. Each job names
@@ -445,6 +865,42 @@ release decision and must pass the packed cross-repository fixture.
 
 Deploy tolerant frontend error/download behavior before changing backend traffic
 when possible. That removes atomic frontend/backend promotion pressure.
+
+### CORS
+
+The compatibility tier configures cross-origin policy with
+`createApp({ cors })`; the kernel adapter takes the same object:
+`createHonoAdapter(app, { cors: { origin: env.CORS_ORIGINS, credentials: true } })`,
+with the same `CorsOptions` shape (`origin` as one origin, an allowlist or a
+per-request resolver, `allowMethods`, `allowHeaders`, `exposeHeaders`,
+`maxAge`, `credentials`). Until this landed the adapter emitted no
+`Access-Control-*` headers and kernel-line apps wired `hono/cors` by hand;
+delete any `app.use("*", cors(...))` wrapper when you pass `cors`, because
+the adapter owns the headers and an operation that sets an `Access-Control-*`
+header through `respond()` now fails as a reserved header.
+
+What behaves differently from a hand-rolled wrapper:
+
+- a wildcard origin (`"*"`, or `"*"` inside a list) combined with
+  `credentials: true` is refused at construction with
+  `SHIP_HONO_CORS_INVALID`; list the origins explicitly;
+- preflights are answered for operation, streaming and webhook routes, and
+  the policy also applies to declared failures and the 404 handler;
+- `X-Request-Id`, `X-Ship-Cache` and every header declared on an operation
+  error (`Retry-After` on a declared 429) are exposed to the browser; add
+  headers your operations set through `respond()` to `exposeHeaders`;
+- an explicit `allowHeaders` list always keeps `Content-Type` and
+  `X-Request-Id` (and must include `x-csrf-token` for cookie sessions, see
+  section 6b); without the list, preflights reflect the browser's request;
+- an application that declares an `http.options(...)` operation cannot also
+  enable `cors`; the adapter reports the conflict at construction.
+
+New scaffolds read a comma-separated `CORS_ORIGINS` in `src/http.ts`. Keep as
+evidence a preflight and a credentialed request from each frontend origin
+against one operation, one streaming and one webhook route, and a boot with
+the production allowlist. See the top entry of [UPGRADING.md](UPGRADING.md),
+the `@sixthsummit/ship-hono` [README](../packages/hono/README.md) and the
+*Cross-origin policy* row in [V4_STATUS.md](V4_STATUS.md).
 
 ## Streaming
 

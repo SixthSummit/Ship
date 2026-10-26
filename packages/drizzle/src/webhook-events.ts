@@ -3,9 +3,10 @@ import type {
   WebhookEventCleanupRequest,
   WebhookEventCleanupResult,
   WebhookEventInput,
+  WebhookEventQuery,
   WebhookEventStore,
 } from "@sixthsummit/ship-core";
-import { and, eq, inArray, like, lt, notExists, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, lt, notExists, or, type SQL, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { customType, index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import type { ShipIdempotencyTable } from "./idempotency.js";
@@ -130,6 +131,19 @@ export function createDrizzleWebhookEventStore<TSchema extends Record<string, un
     return row ? toEvent(row) : undefined;
   };
 
+  const list = async (query: WebhookEventQuery): Promise<readonly StoredWebhookEvent[]> => {
+    const conditions: SQL[] = [];
+    if (query.webhookId !== undefined) conditions.push(eq(table.webhookId, query.webhookId));
+    if (query.before !== undefined) conditions.push(lt(table.receivedAt, query.before));
+    const rows = await database
+      .select()
+      .from(table)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(table.receivedAt), desc(table.id))
+      .limit(query.limit);
+    return Object.freeze(rows.map(toEvent));
+  };
+
   const cleanup = async (
     request: WebhookEventCleanupRequest,
   ): Promise<WebhookEventCleanupResult> => {
@@ -179,6 +193,7 @@ export function createDrizzleWebhookEventStore<TSchema extends Record<string, un
     record,
     link,
     read,
+    list,
     cleanup,
   });
 }

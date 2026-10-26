@@ -1,5 +1,31 @@
 # @sixthsummit/ship-drizzle
 
+## 1.3.0
+
+### Minor Changes
+
+- b612767: Add the transactional mail send ledger: `shipMailSendsTable()` (`ship_mail_sends`, one row per idempotency key with addressed and delivered recipients, status, attempts, provider ids and timestamps; GIN-indexed recipients) and `createDrizzleMailLedger()` implementing the kernel `MailLedger` contract with an atomic claim that retakes failed rows and stale claims.
+- b350b5d: Managed storage support (ADR-0022). `@sixthsummit/ship-drizzle` adds `shipStorageIntentsTable()`, `shipStorageObjectsTable()`, `shipStoragePurgesTable()` and `createDrizzleAttachmentLedger()`, whose claims use `FOR UPDATE SKIP LOCKED` and whose `attach`/`detach` join the executor's unit-of-work scope; include the tables in application migrations as a release step. `@sixthsummit/ship-testing` adds `createInMemoryStorageAdapter()`, `createInMemoryAttachmentLedger()` and the runner-agnostic `storageAdapterConformance()` suite under the `./storage` subpath.
+- 5e2858d: Implement the kernel's operator introspection for the ops console (SAPI-757): the in-memory job, webhook-event, outbox and realtime backends; the BullMQ backend (`getJobs`, job scheduler `next`, `queue.pause`/`resume`); the PostgreSQL job backend (run and schedule queries, durable pause through the new opt-in `shipJobControlTable()` passed as `controlTable`, read once per worker poll), outbox (`findRecord`/`listRecords`) and webhook event store (`list`); and the Socket.IO gateway (per-channel subscriber and scope counts, last publish).
+- 3e368c2: Declare the shared runtimes an application also imports as peer dependencies instead of regular
+  dependencies, so one copy is resolved: `hono` in `@sixthsummit/ship-hono`, `drizzle-orm` in
+  `@sixthsummit/ship-drizzle` and `@sixthsummit/ship-testing`, and `ioredis` in
+  `@sixthsummit/ship-jobs-bullmq` and `@sixthsummit/ship-realtime-socketio`. Each package keeps the
+  same caret range in its `devDependencies` for its own tests. `socket.io` and `bullmq` stay regular
+  dependencies because their adapters create the server, queues and workers themselves; the
+  compatibility distribution `@sixthsummit/ship-api` is unchanged. The rule is recorded in
+  `docs/VERSIONING.md`.
+  
+  Consumers that relied on the transitive copy add the runtime to their own `dependencies` with the
+  adapter's caret range. `ship-api create` now writes `hono` as the caret range `ship-hono` declares
+  as its peer next to exact Ship pins, so a caret bump of the Ship packages can never leave an exact
+  `hono` pin behind, and the packed-consumer gate fails when a clean install of the scaffold or of a
+  golden consumer resolves more than one `hono` or `drizzle-orm`.
+
+### Patch Changes
+
+- 63eef39: Require `zod` `^4.6.7` (GHSA-mrhx-c7xc-m3w5: memory exhaustion while validating oversized constrained collections) and resolve `body-parser` to `2.4.0` under the MCP server's Express dependency (GHSA-27r3-jxmh-p828). No API change; the Angular library now runs its own suite against zod 4 and the Angular scaffold template asks for `zod ^4.6.7`.
+
 ## 1.2.1
 
 ### Patch Changes

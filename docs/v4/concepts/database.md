@@ -223,9 +223,9 @@ The framework intentionally doesn't ship a connection-pool-per-request pattern. 
 
 ## Source
 
-- [`packages/core/src/app/db/client.ts`](https://github.com/sixthsummit/ship-api/blob/main/packages/core/src/app/db/client.ts) — pool creation
-- [`packages/core/src/app/db/baseFields.ts`](https://github.com/sixthsummit/ship-api/blob/main/packages/core/src/app/db/baseFields.ts) — audit columns
-- [`packages/core/src/app/db/transaction.ts`](https://github.com/sixthsummit/ship-api/blob/main/packages/core/src/app/db/transaction.ts) — `withTransaction` and `RollbackError`
-- [`modules/accounts/schema.ts`](https://github.com/sixthsummit/ship-api/blob/main/modules/accounts/schema.ts) — identity tables + `accountsSchema` fragment
-- [`packages/claude-plugin/hooks/block-migration-edit.sh`](https://github.com/sixthsummit/ship-api/blob/main/packages/claude-plugin/hooks/block-migration-edit.sh) — the never-edit-SQL enforcement
-- [`.cursor/rules/api.mdc`](https://github.com/sixthsummit/ship-api/blob/main/.cursor/rules/api.mdc) — migration conventions
+- [`packages/core/src/app/db/client.ts`](https://github.com/SixthSummit/Ship/blob/dev/packages/core/src/app/db/client.ts) — pool creation
+- [`packages/core/src/app/db/baseFields.ts`](https://github.com/SixthSummit/Ship/blob/dev/packages/core/src/app/db/baseFields.ts) — audit columns
+- [`packages/core/src/app/db/transaction.ts`](https://github.com/SixthSummit/Ship/blob/dev/packages/core/src/app/db/transaction.ts) — `withTransaction` and `RollbackError`
+- [`modules/accounts/schema.ts`](https://github.com/SixthSummit/Ship/blob/dev/modules/accounts/schema.ts) — identity tables + `accountsSchema` fragment
+- [`packages/claude-plugin/hooks/block-migration-edit.sh`](https://github.com/SixthSummit/Ship/blob/dev/packages/claude-plugin/hooks/block-migration-edit.sh) — the never-edit-SQL enforcement
+- [`.cursor/rules/api.mdc`](https://github.com/SixthSummit/Ship/blob/dev/.cursor/rules/api.mdc) — migration conventions

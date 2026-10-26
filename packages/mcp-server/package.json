@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-api-mcp-server",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "MCP server exposing ShipAPI route-registry introspection tools to Claude Code, Cursor, and other LLM agents",
   "type": "module",
   "author": "Scott Gibson",
@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "files": [
     "lib/",

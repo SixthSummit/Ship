@@ -431,11 +431,20 @@ export interface JobBackendDependencyToken extends DependencyToken<JobBackend, J
   readonly role: "backend";
 }
 
-export interface JobEnqueueDependencyToken<TInput extends RuntimeSchema = RuntimeSchema>
-  extends DependencyToken<JobBackend, JobEnqueuer<TInput>> {
+export interface JobEnqueueDependencyToken<
+  TInput extends RuntimeSchema = RuntimeSchema,
+  TResolved = JobEnqueuer<TInput>,
+> extends DependencyToken<JobBackend, TResolved> {
   readonly scope: "job";
   readonly role: "enqueue";
   readonly job: AnyJob;
+  /**
+   * Optional typed facade over the enqueuer. Framework packages use it to hand
+   * a handler a domain-shaped sender (for example a mail sender) while the
+   * graph still records the job-to-job edge and the executor still validates
+   * input against the job schema.
+   */
+  readonly adapt?: (enqueuer: JobEnqueuer<TInput>) => TResolved;
 }
 
 export interface LockProviderDependencyToken extends DependencyToken<LockProvider, LockProvider> {
@@ -495,10 +504,32 @@ export function isJobDependencyToken(value: DependencyToken): value is Dependenc
 
 export function isJobEnqueueDependencyToken(
   value: DependencyToken,
-): value is JobEnqueueDependencyToken {
+): value is JobEnqueueDependencyToken<RuntimeSchema, unknown> {
   return (
     isJobDependencyToken(value) && value.role === "enqueue" && isJob(Reflect.get(value, "job"))
   );
+}
+
+/**
+ * Builds a job enqueue token whose resolved value is `adapt(enqueuer)` rather
+ * than the raw enqueuer. The token keeps `role: "enqueue"` and `job`, so every
+ * compile-time check and graph edge for `jobDependency()` applies unchanged.
+ */
+export function adaptedJobDependency<TJob extends AnyJob, TResolved>(
+  job: TJob,
+  adapt: (enqueuer: JobEnqueuer<TJob["input"]["payload"]>) => TResolved,
+): JobEnqueueDependencyToken<TJob["input"]["payload"], TResolved> {
+  if (typeof adapt !== "function") {
+    throw new InvalidJobDefinitionError(
+      "SHIP_JOB_DEFINITION_INVALID",
+      "adaptedJobDependency() requires an adapt function",
+      { jobId: job?.id },
+    );
+  }
+  return Object.freeze({ ...jobDependency(job), adapt }) as JobEnqueueDependencyToken<
+    TJob["input"]["payload"],
+    TResolved
+  >;
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +670,70 @@ export interface JobBackend {
   /** Returns the discarded run, or undefined when it is not failed. */
   discard(runId: string, reason: string): Promise<JobRun | undefined>;
   cleanup(now: Date): Promise<JobCleanupResult>;
+  /**
+   * Optional operator-facing introspection (run listing, schedules, pause).
+   * Adapters that omit it still satisfy the contract; an ops console reports
+   * the missing capability instead of failing.
+   */
+  readonly introspection?: JobIntrospection;
+}
+
+// ---------------------------------------------------------------------------
+// Introspection (optional backend capability read by operator tooling)
+// ---------------------------------------------------------------------------
+
+export interface JobRunQuery {
+  /** Restrict to one declared job. */
+  readonly jobId?: string;
+  /** Restrict to one run status; every status when omitted. */
+  readonly status?: JobRunStatus;
+  readonly limit: number;
+}
+
+/** A reconciled schedule as the backend holds it. */
+export interface JobScheduleState {
+  readonly jobId: string;
+  readonly trigger: JobScheduleTrigger | JobIntervalTrigger;
+  /** The next occurrence the backend will enqueue, when it is known. */
+  readonly nextAt?: Date;
+}
+
+/**
+ * Backend-neutral introspection contract an operator console reads. Every
+ * method is a read except `pause` and `resume`, which a backend exposes only
+ * when it can hold the paused state where its workers will see it: a paused
+ * job keeps accepting runs and keeps ticking its schedule, but no worker
+ * claims its waiting runs until it is resumed.
+ */
+export interface JobIntrospection {
+  readonly kind: "ship.job-introspection";
+  /** Declarations the backend was attached with; empty before `attach`. */
+  declarations(): readonly JobRuntimeDeclaration[];
+  /** Runs matching the query, most recently created first. */
+  listRuns(query: JobRunQuery): Promise<readonly JobRun[]>;
+  getRun(runId: string): Promise<JobRun | undefined>;
+  listSchedules(): Promise<readonly JobScheduleState[]>;
+  /** Ids of jobs whose claims are currently paused. */
+  listPaused(): Promise<readonly string[]>;
+  pause?(jobId: string): Promise<void>;
+  resume?(jobId: string): Promise<void>;
+}
+
+export function isJobIntrospection(value: unknown): value is JobIntrospection {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Reflect.get(value, "kind") === "ship.job-introspection" &&
+    ["declarations", "listRuns", "getRun", "listSchedules", "listPaused"].every(
+      (method) => typeof Reflect.get(value, method) === "function",
+    )
+  );
+}
+
+/** The backend's introspection capability, or undefined when the adapter does not provide one. */
+export function jobIntrospection(backend: JobBackend): JobIntrospection | undefined {
+  const value = backend.introspection;
+  return isJobIntrospection(value) ? value : undefined;
 }
 
 export function isJobBackend(value: unknown): value is JobBackend {

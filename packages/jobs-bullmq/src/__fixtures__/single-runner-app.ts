@@ -12,6 +12,7 @@ import { Redis } from "ioredis";
 import { z } from "zod";
 import { createBullmqJobBackend } from "../backend.js";
 import { createRedisLockProvider } from "../lock.js";
+import { reportConnectionError } from "./report.js";
 
 export interface FixtureRuntimeOptions {
   readonly redisUrl: string;
@@ -43,7 +44,9 @@ export async function createFixtureRuntime(options: FixtureRuntimeOptions): Prom
   readonly redis: Redis;
   readonly backend: ReturnType<typeof createBullmqJobBackend>;
 }> {
+  const report = reportConnectionError(`fixture ${options.workerName}`);
   const redis = new Redis(options.redisUrl, { maxRetriesPerRequest: null });
+  redis.on("error", report("ioredis"));
   const record = async (event: FixtureEvent) => {
     await redis.rpush(EVENTS_KEY(options.prefix), JSON.stringify(event));
   };
@@ -97,6 +100,7 @@ export async function createFixtureRuntime(options: FixtureRuntimeOptions): Prom
     prefix: options.prefix,
     maxInFlight: 8,
     worker: { lockDuration: 3_000, stalledInterval: 1_000 },
+    onError: (error, context) => report(`bullmq ${context.jobId}`)(error),
   });
   const app = defineApp({
     id: "fixture-jobs",

@@ -58,4 +58,78 @@ channels["portfolio.activity"].payload.itemCount satisfies number;
 // @ts-expect-error channel ids stay exact
 channels["reports.unknown"];
 
+async function verifyCredentialAuthContract(): Promise<void> {
+  const signIn = await client.call("auth.sign-in", {
+    body: { email: "ada@example.test", password: "correct horse battery staple" },
+  });
+  if (signIn.ok) {
+    if (signIn.data.status === "signed-in") {
+      // The token is present for bearer sessions only; a cookie session carries none.
+      signIn.data.session.token satisfies string | undefined;
+      signIn.data.session.transport satisfies "bearer" | "cookie";
+    }
+    if (signIn.data.status === "mfa-required") signIn.data.challenge.token satisfies string;
+    if (signIn.data.status === "mfa-enrolment-required") {
+      signIn.data.session.mfaState satisfies "none" | "pending-enrolment" | "verified";
+    }
+  }
+  if (!signIn.ok) {
+    signIn.error.code satisfies "AUTH_INVALID_CREDENTIALS" | "AUTH_ACCOUNT_LOCKED" | (string & {});
+  }
+  const events = await client.call("console.auth-audit.events", { query: { limit: 10 } });
+  if (events.ok) events.data.events[0]?.event satisfies string | undefined;
+  // @ts-expect-error sign-in requires the password in the body
+  await client.call("auth.sign-in", { body: { email: "ada@example.test" } });
+}
+
 void verifyClientContract;
+void verifyCredentialAuthContract;
+
+// Attachment policies are part of the typed contract, carrying no provider detail.
+type Attachments = ApplicationContractOf<typeof application>["attachments"];
+declare const attachments: Attachments;
+attachments["portfolio.photo"].cardinality satisfies "many";
+attachments["portfolio.photo"].visibility satisfies "private";
+attachments["portfolio.photo"].variants satisfies "thumb";
+// @ts-expect-error attachment ids stay exact
+attachments["portfolio.unknown"];
+
+async function verifyStorageContract(): Promise<void> {
+  const intent = await client.call("ship-storage.create-intent", {
+    body: { attachment: "portfolio.photo", contentType: "image/png", size: 12 },
+  });
+  if (intent.ok) intent.data.upload.url satisfies string;
+  const complete = await client.call("ship-storage.complete", {
+    params: { intentId: "intent-1" },
+  });
+  if (complete.ok) complete.data.objectId satisfies string;
+  const photos = await client.call("portfolio.photos", {
+    params: { tenantId: "acme", projectId: "project-1" },
+  });
+  if (photos.ok) photos.data.photos[0]?.thumb satisfies string | null | undefined;
+}
+void verifyStorageContract;
+
+// Rich text documents travel as the document model; the typed client never sees HTML on the way in.
+async function verifyRichTextContract(): Promise<void> {
+  const saved = await client.call("portfolio.save-document", {
+    params: { tenantId: "acme", documentId: "doc-1" },
+    body: {
+      title: "Letter",
+      document: { schemaVersion: 1, type: "doc", content: [{ type: "paragraph" }] },
+    },
+  });
+  if (saved.ok) saved.data.attached satisfies readonly string[];
+  // The declared refusal is part of the typed result next to the framework failures.
+  if (!saved.ok) saved.error.code satisfies "DOCUMENT_INVALID" | (string & {});
+  const read = await client.call("portfolio.document", {
+    params: { tenantId: "acme", documentId: "doc-1" },
+  });
+  if (read.ok) read.data.html satisfies string;
+  await client.call("portfolio.save-document", {
+    params: { tenantId: "acme", documentId: "doc-1" },
+    // @ts-expect-error the body carries a document model, not an HTML string
+    body: { title: "Letter", document: "<p>hi</p>" },
+  });
+}
+void verifyRichTextContract;

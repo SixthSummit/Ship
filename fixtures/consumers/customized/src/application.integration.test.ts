@@ -1,7 +1,19 @@
+import {
+  createRequestClientRegistry,
+  totpCode,
+  totpStep,
+} from "@sixthsummit/ship-auth-credentials";
 import { createHttpOperationClient } from "@sixthsummit/ship-contract";
 import type { ApplicationContractOf } from "@sixthsummit/ship-contract/application";
 import { projectClientContract } from "@sixthsummit/ship-contract/project";
-import { createExecutor, systemActor, webhookSecret } from "@sixthsummit/ship-core";
+import {
+  createExecutor,
+  createExecutor as createRuntimeExecutor,
+  startJobRuntime,
+  systemActor,
+  webhookSecret,
+} from "@sixthsummit/ship-core";
+import { logMailProvider } from "@sixthsummit/ship-mail";
 import { createInMemoryRealtimeBackend } from "@sixthsummit/ship-testing";
 import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import {
@@ -10,6 +22,7 @@ import {
   runJobOnce,
 } from "@sixthsummit/ship-testing/jobs";
 import { type PostgresTestDb, setupPostgresTestDb } from "@sixthsummit/ship-testing/postgres";
+import { createInMemoryStorageAdapter } from "@sixthsummit/ship-testing/storage";
 import { stripeSignatureHeader } from "@sixthsummit/ship-webhooks/stripe";
 import { twilioSignatureHeader } from "@sixthsummit/ship-webhooks/twilio";
 import { sql } from "drizzle-orm";
@@ -19,20 +32,32 @@ import type { SessionDirectory } from "./auth.js";
 import type { PaymentEventSink, ReportNotifier } from "./effects.js";
 import { createCustomizedHttpApplication } from "./http.js";
 import {
+  createAttachmentLedger,
   createCacheInvalidationOutbox,
+  createCredentialStore,
   createIdempotencyStore,
+  createJobBackend,
+  createMailLedger,
   createPaymentsOutbox,
   createPortfolioUnitOfWork,
   createRealtimePublicationOutbox,
   createReportsOutbox,
+  createStoragePurgeOutbox,
   createWebhookEventStore,
 } from "./repository.js";
 import {
+  authAuditEvents,
+  authSessions,
+  documents,
   idempotencyKeys,
+  mailSendsTable,
   portfolioSchema,
   projects,
   reportRequests,
   reportsOutboxTable,
+  storageIntents,
+  storageObjects,
+  storagePurges,
   webhookEventsTable,
   workItems,
 } from "./schema.js";
@@ -51,6 +76,9 @@ const sessions: SessionDirectory = {
     if (token === "operator-token") {
       return { actorId: "operator", role: "operator", tenants: [] };
     }
+    if (token === "sre-token") {
+      return { actorId: "sre", role: "sre", tenants: [] };
+    }
     return undefined;
   },
 };
@@ -62,10 +90,12 @@ describe("customized packed application", () => {
   const realtime = createInMemoryRealtimeBackend({ channels: publishedChannels });
   const record = vi.fn(async () => undefined);
   const paymentSink: PaymentEventSink = { adapter: "recording", record };
+  const mailProvider = logMailProvider();
   const stripeSecret = "whsec_integration";
   const twilioToken = "twilio-auth-token";
   /** Real time plus a test-controlled offset so dispatch and retention share one clock. */
   const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
   const infrastructure = () => ({
     unitOfWork: createPortfolioUnitOfWork(database.db),
     notifier,
@@ -82,7 +112,15 @@ describe("customized packed application", () => {
     clock: clock.now,
     jobs: createInMemoryJobBackend(),
     locks: createInMemoryLockProvider(),
+    storage,
+    attachmentLedger: createAttachmentLedger(database.db),
+    purgeOutbox: createStoragePurgeOutbox(database.db),
+    unattachedGraceMs: 60_000,
+    mailProvider,
+    mailLedger: createMailLedger(database.db),
     scheduledTenants: ["acme"],
+    credentialStore: createCredentialStore(database.db),
+    authClients: createRequestClientRegistry(),
   });
 
   beforeAll(async () => {
@@ -546,6 +584,130 @@ describe("customized packed application", () => {
     await expect(response.text()).resolves.toBe("");
   });
 
+  it("retries a dead-lettered PostgreSQL job run and replays a receipt from the console over HTTP", async () => {
+    const jobs = createJobBackend(database.db, { pollIntervalMs: 25 });
+    const { application, http } = createCustomizedHttpApplication(
+      { ...infrastructure(), jobs, locks: jobs.lockProvider },
+      sessions,
+    );
+    const runtime = await startJobRuntime(application, { backend: jobs, mode: "worker" });
+    try {
+      // "gamma" is not an enrolled tenant: the declared failure is final and dead-letters at once.
+      const accepted = await jobs.enqueue("reports.deliver", {
+        tenantId: "gamma",
+        period: "2026-10-22",
+      });
+      if (!accepted.accepted) throw new Error("rejected");
+      const failedRuns = () =>
+        http.request("/console/jobs/runs?status=failed&jobId=reports.deliver", {
+          headers: { authorization: "ShipSession sre-token" },
+        });
+      const deadline = Date.now() + 15_000;
+      let listed: { runs: { runId: string; attempts: number }[] } = { runs: [] };
+      while (listed.runs.length === 0 && Date.now() < deadline) {
+        listed = (await (await failedRuns()).json()) as typeof listed;
+        if (listed.runs.length === 0) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(listed.runs).toMatchObject([{ runId: accepted.runId, attempts: 1 }]);
+
+      // The operator role (replay + read) is refused; only the SRE role holds console.operate.
+      const refused = await http.request("/console/jobs/retry", {
+        method: "POST",
+        headers: {
+          authorization: "ShipSession operator-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ runId: accepted.runId }),
+      });
+      expect(refused.status).toBe(403);
+      const retried = await http.request("/console/jobs/retry", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ runId: accepted.runId }),
+      });
+      expect(retried.status).toBe(200);
+      await expect(retried.json()).resolves.toMatchObject({ run: { status: "waiting" } });
+      let again: { runs: { attempts: number }[] } = { runs: [] };
+      const retryDeadline = Date.now() + 15_000;
+      while ((again.runs[0]?.attempts ?? 0) < 2 && Date.now() < retryDeadline) {
+        again = (await (await failedRuns()).json()) as typeof again;
+        if ((again.runs[0]?.attempts ?? 0) < 2)
+          await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(again.runs[0]?.attempts).toBe(2);
+
+      // Durable pause through the control table, then resume.
+      const paused = await http.request("/console/jobs/pause", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ jobId: "reports.deliver" }),
+      });
+      expect(paused.status).toBe(200);
+      const overview = await http.request("/console/jobs", {
+        headers: { authorization: "ShipSession sre-token" },
+      });
+      await expect(overview.json()).resolves.toMatchObject({
+        capabilities: { adapter: "drizzle", pause: true },
+        jobs: expect.arrayContaining([
+          expect.objectContaining({ jobId: "reports.deliver", paused: true, failed: 1 }),
+        ]),
+      });
+      await http.request("/console/jobs/resume", {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token", "content-type": "application/json" },
+        body: JSON.stringify({ jobId: "reports.deliver" }),
+      });
+
+      // A stored Stripe receipt is listed with its spawned record and replayed by the SRE.
+      const body = '{"id":"evt_console_1","type":"invoice.paid","data":{"object":{"amount":5}}}';
+      const signature = await stripeSignatureHeader({ secret: stripeSecret, rawBody: body });
+      const delivered = await http.request("/webhooks/stripe", {
+        method: "POST",
+        headers: { "content-type": "application/json", "stripe-signature": signature },
+        body,
+      });
+      const { eventId } = (await delivered.json()) as { eventId: string };
+      const executor = createRuntimeExecutor(application);
+      await executor.run("payments.outbox.dispatch", {}, { actor: systemActor({ id: "worker" }) });
+      const receipts = await http.request(
+        "/console/webhooks/receipts?webhookId=payments.stripe-webhook&limit=10",
+        { headers: { authorization: "ShipSession sre-token" } },
+      );
+      expect(receipts.status).toBe(200);
+      await expect(receipts.json()).resolves.toMatchObject({
+        capabilities: { list: true, dispatch: true },
+        receipts: [
+          {
+            eventId,
+            providerEventId: "evt_console_1",
+            verification: "verified",
+            dispatch: { outboxId: "payments.outbox", status: "completed" },
+          },
+        ],
+      });
+      const replayed = await http.request(`/console/webhooks/receipts/${eventId}/replay`, {
+        method: "POST",
+        headers: { authorization: "ShipSession sre-token" },
+      });
+      expect(replayed.status).toBe(200);
+      await expect(replayed.json()).resolves.toMatchObject({ eventId, queued: true });
+      const forbidden = await http.request(`/console/webhooks/receipts/${eventId}/replay`, {
+        method: "POST",
+        headers: { authorization: "ShipSession operator-token" },
+      });
+      expect(forbidden.status).toBe(403);
+      const records = await http.request(
+        "/console/outbox/records?outboxId=payments.outbox&status=pending",
+        { headers: { authorization: "ShipSession sre-token" } },
+      );
+      await expect(records.json()).resolves.toMatchObject({
+        records: [{ intentId: "process-webhook", status: "pending" }],
+      });
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   it("runs the enqueued delivery job against PostgreSQL: one request row and one intent per period", async () => {
     const { application } = createCustomizedHttpApplication(infrastructure(), sessions);
     const executor = createExecutor(application);
@@ -566,5 +728,547 @@ describe("customized packed application", () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ subject: "Digest for 2026-09-18" }),
     );
+  });
+  it("sends transactional mail once per idempotency key with one ledger row and one provider call", async () => {
+    const infra = infrastructure();
+    const { application, http } = createCustomizedHttpApplication(infra, sessions);
+    await startJobRuntime(application, { backend: infra.jobs, mode: "api" });
+    const executor = createExecutor(application);
+    const post = () =>
+      http.request("/tenants/acme/report-emails", {
+        method: "POST",
+        headers: {
+          authorization: "ShipSession publisher-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          recipient: "owner@real-customer.example",
+          period: "2026-09-18",
+          projectCount: 2,
+        }),
+      });
+    const first = await post();
+    expect(first.status).toBe(202);
+    await expect(first.json()).resolves.toMatchObject({ accepted: true, deduplicated: false });
+    await expect((await post()).json()).resolves.toMatchObject({ deduplicated: true });
+
+    await expect(infra.jobs.drain()).resolves.toEqual({ executed: 1, completed: 1, failed: 0 });
+    const replay = await runJobOnce(application, "mail.deliver", infra.jobs.runs()[0]?.input, {
+      executor,
+    });
+    expect(replay).toMatchObject({ ok: true, data: { status: "duplicate", attempt: 1 } });
+    // A later send with the same key enqueues again (the first run is terminal) and is
+    // still answered from the ledger.
+    await expect((await post()).json()).resolves.toMatchObject({ deduplicated: false });
+    await expect(infra.jobs.drain()).resolves.toEqual({ executed: 1, completed: 1, failed: 0 });
+
+    expect(mailProvider.sent()).toHaveLength(1);
+    expect(mailProvider.sent()[0]?.envelope.subject).toBe("Portfolio digest for 2026-09-18");
+    const rows = await database.db.select().from(mailSendsTable);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      idempotencyKey: "digest-email:acme:2026-09-18:owner@real-customer.example",
+      mailerId: "reports.mailer",
+      message: "digestReady",
+      recipients: ["owner@real-customer.example"],
+      status: "sent",
+      attempts: 1,
+      provider: "log",
+      tenantId: "acme",
+    });
+    await expect(
+      infra.mailLedger.list({ recipient: "owner@real-customer.example", limit: 10 }),
+    ).resolves.toHaveLength(1);
+  });
+});
+
+describe("customized credential auth against PostgreSQL", () => {
+  let database: PostgresTestDb<typeof portfolioSchema>;
+  const mailProvider = logMailProvider();
+  const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+
+  beforeAll(async () => {
+    database = await setupPostgresTestDb(portfolioSchema);
+  });
+
+  afterAll(async () => {
+    await database.cleanup();
+  });
+
+  it("runs register, verify, sign-in, TOTP, recovery, revoke-all and the console audit panel on the auth tables", async () => {
+    const store = createCredentialStore(database.db);
+    const infra = {
+      unitOfWork: createPortfolioUnitOfWork(database.db),
+      notifier: { adapter: "recording", send: vi.fn(async () => undefined) },
+      outbox: createReportsOutbox(database.db),
+      idempotency: createIdempotencyStore(database.db),
+      cache: createInMemoryCacheBackend(),
+      cacheOutbox: createCacheInvalidationOutbox(database.db),
+      realtime: createInMemoryRealtimeBackend({ channels: publishedChannels }),
+      realtimeOutbox: createRealtimePublicationOutbox(database.db),
+      paymentSink: { adapter: "recording", record: vi.fn(async () => undefined) },
+      paymentsOutbox: createPaymentsOutbox(database.db),
+      webhookEvents: createWebhookEventStore(database.db),
+      webhookSecrets: { stripe: webhookSecret("whsec_x"), twilio: webhookSecret("twilio-x") },
+      clock: clock.now,
+      jobs: createInMemoryJobBackend(),
+      locks: createInMemoryLockProvider(),
+      storage: createInMemoryStorageAdapter({ now: () => clock.now() }),
+      attachmentLedger: createAttachmentLedger(database.db),
+      purgeOutbox: createStoragePurgeOutbox(database.db),
+      mailProvider,
+      mailLedger: createMailLedger(database.db),
+      credentialStore: store,
+      authClients: createRequestClientRegistry(),
+    };
+    const { application, http } = createCustomizedHttpApplication(infra, sessions);
+    await startJobRuntime(application, { backend: infra.jobs, mode: "api" });
+    const post = async (path: string, body: unknown, token?: string) => {
+      const response = await http.request(path, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-forwarded-for": "198.51.100.4",
+          "user-agent": "golden/1.0",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      // biome-ignore lint/suspicious/noExplicitAny: test helper over arbitrary JSON bodies
+      const json: any = response.headers.get("content-type")?.includes("json")
+        ? await response.json()
+        : undefined;
+      return { status: response.status, body: json };
+    };
+    const password = "correct horse battery staple";
+
+    expect((await post("/auth/register", { email: "ada@example.test", password })).status).toBe(
+      201,
+    );
+    await expect(infra.jobs.drain()).resolves.toMatchObject({ completed: 1, failed: 0 });
+    const verifyUrl =
+      /https:\/\/\S+/u.exec(mailProvider.sent().at(-1)?.envelope.text ?? "")?.[0] ?? "";
+    expect(
+      (await post("/auth/verify-email", { token: verifyUrl.slice(verifyUrl.lastIndexOf("/") + 1) }))
+        .status,
+    ).toBe(200);
+    const signedIn = await post("/auth/sign-in", { email: "ada@example.test", password });
+    expect(signedIn.body).toMatchObject({ status: "signed-in", session: { mfaState: "none" } });
+    const token = signedIn.body.session.token as string;
+    const sessionRows = await database.db.select().from(authSessions);
+    expect(sessionRows).toHaveLength(1);
+    expect(sessionRows[0]).toMatchObject({
+      ip: "198.51.100.4",
+      userAgent: "golden/1.0",
+      mfaState: "none",
+    });
+    expect(sessionRows[0]?.tokenHash).not.toContain("ship_s_");
+
+    // TOTP enrolment and a challenged sign-in, with the replay guard on the stored step.
+    const enrol = await post("/auth/totp/enrol", { password }, token);
+    const confirm = await post(
+      "/auth/totp/confirm",
+      { code: totpCode(enrol.body.secret, totpStep(clock.now())) },
+      token,
+    );
+    expect(confirm.status).toBe(200);
+    clock.offsetMs += 60_000;
+    const challenged = await post("/auth/sign-in", { email: "ada@example.test", password });
+    expect(challenged.body.status).toBe("mfa-required");
+    const code = totpCode(enrol.body.secret, totpStep(clock.now()));
+    const verified = await post("/auth/totp/verify", {
+      challenge: challenged.body.challenge.token,
+      code,
+    });
+    expect(verified.body.status).toBe("signed-in");
+    const again = await post("/auth/sign-in", { email: "ada@example.test", password });
+    expect(
+      (await post("/auth/totp/verify", { challenge: again.body.challenge.token, code })).status,
+    ).toBe(401);
+    const recovered = await post("/auth/recovery/consume", {
+      challenge: again.body.challenge.token,
+      code: confirm.body.recoveryCodes[0],
+    });
+    expect(recovered.body).toMatchObject({ status: "signed-in", recoveryCodesRemaining: 9 });
+
+    // A browser signs in over the session cookie beside the bearer sessions.
+    clock.offsetMs += 60_000;
+    const cookieChallenge = await post("/auth/sign-in", { email: "ada@example.test", password });
+    const cookieSignIn = await http.request("/auth/totp/verify", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://portfolio.golden.test",
+      },
+      body: JSON.stringify({
+        challenge: cookieChallenge.body.challenge.token,
+        code: totpCode(enrol.body.secret, totpStep(clock.now())),
+        transport: "cookie",
+      }),
+    });
+    expect(cookieSignIn.status).toBe(200);
+    const cookieBody = await cookieSignIn.json();
+    expect(cookieBody.session).toMatchObject({ transport: "cookie", mfaState: "verified" });
+    const cookieHeader = cookieSignIn.headers
+      .getSetCookie()
+      .map((line) => line.split(";")[0])
+      .join("; ");
+    expect(cookieHeader).toMatch(/^ship_session=ship_s_[^;]+; ship_csrf=/u);
+    const meViaCookie = await http.request("/auth/me", { headers: { cookie: cookieHeader } });
+    expect(meViaCookie.status).toBe(200);
+    expect((await meViaCookie.json()).session.id).toBe(cookieBody.session.id);
+
+    // Revoke-all from one session invalidates every bearer and the cookie on the next request.
+    expect((await post("/auth/sessions/revoke-all", {}, verified.body.session.token)).body).toEqual(
+      { revoked: 4 },
+    );
+    for (const bearer of [token, verified.body.session.token, recovered.body.session.token]) {
+      expect(
+        (await http.request("/auth/me", { headers: { authorization: `Bearer ${bearer}` } })).status,
+      ).toBe(401);
+    }
+    expect((await http.request("/auth/me", { headers: { cookie: cookieHeader } })).status).toBe(
+      401,
+    );
+
+    // The audit rows are PostgreSQL rows and the console panel reads them behind console.operate.
+    const rows = await database.db.select().from(authAuditEvents);
+    expect(rows.map((row) => row.event)).toEqual(
+      expect.arrayContaining([
+        "register",
+        "email.verify",
+        "sign-in",
+        "mfa.enrolled",
+        "mfa.challenged",
+        "mfa.verify",
+        "mfa.recover",
+        "sessions.revoke-all",
+      ]),
+    );
+    for (const row of rows) expect(JSON.stringify(row)).not.toContain("ship_");
+    const refused = await http.request("/console/auth-audit/events", {
+      headers: { authorization: "ShipSession operator-token" },
+    });
+    expect(refused.status).toBe(403);
+    const panel = await http.request(
+      "/console/auth-audit/events?email=ada@example.test&event=mfa.recover",
+      {
+        headers: { authorization: "ShipSession sre-token" },
+      },
+    );
+    expect(panel.status).toBe(200);
+    await expect(panel.json()).resolves.toMatchObject({
+      events: [{ event: "mfa.recover", outcome: "success" }],
+    });
+  });
+});
+
+describe("customized managed storage against PostgreSQL", () => {
+  let database: PostgresTestDb<typeof portfolioSchema>;
+  const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
+  const projectId = acmeProjectId;
+
+  beforeAll(async () => {
+    database = await setupPostgresTestDb(portfolioSchema);
+  });
+
+  afterAll(async () => {
+    await database.cleanup();
+  });
+
+  function build() {
+    const infrastructure = {
+      unitOfWork: createPortfolioUnitOfWork(database.db),
+      notifier: { adapter: "recording", send: vi.fn(async () => undefined) } as ReportNotifier,
+      outbox: createReportsOutbox(database.db),
+      idempotency: createIdempotencyStore(database.db),
+      cache: createInMemoryCacheBackend(),
+      cacheOutbox: createCacheInvalidationOutbox(database.db),
+      realtime: createInMemoryRealtimeBackend({ channels: publishedChannels }),
+      realtimeOutbox: createRealtimePublicationOutbox(database.db),
+      paymentSink: {
+        adapter: "recording",
+        record: vi.fn(async () => undefined),
+      } as PaymentEventSink,
+      paymentsOutbox: createPaymentsOutbox(database.db),
+      webhookEvents: createWebhookEventStore(database.db),
+      webhookSecrets: { stripe: webhookSecret("whsec_x"), twilio: webhookSecret("twilio") },
+      clock: clock.now,
+      jobs: createInMemoryJobBackend(),
+      locks: createInMemoryLockProvider(),
+      storage,
+      attachmentLedger: createAttachmentLedger(database.db),
+      purgeOutbox: createStoragePurgeOutbox(database.db),
+      unattachedGraceMs: 60_000,
+      mailProvider: logMailProvider(),
+      mailLedger: createMailLedger(database.db),
+      scheduledTenants: ["acme"],
+    };
+    const { application, http } = createCustomizedHttpApplication(infrastructure, sessions);
+    const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
+      projectClientContract(application),
+      {
+        baseUrl: "https://golden.example.test",
+        headers: { authorization: "ShipSession publisher-token" },
+        fetch: async (input, init) => http.request(input, init),
+      },
+    );
+    return { application, http, client, infrastructure };
+  }
+
+  it("commits the detachment and the purge intent together, then deletes the object on dispatch", async () => {
+    const { application, client } = build();
+    const bytes = new TextEncoder().encode("png-bytes");
+    const intent = await client.call("ship-storage.create-intent", {
+      body: { attachment: "portfolio.photo", contentType: "image/png", size: bytes.byteLength },
+    });
+    expect(intent).toMatchObject({ ok: true, status: 201 });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    expect(complete).toMatchObject({ ok: true, status: 200 });
+    if (!complete.ok) throw new Error("completion failed");
+    expect(await database.db.select().from(storageObjects)).toMatchObject([
+      { id: complete.data.objectId, status: "uploaded", attachmentId: "portfolio.photo" },
+    ]);
+
+    const attached = await client.call("portfolio.attach-photo", {
+      params: { tenantId: "acme", projectId },
+      body: { objectId: complete.data.objectId },
+    });
+    expect(attached).toMatchObject({ ok: true, status: 201, data: { count: 1 } });
+    expect(await database.db.select().from(storageObjects)).toMatchObject([
+      { status: "attached", ownerId: `acme/${projectId}` },
+    ]);
+
+    const removed = await client.call("portfolio.remove-photo", {
+      params: { tenantId: "acme", projectId, objectId: complete.data.objectId },
+    });
+    expect(removed).toMatchObject({ ok: true, data: { removed: true } });
+    const purgeRows = await database.db.select().from(storagePurges);
+    expect(purgeRows).toMatchObject([{ objectId: complete.data.objectId, purgedAt: null }]);
+    const purgeIntents = (await database.db.select().from(reportsOutboxTable)).filter(
+      (row) => row.outboxId === "ship-storage.purge",
+    );
+    expect(purgeIntents).toMatchObject([
+      {
+        intentId: "purge-object",
+        status: "pending",
+        payload: { objectId: complete.data.objectId },
+      },
+    ]);
+    expect(storage.keys()).toEqual([intent.data.objectKey]);
+
+    const executor = createExecutor(application);
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { claimed: 1, completed: 1 } });
+    expect(storage.keys()).toEqual([]);
+    expect(await database.db.select().from(storagePurges)).toMatchObject([
+      { objectId: complete.data.objectId, attempts: 1 },
+    ]);
+    expect((await database.db.select().from(storagePurges))[0]?.purgedAt).not.toBeNull();
+    // A replayed dispatch finds nothing to claim and the purge row unchanged.
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { claimed: 0 } });
+  });
+
+  it("abandons an induced orphan intent on sweep and fences its late completion", async () => {
+    const { application, client } = build();
+    const intent = await client.call("ship-storage.create-intent", {
+      body: { attachment: "portfolio.photo", contentType: "image/webp", size: 4 },
+    });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(
+      await storage.upload(
+        intent.data.upload.url,
+        new TextEncoder().encode("webp"),
+        intent.data.upload.headers,
+      ),
+    ).toBe(200);
+    clock.offsetMs += 16 * 60_000;
+    const executor = createExecutor(application);
+    await expect(
+      runJobOnce(application, "ship-storage.sweep", {}, { executor }),
+    ).resolves.toMatchObject({ ok: true, data: { abandoned: 1 } });
+    expect(await database.db.select().from(storageIntents)).toContainEqual(
+      expect.objectContaining({ id: intent.data.intentId, status: "abandoned" }),
+    );
+    expect(storage.keys()).not.toContain(intent.data.objectKey);
+    const late = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    expect(late).toMatchObject({ ok: false, status: 410, error: { code: "INTENT_EXPIRED" } });
+    clock.offsetMs = 0;
+  });
+});
+
+describe("customized rich text documents against PostgreSQL", () => {
+  let database: PostgresTestDb<typeof portfolioSchema>;
+  const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+  const storage = createInMemoryStorageAdapter({ now: () => clock.now() });
+  const documentId = "66666666-6666-4666-8666-666666666666";
+
+  beforeAll(async () => {
+    database = await setupPostgresTestDb(portfolioSchema);
+  });
+
+  afterAll(async () => {
+    await database.cleanup();
+  });
+
+  function build() {
+    const infrastructure = {
+      unitOfWork: createPortfolioUnitOfWork(database.db),
+      notifier: { adapter: "recording", send: vi.fn(async () => undefined) } as ReportNotifier,
+      outbox: createReportsOutbox(database.db),
+      idempotency: createIdempotencyStore(database.db),
+      cache: createInMemoryCacheBackend(),
+      cacheOutbox: createCacheInvalidationOutbox(database.db),
+      realtime: createInMemoryRealtimeBackend({ channels: publishedChannels }),
+      realtimeOutbox: createRealtimePublicationOutbox(database.db),
+      paymentSink: {
+        adapter: "recording",
+        record: vi.fn(async () => undefined),
+      } as PaymentEventSink,
+      paymentsOutbox: createPaymentsOutbox(database.db),
+      webhookEvents: createWebhookEventStore(database.db),
+      webhookSecrets: { stripe: webhookSecret("whsec_x"), twilio: webhookSecret("twilio") },
+      clock: clock.now,
+      jobs: createInMemoryJobBackend(),
+      locks: createInMemoryLockProvider(),
+      storage,
+      attachmentLedger: createAttachmentLedger(database.db),
+      purgeOutbox: createStoragePurgeOutbox(database.db),
+      unattachedGraceMs: 60_000,
+      mailProvider: logMailProvider(),
+      mailLedger: createMailLedger(database.db),
+      scheduledTenants: ["acme"],
+    };
+    const { application, http } = createCustomizedHttpApplication(infrastructure, sessions);
+    const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
+      projectClientContract(application),
+      {
+        baseUrl: "https://golden.example.test",
+        headers: { authorization: "ShipSession publisher-token" },
+        fetch: async (input, init) => http.request(input, init),
+      },
+    );
+    return { application, http, client };
+  }
+
+  it("keeps an embedded image exactly as long as the owning document", async () => {
+    const { application, client } = build();
+    const bytes = new TextEncoder().encode("png-bytes");
+    const intent = await client.call("ship-storage.create-intent", {
+      body: {
+        attachment: "portfolio.document-image",
+        contentType: "image/png",
+        size: bytes.byteLength,
+      },
+    });
+    if (!intent.ok) throw new Error("intent failed");
+    expect(await storage.upload(intent.data.upload.url, bytes, intent.data.upload.headers)).toBe(
+      200,
+    );
+    const complete = await client.call("ship-storage.complete", {
+      params: { intentId: intent.data.intentId },
+    });
+    if (!complete.ok) throw new Error("completion failed");
+    const objectId = complete.data.objectId;
+
+    const document = {
+      schemaVersion: 1,
+      type: "doc" as const,
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Dear " },
+            { type: "mergeField", attrs: { key: "client.name" } },
+          ],
+        },
+        { type: "attachment", attrs: { objectId, alt: "Site plan" } },
+      ],
+    };
+    const saved = await client.call("portfolio.save-document", {
+      params: { tenantId: "acme", documentId },
+      body: { title: "Engagement letter", document },
+    });
+    expect(saved).toMatchObject({
+      ok: true,
+      status: 200,
+      data: { text: "Dear {{client.name}}\nSite plan", attached: [objectId], detached: [] },
+    });
+    // The row holds the document model and the text projection; the object is attached to it.
+    expect(await database.db.select().from(documents)).toMatchObject([
+      {
+        id: documentId,
+        tenantId: "acme",
+        body: document,
+        bodyText: "Dear {{client.name}}\nSite plan",
+      },
+    ]);
+    expect(await database.db.select().from(storageObjects)).toContainEqual(
+      expect.objectContaining({
+        id: objectId,
+        status: "attached",
+        ownerId: `acme/document/${documentId}`,
+      }),
+    );
+    const read = await client.call("portfolio.document", {
+      params: { tenantId: "acme", documentId },
+    });
+    expect(read).toMatchObject({ ok: true, data: { attachments: [objectId] } });
+    if (!read.ok) throw new Error("read failed");
+    expect(read.data.html).toContain('<figure class="ship-attachment"><img src="');
+    expect(read.data.html).toContain('data-key="client.name"');
+
+    // A save that fails validation changes nothing: the row and the attachment stay.
+    const refused = await client.call("portfolio.save-document", {
+      params: { tenantId: "acme", documentId },
+      body: {
+        title: "Engagement letter",
+        document: { ...document, content: [{ type: "iframe" }] },
+      },
+    });
+    expect(refused).toMatchObject({ ok: false, status: 400, error: { code: "VALIDATION_ERROR" } });
+    expect(await database.db.select().from(storagePurges)).toEqual([]);
+
+    // Deleting the document commits the row deletion and the purge intent together.
+    const deleted = await client.call("portfolio.delete-document", {
+      params: { tenantId: "acme", documentId },
+    });
+    expect(deleted).toMatchObject({ ok: true, data: { deleted: true, purging: [objectId] } });
+    expect(await database.db.select().from(documents)).toEqual([]);
+    expect(await database.db.select().from(storageObjects)).toContainEqual(
+      expect.objectContaining({ id: objectId, status: "purging" }),
+    );
+    expect(await database.db.select().from(storagePurges)).toMatchObject([
+      { objectId, purgedAt: null },
+    ]);
+    expect(storage.keys()).toContain(intent.data.objectKey);
+    const executor = createExecutor(application);
+    await expect(
+      executor.run("ship-storage.purge.dispatch", {}, { actor: systemActor({ id: "worker" }) }),
+    ).resolves.toMatchObject({ ok: true, data: { completed: 1 } });
+    expect(storage.keys()).not.toContain(intent.data.objectKey);
+    expect((await database.db.select().from(storagePurges))[0]?.purgedAt).not.toBeNull();
+    // The deleted document renders nothing and the object cannot be reused.
+    expect(
+      await client.call("portfolio.document", { params: { tenantId: "acme", documentId } }),
+    ).toMatchObject({ ok: false, status: 404, error: { code: "DOCUMENT_NOT_FOUND" } });
+    expect(
+      await client.call("portfolio.save-document", {
+        params: { tenantId: "acme", documentId },
+        body: { title: "Again", document },
+      }),
+    ).toMatchObject({ ok: false, status: 422, error: { code: "DOCUMENT_INVALID" } });
   });
 });

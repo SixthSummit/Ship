@@ -189,6 +189,20 @@ describe("actor resolver declarations", () => {
     expect(normalizeActorResolution({ ok: true })).toEqual({ ok: true });
     expect(normalizeActorResolution({ ok: true, actor: { id: "" } })).toBeUndefined();
     expect(normalizeActorResolution({ ok: "yes" })).toBeUndefined();
+    // Response headers ride along on either outcome and must be a record of strings.
+    const clearing = { "set-cookie": "session=; Max-Age=0" };
+    expect(normalizeActorResolution({ ok: true, headers: clearing })).toEqual({
+      ok: true,
+      headers: clearing,
+    });
+    expect(
+      normalizeActorResolution({ ok: false, reason: "invalid-credential", headers: clearing }),
+    ).toEqual({ ok: false, reason: "invalid-credential", headers: clearing });
+    expect(
+      Object.isFrozen(normalizeActorResolution({ ok: true, headers: clearing })?.headers),
+    ).toBe(true);
+    expect(normalizeActorResolution({ ok: true, headers: { "x-a": 1 } })).toBeUndefined();
+    expect(normalizeActorResolution({ ok: true, headers: ["x"] })).toBeUndefined();
   });
 
   it("rejects malformed resolver declarations", () => {

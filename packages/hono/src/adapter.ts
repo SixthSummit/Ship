@@ -18,6 +18,8 @@ import {
 } from "@sixthsummit/ship-core";
 import { type Context, Hono } from "hono";
 import { type HonoAuthenticationOptions, isHonoCredentialAdapter } from "./auth.js";
+import { assertCorsOptions, createCorsMiddleware, type HonoCorsOptions } from "./cors.js";
+import { HonoAdapterError } from "./diagnostics.js";
 import { executeStreamOperation } from "./stream.js";
 import {
   type HttpMultipartBodyPolicy,
@@ -49,32 +51,8 @@ const RESERVED_RESPONSE_HEADERS = new Set([
   "x-ship-cache",
 ]);
 
-export type HonoAdapterDiagnosticCode =
-  | "SHIP_HONO_TRANSPORT_INVALID"
-  | "SHIP_HONO_INPUT_LOCATION_UNSUPPORTED"
-  | "SHIP_HONO_PATH_PARAMS_MISMATCH"
-  | "SHIP_HONO_REQUEST_BODY_MISMATCH"
-  | "SHIP_HONO_AUTH_INVALID"
-  | "SHIP_HONO_OPTIONS_INVALID"
-  | "SHIP_HONO_WEBHOOK_BASE_URL_REQUIRED";
-
-export class HonoAdapterError extends Error {
-  readonly code: HonoAdapterDiagnosticCode;
-  readonly operationId?: string;
-  readonly inputLocation?: string;
-
-  constructor(
-    code: HonoAdapterDiagnosticCode,
-    message: string,
-    options: { readonly operationId?: string; readonly inputLocation?: string } = {},
-  ) {
-    super(message);
-    this.name = "HonoAdapterError";
-    this.code = code;
-    this.operationId = options.operationId;
-    this.inputLocation = options.inputLocation;
-  }
-}
+export type { HonoAdapterDiagnosticCode } from "./diagnostics.js";
+export { HonoAdapterError } from "./diagnostics.js";
 
 export interface ShipHttpErrorEnvelope {
   readonly success: false;
@@ -98,14 +76,97 @@ export interface HonoFailureProjectionContext {
   readonly operationId?: string;
 }
 
+/**
+ * A policy allows the request (optionally stamping response headers), denies
+ * it with a failure the operation declares, or denies it with one of the
+ * ADR-0004 resolution reasons, which the adapter projects exactly as the actor
+ * resolver's own refusals (`invalid-credential` → 401 `AUTHENTICATION_ERROR`,
+ * `forbidden` → 403 `AUTHORIZATION_ERROR`). The reason form lets a transport
+ * guard such as a CSRF check refuse any operation without every operation
+ * declaring the error, and without ever surfacing as a 500.
+ */
 export type HonoPreValidationPolicyResult =
   | Readonly<{ allowed: true; headers?: Readonly<Record<string, string>> }>
-  | Readonly<{ allowed: false; failure: OperationFailure }>;
+  | Readonly<{ allowed: false; failure: OperationFailure }>
+  | Readonly<{
+      allowed: false;
+      reason: "invalid-credential" | "forbidden";
+      /** Replaces the framework message in the envelope; never a secret. */
+      message?: string;
+    }>;
 
 /** Runs after HTTP authentication and access, before input reading or validation. */
 export type HonoPreValidationPolicy = (
   context: HonoPreValidationPolicyContext,
 ) => HonoPreValidationPolicyResult | Promise<HonoPreValidationPolicyResult>;
+
+/**
+ * The `preValidationPolicies` key under which a policy runs for every
+ * projected operation, ahead of the operation's own policy. Both must allow;
+ * their response headers merge, the operation-specific ones winning.
+ */
+export const GLOBAL_PRE_VALIDATION_POLICY = "*";
+
+// A global symbol, not a module-level map, so a policy named by one copy of
+// this package is recognised by another (a consumer that ends up with two
+// ship-hono installs still gets the construction-time check).
+const POLICY_IDS = Symbol.for("sixthsummit.ship-hono.pre-validation-policy-ids");
+const POLICY_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/u;
+
+function readPolicyIds(policy: HonoPreValidationPolicy): readonly string[] {
+  const ids = Reflect.get(policy, POLICY_IDS);
+  return Array.isArray(ids) && ids.every((id) => typeof id === "string") ? ids : [];
+}
+
+function writePolicyIds(policy: HonoPreValidationPolicy, ids: readonly string[]): void {
+  Object.defineProperty(policy, POLICY_IDS, { value: Object.freeze([...ids]), enumerable: false });
+}
+
+/**
+ * Names a pre-validation policy so a credential adapter's
+ * {@link HonoPolicyRequirement} can recognise it at construction. The id is
+ * the policy's identity, not its configuration: two instances of the same
+ * guard carry the same id.
+ */
+export function definePreValidationPolicy(
+  id: string,
+  policy: HonoPreValidationPolicy,
+): HonoPreValidationPolicy {
+  if (typeof id !== "string" || !POLICY_ID_PATTERN.test(id)) {
+    throw new TypeError(
+      `pre-validation policy id must be a lowercase dot-separated identifier; received ${JSON.stringify(id)}`,
+    );
+  }
+  if (typeof policy !== "function") {
+    throw new TypeError("pre-validation policy must be a function");
+  }
+  const named: HonoPreValidationPolicy = (context) => policy(context);
+  writePolicyIds(named, [...new Set([...readPolicyIds(policy), id])]);
+  return named;
+}
+
+/** The ids a policy carries from `definePreValidationPolicy`; a list carries every member's. */
+export function preValidationPolicyIds(
+  policy: HonoPreValidationPolicy | readonly HonoPreValidationPolicy[] | undefined,
+): readonly string[] {
+  return [...new Set(policyList(policy).flatMap(readPolicyIds))];
+}
+
+function policyList(
+  entry: HonoPreValidationPolicy | readonly HonoPreValidationPolicy[] | undefined,
+): readonly HonoPreValidationPolicy[] {
+  if (entry === undefined) return [];
+  return typeof entry === "function" ? [entry] : entry;
+}
+
+/**
+ * The policies keyed by operation id or `"*"`. A key may hold one policy or
+ * a list that runs in order: the first refusal wins and the allow headers
+ * accumulate (`Set-Cookie` values are all appended).
+ */
+export type HonoPreValidationPolicies = Readonly<
+  Record<string, HonoPreValidationPolicy | readonly HonoPreValidationPolicy[]>
+>;
 
 export interface CreateHonoAdapterOptions<TCredential = unknown> {
   /** Used only when an incoming X-Request-Id is absent or unsafe to reflect. */
@@ -121,8 +182,13 @@ export interface CreateHonoAdapterOptions<TCredential = unknown> {
   ) => unknown;
   /** JSON failure media type. Omit to retain the framework's charset-qualified default. */
   readonly failureContentType?: "application/json" | "application/json; charset=UTF-8";
-  /** Operation-id keyed transport policies; never invoked by direct executor runs. */
-  readonly preValidationPolicies?: Readonly<Record<string, HonoPreValidationPolicy>>;
+  /**
+   * Operation-id keyed transport policies; never invoked by direct executor
+   * runs. The `"*"` key ({@link GLOBAL_PRE_VALIDATION_POLICY}) runs for every
+   * operation before the operation's own policy. A key may hold a list of
+   * policies that run in order.
+   */
+  readonly preValidationPolicies?: HonoPreValidationPolicies;
   /** Receives unexpected failures after the wire response has been made safe. */
   readonly onUnexpectedError?: (
     error: unknown,
@@ -130,6 +196,13 @@ export interface CreateHonoAdapterOptions<TCredential = unknown> {
   ) => void | Promise<void>;
   /** Required when the application declares inbound webhooks. */
   readonly webhooks?: HonoWebhookOptions;
+  /**
+   * Cross-origin policy applied to every projected route, including streaming
+   * and webhook routes, and to their preflights. Omit it and the adapter emits
+   * no `Access-Control-*` headers. The adapter refuses a wildcard origin
+   * combined with `credentials: true` at construction.
+   */
+  readonly cors?: HonoCorsOptions;
 }
 
 export interface HonoUnexpectedErrorContext {
@@ -155,16 +228,37 @@ export function createHonoAdapter<
     serializeFailure(failure, projectFailureBody, operation, failureContentType);
   const routes = collectHttpOperations(application);
   for (const [operationId, policy] of Object.entries(options.preValidationPolicies ?? {})) {
-    if (!routes.some((operation) => operation.id === operationId) || typeof policy !== "function") {
+    const known =
+      operationId === GLOBAL_PRE_VALIDATION_POLICY ||
+      routes.some((operation) => operation.id === operationId);
+    const members = typeof policy === "function" ? [policy] : policy;
+    if (
+      !known ||
+      !Array.isArray(members) ||
+      members.length === 0 ||
+      members.some((member) => typeof member !== "function")
+    ) {
       throw new HonoAdapterError(
         "SHIP_HONO_OPTIONS_INVALID",
         `preValidationPolicies contains an unknown operation or invalid policy: ${JSON.stringify(operationId)}`,
       );
     }
   }
+  // A credential adapter that reads an ambient credential names the guard it
+  // cannot be used without; a missing guard is a construction failure, not a
+  // production surprise.
+  for (const requirement of options.auth?.credentials.requires ?? []) {
+    const registered = options.preValidationPolicies?.[requirement.key];
+    if (!preValidationPolicyIds(registered).includes(requirement.policyId)) {
+      throw new HonoAdapterError("SHIP_HONO_OPTIONS_INVALID", requirement.message);
+    }
+  }
   const executor: ApplicationExecutor<CompiledApplication<string, readonly AnyModule[]>> =
     createExecutor(application);
   const app = new Hono();
+  // Registered ahead of every route so preflights never reach the 404 handler
+  // and operation, streaming and webhook responses all carry the policy.
+  if (options.cors !== undefined) app.use("*", createCorsMiddleware(options.cors, routes));
 
   const webhookRoutes = routes.filter(
     (operation) => describeWebhookOperation(operation)?.role === "receive",
@@ -194,23 +288,37 @@ export function createHonoAdapter<
 
     app.on(transport.metadata.method, transport.metadata.path, async (context) => {
       const requestId = readRequestId(context, options.generateRequestId);
-      let policyHeaders: Readonly<Record<string, string>> | undefined;
+      const policyHeaders: [string, string][] = [];
       const finish = (response: Response): Response => {
-        if (policyHeaders) {
-          for (const [name, value] of Object.entries(policyHeaders))
-            response.headers.set(name, value);
+        // A cookie the operation itself set wins over a policy's or the
+        // resolver's for the same name: a sign-in that replaces a stale
+        // session cookie must not be followed by the clearing instruction.
+        const operationCookies = new Set(response.headers.getSetCookie().map(cookieName));
+        for (const [name, value] of policyHeaders) {
+          if (name.toLowerCase() === "set-cookie") {
+            if (!operationCookies.has(cookieName(value))) response.headers.append(name, value);
+          } else response.headers.set(name, value);
         }
         return response;
       };
       try {
         const authentication = await resolveActor(context, operation, requestId, options.auth);
-        if (!authentication.ok) return failureResponse(authentication.failure, operation);
+        if (authentication.headers) {
+          // A resolver may tell the client to drop a dead transport credential
+          // (a stale session cookie) whichever way the request goes.
+          responseHeaders(requestId, authentication.headers);
+          policyHeaders.push(...Object.entries(authentication.headers));
+        }
+        if (!authentication.ok) return finish(failureResponse(authentication.failure, operation));
 
         const accessFailure = checkOperationAccess(operation, authentication.actor, requestId);
         if (accessFailure) return failureResponse(accessFailure, operation);
 
-        const policy = options.preValidationPolicies?.[operation.id];
-        if (policy) {
+        const policies = [
+          options.preValidationPolicies?.[GLOBAL_PRE_VALIDATION_POLICY],
+          options.preValidationPolicies?.[operation.id],
+        ].flatMap(policyList);
+        for (const policy of policies) {
           const decision = await policy({
             request: context.req.raw,
             operationId: operation.id,
@@ -223,6 +331,11 @@ export function createHonoAdapter<
             throw new TypeError("pre-validation policy must return an allow or deny decision");
           }
           if (!decision.allowed) {
+            if ("reason" in decision) {
+              return finish(
+                failureResponse(resolutionFailure(decision.reason, decision.message, requestId)),
+              );
+            }
             const { failure } = decision;
             const declared =
               failure instanceof OperationFailure
@@ -240,25 +353,27 @@ export function createHonoAdapter<
             if (details && "issues" in details && details.issues !== undefined) {
               throw new TypeError("pre-validation policy returned invalid failure details");
             }
-            return failureResponse(
-              {
-                ok: false,
-                status: declared.status,
-                error: {
-                  code: declared.code,
-                  message: failure.message,
-                  ...(details && "value" in details ? { details: details.value } : {}),
+            return finish(
+              failureResponse(
+                {
+                  ok: false,
+                  status: declared.status,
+                  error: {
+                    code: declared.code,
+                    message: failure.message,
+                    ...(details && "value" in details ? { details: details.value } : {}),
+                  },
+                  ...(failure.headers ? { headers: failure.headers } : {}),
+                  requestId,
                 },
-                ...(failure.headers ? { headers: failure.headers } : {}),
-                requestId,
-              },
-              operation,
+                operation,
+              ),
             );
           }
           if (decision.headers) {
             // Reuse the same reserved-name and value validation as operation responses.
             responseHeaders(requestId, decision.headers);
-            policyHeaders = decision.headers;
+            policyHeaders.push(...Object.entries(decision.headers));
           }
         }
 
@@ -385,6 +500,7 @@ function assertAdapterOptions<TCredential>(options: CreateHonoAdapterOptions<TCr
   if (options.onUnexpectedError !== undefined && typeof options.onUnexpectedError !== "function") {
     throw new HonoAdapterError("SHIP_HONO_OPTIONS_INVALID", "onUnexpectedError must be a function");
   }
+  if (options.cors !== undefined) assertCorsOptions(options.cors);
   if (
     options.projectFailureBody !== undefined &&
     typeof options.projectFailureBody !== "function"
@@ -402,8 +518,17 @@ async function resolveActor<TCredential>(
   requestId: string,
   auth: HonoAuthenticationOptions<TCredential> | undefined,
 ): Promise<
-  | { readonly ok: true; readonly actor?: OperationActor; readonly identity?: OperationIdentity }
-  | { readonly ok: false; readonly failure: OperationFailureResult }
+  | {
+      readonly ok: true;
+      readonly actor?: OperationActor;
+      readonly identity?: OperationIdentity;
+      readonly headers?: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly ok: false;
+      readonly failure: OperationFailureResult;
+      readonly headers?: Readonly<Record<string, string>>;
+    }
 > {
   if (!auth) return { ok: true };
   const credential = await auth.credentials.extract(context.req.raw);
@@ -422,44 +547,60 @@ async function resolveActor<TCredential>(
       `actor resolver ${JSON.stringify(auth.actors.id)} returned an invalid result`,
     );
   }
+  const headers = resolution.headers ? { headers: resolution.headers } : {};
   if (resolution.ok) {
     return {
       ok: true,
       ...(resolution.actor ? { actor: operationActor(resolution.actor) } : {}),
       ...(resolution.identity ? { identity: operationIdentity(resolution.identity) } : {}),
+      ...headers,
     };
   }
 
-  if (resolution.reason === "invalid-credential") {
+  return {
+    ok: false,
+    failure: resolutionFailure(resolution.reason, undefined, requestId),
+    ...headers,
+  };
+}
+
+/** The name a `Set-Cookie` value sets, for de-duplicating cookies from several sources. */
+function cookieName(value: string): string {
+  const separator = value.indexOf("=");
+  return (separator < 0 ? value : value.slice(0, separator)).trim();
+}
+
+/** The ADR-0004 projection of a resolution reason, shared by the resolver path and policy denials. */
+function resolutionFailure(
+  reason: "invalid-credential" | "forbidden" | "unavailable",
+  message: string | undefined,
+  requestId: string,
+): OperationFailureResult {
+  const safeMessage =
+    typeof message === "string" && message.length > 0 && message.length <= 256
+      ? message
+      : undefined;
+  if (reason === "invalid-credential") {
     return {
       ok: false,
-      failure: {
-        ok: false,
-        status: 401,
-        error: { code: "AUTHENTICATION_ERROR", message: "Authentication failed" },
-        requestId,
-      },
+      status: 401,
+      error: { code: "AUTHENTICATION_ERROR", message: safeMessage ?? "Authentication failed" },
+      requestId,
     };
   }
-  if (resolution.reason === "forbidden") {
+  if (reason === "forbidden") {
     return {
       ok: false,
-      failure: {
-        ok: false,
-        status: 403,
-        error: { code: "AUTHORIZATION_ERROR", message: "Access denied" },
-        requestId,
-      },
+      status: 403,
+      error: { code: "AUTHORIZATION_ERROR", message: safeMessage ?? "Access denied" },
+      requestId,
     };
   }
   return {
     ok: false,
-    failure: {
-      ok: false,
-      status: 503,
-      error: { code: "AUTHENTICATION_UNAVAILABLE", message: "Authentication is unavailable" },
-      requestId,
-    },
+    status: 503,
+    error: { code: "AUTHENTICATION_UNAVAILABLE", message: "Authentication is unavailable" },
+    requestId,
   };
 }
 
@@ -1011,12 +1152,17 @@ function responseHeaders(
   const headers = new Headers({ "x-request-id": requestId });
   if (contentType !== undefined) headers.set("content-type", contentType);
   for (const [name, value] of Object.entries(operationHeaders ?? {})) {
-    if (RESERVED_RESPONSE_HEADERS.has(name.toLowerCase())) {
+    const lower = name.toLowerCase();
+    // CORS headers are the adapter's: an operation cannot widen the policy.
+    if (RESERVED_RESPONSE_HEADERS.has(lower) || lower.startsWith("access-control-")) {
       throw new TypeError(
         `operation may not override reserved response header ${JSON.stringify(name)}`,
       );
     }
-    headers.set(name, value);
+    // `Set-Cookie` is the one header that must stay one-per-cookie: an operation
+    // and a policy may each set one without clobbering the other.
+    if (lower === "set-cookie") headers.append(name, value);
+    else headers.set(name, value);
   }
   return headers;
 }

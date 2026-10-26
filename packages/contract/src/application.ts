@@ -89,9 +89,30 @@ export type ApplicationChannelsOf<TApp extends CompiledApplication<string, reado
     };
   };
 
+type AttachmentUnion<TApp extends CompiledApplication<string, readonly AnyModule[]>> =
+  TApp["modules"][number]["attachments"][number];
+
+/**
+ * Every declared attachment keyed by id, mirroring `ClientContract["attachments"]`.
+ * A module that widened its attachments to `readonly AnyAttachment[]` contributes
+ * no key: a `string` id would otherwise swallow every literal one.
+ */
+export type ApplicationAttachmentsOf<
+  TApp extends CompiledApplication<string, readonly AnyModule[]>,
+> = {
+  readonly [TAttachment in AttachmentUnion<TApp> as string extends TAttachment["id"]
+    ? never
+    : TAttachment["id"]]: {
+    readonly cardinality: TAttachment["cardinality"];
+    readonly visibility: TAttachment["visibility"];
+    readonly variants: Extract<keyof TAttachment["variants"], string>;
+  };
+};
+
 export type ApplicationContractOf<TApp extends CompiledApplication<string, readonly AnyModule[]>> =
   {
     readonly channels: ApplicationChannelsOf<TApp>;
+    readonly attachments: ApplicationAttachmentsOf<TApp>;
     readonly operations: {
       readonly [TId in Exclude<OperationId<TApp>, WebhookOperationIds<TApp>>]: {
         readonly transport: Extract<

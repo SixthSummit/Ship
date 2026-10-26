@@ -33,6 +33,7 @@ import pg from "pg";
 import { z } from "zod";
 import { createBullmqJobBackend } from "../backend.js";
 import { createRedisLockProvider } from "../lock.js";
+import { reportConnectionError } from "./report.js";
 
 export type CrashPoint = "none" | "before-commit" | "after-commit" | "after-effect";
 
@@ -177,14 +178,21 @@ export interface CrashRuntimeOptions {
 }
 
 export async function createCrashRuntime(options: CrashRuntimeOptions) {
+  const report = reportConnectionError(`crash-fixture ${options.workerName}`);
+  // Both clients need `error` listeners: a connection the server drops (the
+  // container stopping, a reset under load) otherwise surfaces as an
+  // unhandled 'error' event that kills the process mid-recovery.
   const pool = new pg.Pool({ connectionString: options.databaseUrl, max: 4 });
+  pool.on("error", report("pg pool"));
   const database = drizzle(pool, { schema: crashSchema });
   const redis = new Redis(options.redisUrl, { maxRetriesPerRequest: null });
+  redis.on("error", report("ioredis"));
   const bullmq = createBullmqJobBackend({
     connection: { host: redis.options.host, port: redis.options.port, maxRetriesPerRequest: null },
     prefix: options.prefix,
     maxInFlight: 4,
     worker: { lockDuration: 2_000, stalledInterval: 500, maxStalledCount: 10 },
+    onError: (error, context) => report(`bullmq ${context.jobId}`)(error),
   });
   // The after-commit crash point sits between the executor's commit and the
   // moment BullMQ would record completion: the run is committed but not done.
@@ -198,6 +206,13 @@ export async function createCrashRuntime(options: CrashRuntimeOptions) {
           if (options.crashAt === "after-commit" && jobId === "crash.write" && outcome.ok) {
             process.exit(3);
           }
+          // One line per run so a slow recovery in CI shows whether the
+          // worker ever received the job and what each attempt returned.
+          process.stderr.write(
+            `[crash-fixture ${options.workerName}] ${run.runId} attempt ${run.attempt}: ${
+              outcome.ok ? "ok" : `failed (${outcome.error})`
+            }\n`,
+          );
           return outcome;
         },
       }),
@@ -212,13 +227,20 @@ export async function createCrashRuntime(options: CrashRuntimeOptions) {
   });
   const runtime: JobRuntime = await startJobRuntime(app, { backend, mode: options.mode });
   const executor = createExecutor(app);
-  let dispatching: ReturnType<typeof setInterval> | undefined;
+  // Passes never overlap: the next one is scheduled after the previous
+  // finishes, so a slow pass under load cannot pile up concurrent claims
+  // that outlive the 1 s lease and re-deliver an intent this process holds.
+  let dispatching: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
   if (options.mode === "worker") {
-    dispatching = setInterval(() => {
-      void executor
+    const everyMs = options.dispatchEveryMs ?? 200;
+    const pass = async () => {
+      await executor
         .run("crash.outbox.dispatch", {}, { actor: systemActor({ id: "crash.dispatcher" }) })
         .catch(() => undefined);
-    }, options.dispatchEveryMs ?? 200);
+      if (!stopped) dispatching = setTimeout(() => void pass(), everyMs);
+    };
+    dispatching = setTimeout(() => void pass(), everyMs);
   }
   return {
     app,
@@ -228,7 +250,8 @@ export async function createCrashRuntime(options: CrashRuntimeOptions) {
     redis,
     runtime,
     stop: async () => {
-      if (dispatching) clearInterval(dispatching);
+      stopped = true;
+      if (dispatching) clearTimeout(dispatching);
       await runtime.stop();
       await redis.quit().catch(() => undefined);
       await pool.end().catch(() => undefined);

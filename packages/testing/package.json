@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-testing",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Portable parity fixtures and real PostgreSQL test harnesses for Ship applications",
   "type": "module",
   "main": "./lib/index.js",
@@ -50,6 +50,11 @@
       "types": "./lib/jobs-conformance.d.ts",
       "import": "./lib/jobs-conformance.js",
       "default": "./lib/jobs-conformance.js"
+    },
+    "./storage": {
+      "types": "./lib/storage.d.ts",
+      "import": "./lib/storage.js",
+      "default": "./lib/storage.js"
     }
   },
   "sideEffects": false,
@@ -69,18 +74,19 @@
     "@opentelemetry/api": "^1.10.0",
     "@testcontainers/postgresql": "^12.0.1",
     "drizzle-kit": "^0.31.10",
-    "drizzle-orm": "^0.45.2",
     "pg": "^8.16.3"
   },
   "peerDependencies": {
-    "@sixthsummit/ship-core": "workspace:^"
+    "@sixthsummit/ship-core": "workspace:^",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@sixthsummit/ship-core": "workspace:*",
     "@types/pg": "^8.15.6",
     "@types/ws": "^8.18.1",
+    "drizzle-orm": "^0.45.2",
     "ws": "^8.20.0",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=22.22.0"

@@ -27,8 +27,19 @@ export {
   JOB_METRICS,
 } from "./job-metrics.js";
 export { nextOccurrence } from "./job-schedule.js";
-export type { JobStoredFailure, ShipJobRunsTable, ShipJobStateTable } from "./job-store.js";
-export { shipJobRunsTable, shipJobStateTable } from "./job-store.js";
+export type {
+  JobStoredFailure,
+  ShipJobControlTable,
+  ShipJobRunsTable,
+  ShipJobStateTable,
+} from "./job-store.js";
+export { shipJobControlTable, shipJobRunsTable, shipJobStateTable } from "./job-store.js";
+export type {
+  DrizzleMailLedger,
+  DrizzleMailLedgerDefinition,
+  ShipMailSendsTable,
+} from "./mail-ledger.js";
+export { createDrizzleMailLedger, shipMailSendsTable } from "./mail-ledger.js";
 export type { DrizzleOutbox, DrizzleOutboxDefinition, ShipOutboxTable } from "./outbox.js";
 export { createDrizzleOutbox, shipOutboxTable } from "./outbox.js";
 export type {
@@ -46,6 +57,19 @@ export type {
 export { defineRepositoryProjections } from "./projections.js";
 export type { DrizzleRepositoryErrorCode } from "./repository-error.js";
 export { DrizzleRepositoryError } from "./repository-error.js";
+export type {
+  DrizzleAttachmentLedger,
+  DrizzleAttachmentLedgerDefinition,
+  ShipStorageIntentsTable,
+  ShipStorageObjectsTable,
+  ShipStoragePurgesTable,
+} from "./storage-ledger.js";
+export {
+  createDrizzleAttachmentLedger,
+  shipStorageIntentsTable,
+  shipStorageObjectsTable,
+  shipStoragePurgesTable,
+} from "./storage-ledger.js";
 export type {
   PrivilegedTenantRepositoryContext,
   PrivilegedTenantRepositoryDefinition,

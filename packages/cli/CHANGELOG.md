@@ -1,5 +1,50 @@
 # @sixthsummit/ship-cli
 
+## 1.3.0
+
+### Minor Changes
+
+- 3e368c2: Add `createHonoAdapter({ cors })`. The option takes the same shape as the compatibility
+  distribution's `createApp({ cors })` (`origin`, `allowMethods`, `allowHeaders`, `exposeHeaders`,
+  `maxAge`, `credentials`) and applies to every projected route, including streaming and webhook
+  routes, their preflights, declared failures and the 404 handler. `X-Request-Id`, `X-Ship-Cache`
+  and every header declared on an operation error are exposed to the browser by default, and an
+  explicit `allowHeaders` list always keeps `Content-Type` and `X-Request-Id`.
+  
+  A wildcard origin combined with `credentials: true` is refused at construction with the new
+  `SHIP_HONO_CORS_INVALID` diagnostic, as is enabling `cors` on an application that declares an
+  `http.options(...)` operation (Hono's middleware would answer it as a preflight). Operations can
+  no longer set `Access-Control-*` headers through `respond()`; they are reserved like
+  `X-Request-Id`.
+  
+  `ship-api create` scaffolds `src/http.ts`, which builds the adapter from a comma-separated
+  `CORS_ORIGINS` allowlist with credentials enabled, and tests the preflight, the simple request,
+  the unset case and the wildcard refusal.
+- 3e368c2: Declare the shared runtimes an application also imports as peer dependencies instead of regular
+  dependencies, so one copy is resolved: `hono` in `@sixthsummit/ship-hono`, `drizzle-orm` in
+  `@sixthsummit/ship-drizzle` and `@sixthsummit/ship-testing`, and `ioredis` in
+  `@sixthsummit/ship-jobs-bullmq` and `@sixthsummit/ship-realtime-socketio`. Each package keeps the
+  same caret range in its `devDependencies` for its own tests. `socket.io` and `bullmq` stay regular
+  dependencies because their adapters create the server, queues and workers themselves; the
+  compatibility distribution `@sixthsummit/ship-api` is unchanged. The rule is recorded in
+  `docs/VERSIONING.md`.
+  
+  Consumers that relied on the transitive copy add the runtime to their own `dependencies` with the
+  adapter's caret range. `ship-api create` now writes `hono` as the caret range `ship-hono` declares
+  as its peer next to exact Ship pins, so a caret bump of the Ship packages can never leave an exact
+  `hono` pin behind, and the packed-consumer gate fails when a clean install of the scaffold or of a
+  golden consumer resolves more than one `hono` or `drizzle-orm`.
+
+### Patch Changes
+
+- 63eef39: Require `zod` `^4.6.7` (GHSA-mrhx-c7xc-m3w5: memory exhaustion while validating oversized constrained collections) and resolve `body-parser` to `2.4.0` under the MCP server's Express dependency (GHSA-27r3-jxmh-p828). No API change; the Angular library now runs its own suite against zod 4 and the Angular scaffold template asks for `zod ^4.6.7`.
+- Updated dependencies [4ad58d6]
+- Updated dependencies [b612767]
+- Updated dependencies [b350b5d]
+- Updated dependencies [faab83c]
+- Updated dependencies [63eef39]
+  - @sixthsummit/ship-contract@1.4.0
+
 ## 1.2.0
 
 ### Minor Changes

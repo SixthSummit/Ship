@@ -1,9 +1,17 @@
+import { shipAuthTables } from "@sixthsummit/ship-auth-credentials/drizzle";
 import {
   shipIdempotencyTable,
+  shipJobControlTable,
+  shipJobRunsTable,
+  shipJobStateTable,
+  shipMailSendsTable,
   shipOutboxTable,
+  shipStorageIntentsTable,
+  shipStorageObjectsTable,
+  shipStoragePurgesTable,
   shipWebhookEventsTable,
 } from "@sixthsummit/ship-drizzle";
-import { integer, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const projects = pgTable("projects", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -30,16 +38,68 @@ export const reportRequests = pgTable("report_requests", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Rich text documents: the sanitized document model (`body`, jsonb) and its
+ * plain-text projection (`body_text`) for search and previews. Embedded
+ * images are `ship_storage_objects` rows owned by `<tenant>/document/<id>`.
+ */
+export const documents = pgTable("documents", {
+  id: uuid("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  title: text("title").notNull(),
+  body: jsonb("body").notNull(),
+  bodyText: text("body_text").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 /** Framework-owned tables the application includes in its own migrations. */
 export const reportsOutboxTable = shipOutboxTable();
 export const idempotencyKeys = shipIdempotencyTable();
 export const webhookEventsTable = shipWebhookEventsTable();
+/** The PostgreSQL job backend's run ledger, schedule state and (opt-in) console pause control. */
+export const jobRuns = shipJobRunsTable();
+export const jobState = shipJobStateTable();
+export const jobControl = shipJobControlTable();
+/** Managed storage bookkeeping: intents, objects and the purge ledger (ADR-0022). */
+export const storageIntents = shipStorageIntentsTable();
+export const storageObjects = shipStorageObjectsTable();
+export const storagePurges = shipStoragePurgesTable();
+export const mailSendsTable = shipMailSendsTable();
+/** Credential auth: accounts, credentials, tokens, MFA secrets, recovery codes, sessions, audit (ADR-0025). */
+export const {
+  authAccounts,
+  authCredentials,
+  authTokens,
+  authMfaSecrets,
+  authRecoveryCodes,
+  authSessions,
+  authAuditEvents,
+} = shipAuthTables();
+export const authTables = {
+  authAccounts,
+  authCredentials,
+  authTokens,
+  authMfaSecrets,
+  authRecoveryCodes,
+  authSessions,
+  authAuditEvents,
+};
 
 export const portfolioSchema = {
   projects,
   workItems,
   reportRequests,
+  documents,
   reportsOutboxTable,
   idempotencyKeys,
   webhookEventsTable,
+  jobRuns,
+  jobState,
+  jobControl,
+  storageIntents,
+  storageObjects,
+  storagePurges,
+  mailSendsTable,
+  ...authTables,
 };
