@@ -150,7 +150,11 @@
       "@grpc/grpc-js": "^1.14.5",
       "miniflare>sharp": "^0.35.5",
       "ip-address": "^10.7.1",
-      "body-parser@>=2.0.0 <2.4.0": "2.4.0"
+      "body-parser@>=2.0.0 <2.4.0": "2.4.0",
+      "@vitest/mocker@>=2.1.0-beta.7 <4.1.12": ">=4.1.12",
+      "@vitest/mocker@>=4.1.11 <4.1.12": ">=4.1.12",
+      "fast-uri@>=3.0.0 <3.1.9": ">=3.1.9",
+      "fast-uri@>=3.1.3 <3.1.9": ">=3.1.9"
     },
     "patchedDependencies": {
       "http-cache-semantics@4.3.0": "angular/patches/http-cache-semantics@4.3.0.patch"
