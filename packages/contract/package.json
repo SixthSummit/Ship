@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-contract",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Portable Ship client manifest, HTTP client, and OpenAPI projection",
   "type": "module",
   "main": "./lib/index.js",

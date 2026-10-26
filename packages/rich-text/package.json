@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-rich-text",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Rich content fields for Ship applications: a versioned, kernel-owned document allowlist with server-side HTML rendering, plain-text projection, named extensions and embedded managed attachments whose purge follows the owning record",
   "type": "module",
   "main": "./lib/index.js",

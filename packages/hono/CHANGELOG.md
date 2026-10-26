@@ -1,5 +1,59 @@
 # @sixthsummit/ship-hono
 
+## 1.3.0
+
+### Minor Changes
+
+- 3e368c2: Add `createHonoAdapter({ cors })`. The option takes the same shape as the compatibility
+  distribution's `createApp({ cors })` (`origin`, `allowMethods`, `allowHeaders`, `exposeHeaders`,
+  `maxAge`, `credentials`) and applies to every projected route, including streaming and webhook
+  routes, their preflights, declared failures and the 404 handler. `X-Request-Id`, `X-Ship-Cache`
+  and every header declared on an operation error are exposed to the browser by default, and an
+  explicit `allowHeaders` list always keeps `Content-Type` and `X-Request-Id`.
+  
+  A wildcard origin combined with `credentials: true` is refused at construction with the new
+  `SHIP_HONO_CORS_INVALID` diagnostic, as is enabling `cors` on an application that declares an
+  `http.options(...)` operation (Hono's middleware would answer it as a preflight). Operations can
+  no longer set `Access-Control-*` headers through `respond()`; they are reserved like
+  `X-Request-Id`.
+  
+  `ship-api create` scaffolds `src/http.ts`, which builds the adapter from a comma-separated
+  `CORS_ORIGINS` allowlist with credentials enabled, and tests the preflight, the simple request,
+  the unset case and the wildcard refusal.
+- 4639db8: `createHonoAdapter({ preValidationPolicies })` accepts a `"*"` key (`GLOBAL_PRE_VALIDATION_POLICY`) whose policy runs for every projected operation ahead of the operation's own policy; both must allow and their response headers merge. A policy may now deny with `{ allowed: false, reason: "invalid-credential" | "forbidden", message? }`, projected exactly like the actor resolver's refusals (401 `AUTHENTICATION_ERROR`, 403 `AUTHORIZATION_ERROR`), so a transport guard such as a CSRF check needs no per-operation declared error and never surfaces as a 500. `Set-Cookie` headers from an operation's `respond()` and from policy headers are appended instead of overwriting each other.
+- 71e9bcf: A credential adapter can name the pre-validation policy it cannot be mounted without. `defineHonoCredentialAdapter({ requires: [{ key, policyId, message }] })` declares that `preValidationPolicies[key]` must carry `policyId`; `createHonoAdapter` refuses to construct otherwise with `SHIP_HONO_OPTIONS_INVALID` and the adapter's message. Policies are named with `definePreValidationPolicy(id, policy)` and inspected with `preValidationPolicyIds()`. A `preValidationPolicies` key may now hold a list of policies (`HonoPreValidationPolicies`) that run in order: the first refusal wins and the allow headers accumulate, `Set-Cookie` values all appended, so a required guard composes with a consumer's own policy under the same key.
+- d86f629: Response headers an actor resolver attaches to its outcome are applied to the success response and to the 401/403 the adapter projects from a refusal, with the same reserved-name validation as policy headers and `Set-Cookie` appended.
+- 3e368c2: Declare the shared runtimes an application also imports as peer dependencies instead of regular
+  dependencies, so one copy is resolved: `hono` in `@sixthsummit/ship-hono`, `drizzle-orm` in
+  `@sixthsummit/ship-drizzle` and `@sixthsummit/ship-testing`, and `ioredis` in
+  `@sixthsummit/ship-jobs-bullmq` and `@sixthsummit/ship-realtime-socketio`. Each package keeps the
+  same caret range in its `devDependencies` for its own tests. `socket.io` and `bullmq` stay regular
+  dependencies because their adapters create the server, queues and workers themselves; the
+  compatibility distribution `@sixthsummit/ship-api` is unchanged. The rule is recorded in
+  `docs/VERSIONING.md`.
+  
+  Consumers that relied on the transitive copy add the runtime to their own `dependencies` with the
+  adapter's caret range. `ship-api create` now writes `hono` as the caret range `ship-hono` declares
+  as its peer next to exact Ship pins, so a caret bump of the Ship packages can never leave an exact
+  `hono` pin behind, and the packed-consumer gate fails when a clean install of the scaffold or of a
+  golden consumer resolves more than one `hono` or `drizzle-orm`.
+
+### Patch Changes
+
+- 4ad58d6: Harden declared HTTP 3xx redirect results (SAPI-653). `defineOperation` rejects a
+  redirect output schema that cannot produce an empty body at definition time
+  (`SHIP_OPERATION_OUTPUT_INVALID`); the executor, Hono adapter and contract client keep
+  validating every result, so an unsafe `Location` (protocol-relative, credentials,
+  non-HTTP scheme, whitespace or control characters) or a redirect with a body is never
+  serialized and HTTP answers the safe 500 envelope without `Location`. The Hono matrix,
+  a compat-versus-kernel parity test and the contract suite now pin every redirect
+  status, `POST` to `303`, header pass-through, the `first-value` callback query policy
+  and failure redirects next to JSON declared failures. ShipAngular exposes `location`
+  on `ResponseMetadata`, reports an opaque browser redirect as `ProtocolError` with
+  reason `opaque-redirect` instead of inventing a status, and its packed conformance
+  fixture executes a declared `302` case.
+- 63eef39: Require `zod` `^4.6.7` (GHSA-mrhx-c7xc-m3w5: memory exhaustion while validating oversized constrained collections) and resolve `body-parser` to `2.4.0` under the MCP server's Express dependency (GHSA-27r3-jxmh-p828). No API change; the Angular library now runs its own suite against zod 4 and the Angular scaffold template asks for `zod ^4.6.7`.
+
 ## 1.2.1
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-console",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Operator console module for Ship applications: jobs, cron, webhook receipts, realtime channels and outboxes as declared operations behind a dedicated permission",
   "type": "module",
   "main": "./lib/index.js",

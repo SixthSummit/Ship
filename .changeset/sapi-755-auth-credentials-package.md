@@ -1,5 +1,0 @@
----
-"@sixthsummit/ship-auth-credentials": minor
----
-
-Initial release of first-party credential authentication (SAPI-755). `defineCredentialAuthModule({ store, mailer, mail, links, secrets, policies })` composes register, email verification, sign-in with lockout, sessions (list, revoke, revoke-all with the account cutoff), password reset, change-email, TOTP enrolment, challenge and recovery codes as declared operations under `/auth/*` with an audit row for every outcome; `credentialAuthentication()` is a kernel actor provider beside the Firebase resolver; `credentialAuthRateLimitPolicies()` rides the Hono pre-validation hook; `shipAuthTables()` and `createDrizzleCredentialStore()` (subpath `./drizzle`) own the seven tables through the gated migration path; `credentialAuthConsoleExtension()` (subpath `./console`) adds the auth-audit panel to the ops console; `credentialStoreConformance` (subpath `./conformance`) proves any store. Passwords are scrypt-hashed, TOTP follows RFC 6238 with a replay guard, tokens are stored as SHA-256 only and MFA secrets are AES-256-GCM sealed under a key ring.

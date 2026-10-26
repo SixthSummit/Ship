@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-mail",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Declared transactional mail delivery for Ship applications: typed mailers sent through the jobs capability with a send ledger, provider adapters, a non-production interceptor and development previews",
   "type": "module",
   "main": "./lib/index.js",

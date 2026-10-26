@@ -1,5 +1,0 @@
----
-"@sixthsummit/ship-auth-credentials": minor
----
-
-Add `auth.change-password` (`POST /auth/password/change`, authenticated): `{ currentPassword, newPassword, signOutOtherSessions? }` re-enters the password under the lockout policy, checks the new one against the password policy, rotates the current session whatever its transport (the response carries the replacement as `session`: a new bearer token, or a new cookie installed through `Set-Cookie`; the old token is revoked as `rotated`) and revokes every other session as `password-changed` unless `signOutOtherSessions` is `false`; audited as `password.changed`. The cookie-reading credential adapter now requires the CSRF guard at construction: `credentialSessionCredentials({ sessions })` / `credentialAuthentication({ sessions })` with a cookie transport declare a `ship-hono` policy requirement for `credentialSessionCsrfPolicy()` under the `"*"` key (alone or in a list), and `createHonoAdapter` fails with `SHIP_HONO_OPTIONS_INVALID` without it. New exports `CREDENTIAL_CSRF_POLICY_ID` and `credentialSessionCsrfRequirement(sessions)` for consumers composing their own credential adapter.
