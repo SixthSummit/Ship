@@ -1,5 +1,0 @@
----
-"@sixthsummit/ship-angular": minor
----
-
-`/credential-auth` defaults to cookie mode. `cookieSessionStorage()` (now the default `storage`) asks the server for the cookie transport on sign-in, TOTP verify and recovery consume, never holds the session token, asks `me` on `initialize()` so a reload restores the session from the `httpOnly` cookie, always calls sign-out so the server clears the cookie, and adopts the rotated session TOTP confirmation returns. `cookieCredentialCapability({ csrfCookieName?, csrfHeaderName? })` and `ShipCredentialAuth.credential()` give the policy client the `kind: "cookie"` capability (credentials included, the CSRF cookie echoed in `x-csrf-token`); `readBrowserCookie` is exported. `memorySessionStorage()` and `browserSessionStorage()` keep the bearer transport for native shells and non-browser hosts. `CredentialSessionToken` carries `transport` and `token` is optional; the sign-in and challenge bodies accept `transport`, and `auth.totp.confirm` may return `session`.

@@ -1,5 +1,30 @@
 # @sixthsummit/ship-jobs-bullmq
 
+## 0.3.0
+
+### Minor Changes
+
+- 5e2858d: Implement the kernel's operator introspection for the ops console (SAPI-757): the in-memory job, webhook-event, outbox and realtime backends; the BullMQ backend (`getJobs`, job scheduler `next`, `queue.pause`/`resume`); the PostgreSQL job backend (run and schedule queries, durable pause through the new opt-in `shipJobControlTable()` passed as `controlTable`, read once per worker poll), outbox (`findRecord`/`listRecords`) and webhook event store (`list`); and the Socket.IO gateway (per-channel subscriber and scope counts, last publish).
+- 3e368c2: Declare the shared runtimes an application also imports as peer dependencies instead of regular
+  dependencies, so one copy is resolved: `hono` in `@sixthsummit/ship-hono`, `drizzle-orm` in
+  `@sixthsummit/ship-drizzle` and `@sixthsummit/ship-testing`, and `ioredis` in
+  `@sixthsummit/ship-jobs-bullmq` and `@sixthsummit/ship-realtime-socketio`. Each package keeps the
+  same caret range in its `devDependencies` for its own tests. `socket.io` and `bullmq` stay regular
+  dependencies because their adapters create the server, queues and workers themselves; the
+  compatibility distribution `@sixthsummit/ship-api` is unchanged. The rule is recorded in
+  `docs/VERSIONING.md`.
+  
+  Consumers that relied on the transitive copy add the runtime to their own `dependencies` with the
+  adapter's caret range. `ship-api create` now writes `hono` as the caret range `ship-hono` declares
+  as its peer next to exact Ship pins, so a caret bump of the Ship packages can never leave an exact
+  `hono` pin behind, and the packed-consumer gate fails when a clean install of the scaffold or of a
+  golden consumer resolves more than one `hono` or `drizzle-orm`.
+
+### Patch Changes
+
+- 9eff077: Make `quit()` on the BullMQ job backend idempotent and leave no Redis traffic behind: the OpenTelemetry queue observer is unregistered before workers and queues close (`JobMetrics.observeQueues` now returns the unregister function), a metrics collection or health probe that lands after `quit()` no longer recreates a closed queue and opens a fresh connection, and `startWorkers` refuses to run after `quit()`. This removes the unhandled ioredis "Connection is closed" rejections seen when a backend was quit while bookkeeping was still in flight.
+- 63eef39: Require `zod` `^4.6.7` (GHSA-mrhx-c7xc-m3w5: memory exhaustion while validating oversized constrained collections) and resolve `body-parser` to `2.4.0` under the MCP server's Express dependency (GHSA-27r3-jxmh-p828). No API change; the Angular library now runs its own suite against zod 4 and the Angular scaffold template asks for `zod ^4.6.7`.
+
 ## 0.2.1
 
 ### Patch Changes

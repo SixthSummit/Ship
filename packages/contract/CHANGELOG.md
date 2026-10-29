@@ -1,5 +1,29 @@
 # @sixthsummit/ship-contract
 
+## 1.4.0
+
+### Minor Changes
+
+- b612767: Project declared mailers into the client contract as ids and message names only (`contract.mailers`). The field is present only when the application declares a mailer, so existing manifests keep their fingerprint.
+- b350b5d: Declare managed storage (ADR-0022). `defineAttachment({ id, cardinality, contentTypes, maxBytes, visibility, maxCount?, variants?, intentTtlMs? })` declares an attachment field; modules list `attachments`, operations declare `attachments` and bind `attachment.binding`, and the executor hands handlers a `ScopedAttachmentCapability` bound to the running transaction (`attach`, `detach`, `list`, `read`, `url`, `variant`). New compile diagnostics cover unbound or undeclared bindings, undeclared or unimported attachments, duplicate or misnamed ids, a missing storage module and non-singleton providers. The `StorageAdapter` and `AttachmentLedger` contracts live in the kernel; the application graph gains `attachments` nodes. `@sixthsummit/ship-contract` projects `attachments` (cardinality, content types, size, visibility, count and variant names; never the provider) and types them through `ApplicationContractOf` and `ClientTypeContract`.
+- faab83c: Declare rich text fields (ADR-0026). `defineRichText({ id, attachment?, extensions?, maxBytes?, maxDepth?, links?, onInvalid?, migrations? })` declares a field over the versioned kernel-owned base allowlist (`RICH_TEXT_SCHEMA_VERSION`), `defineRichTextExtension` declares named nodes and marks with a client-safe structural spec and server-only renderers, modules list `richText`, operations bind `field.binding` and the executor hands handlers a `ScopedRichTextCapability` scoped to the running transaction together with the field's attachment capability. Compile diagnostics cover duplicate or misnamed ids, an undeclared attachment, a missing or non-singleton provider, bindings to undeclared or unimported fields and an unreachable attachment capability; the application graph gains `richText` nodes. `@sixthsummit/ship-contract` projects `richText` (schema version, attachment id, limits and extension specs, never a renderer) and the field ids an operation binds.
+
+### Patch Changes
+
+- 4ad58d6: Harden declared HTTP 3xx redirect results (SAPI-653). `defineOperation` rejects a
+  redirect output schema that cannot produce an empty body at definition time
+  (`SHIP_OPERATION_OUTPUT_INVALID`); the executor, Hono adapter and contract client keep
+  validating every result, so an unsafe `Location` (protocol-relative, credentials,
+  non-HTTP scheme, whitespace or control characters) or a redirect with a body is never
+  serialized and HTTP answers the safe 500 envelope without `Location`. The Hono matrix,
+  a compat-versus-kernel parity test and the contract suite now pin every redirect
+  status, `POST` to `303`, header pass-through, the `first-value` callback query policy
+  and failure redirects next to JSON declared failures. ShipAngular exposes `location`
+  on `ResponseMetadata`, reports an opaque browser redirect as `ProtocolError` with
+  reason `opaque-redirect` instead of inventing a status, and its packed conformance
+  fixture executes a declared `302` case.
+- 63eef39: Require `zod` `^4.6.7` (GHSA-mrhx-c7xc-m3w5: memory exhaustion while validating oversized constrained collections) and resolve `body-parser` to `2.4.0` under the MCP server's Express dependency (GHSA-27r3-jxmh-p828). No API change; the Angular library now runs its own suite against zod 4 and the Angular scaffold template asks for `zod ^4.6.7`.
+
 ## 1.3.0
 
 ### Minor Changes

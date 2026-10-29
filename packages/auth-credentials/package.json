@@ -1,6 +1,6 @@
 {
   "name": "@sixthsummit/ship-auth-credentials",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "First-party credential authentication for Ship applications: password accounts, email verification, TOTP MFA with recovery codes, active sessions with revocation, lockout and an auth audit log as declared operations and a kernel actor provider",
   "type": "module",
   "main": "./lib/index.js",
