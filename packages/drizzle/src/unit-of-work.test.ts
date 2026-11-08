@@ -1,6 +1,7 @@
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { describe, expect, it, vi } from "vitest";
 import {
+  classifyPostgresTransactionFailure,
   createDrizzleUnitOfWork,
   DrizzleUnitOfWorkError,
   transactionForScope,
@@ -263,6 +264,106 @@ describe("createDrizzleUnitOfWork", () => {
       ...(capability ? { capability } : {}),
     });
   });
+});
+
+describe("transaction isolation", () => {
+  function unitOfWork() {
+    const fake = fakeDatabase();
+    return {
+      ...fake,
+      unitOfWork: createDrizzleUnitOfWork({
+        id: "database.primary",
+        database: fake.database,
+        create: (transaction) => ({ repository: { transaction } }),
+      }),
+    };
+  }
+
+  it.each([
+    "read committed",
+    "repeatable read",
+    "serializable",
+  ] as const)("sets %s on the outermost transaction together with the access mode", async (isolation) => {
+    const { unitOfWork: work, state } = unitOfWork();
+
+    await work.run("write", () => undefined, { isolation });
+
+    expect(state.configs).toEqual([{ accessMode: "read write", isolationLevel: isolation }]);
+  });
+
+  it("leaves the server default in place when no level is declared", async () => {
+    const { unitOfWork: work, state } = unitOfWork();
+
+    await work.run("read", () => undefined);
+    await work.run("read", () => undefined, {});
+
+    expect(state.configs).toEqual([{ accessMode: "read only" }, { accessMode: "read only" }]);
+  });
+
+  it("joins a nested run to the outer level instead of opening another transaction", async () => {
+    const { unitOfWork: work, state } = unitOfWork();
+
+    await work.run(
+      "write",
+      (outer) =>
+        work.run("write", (inner) => expect(inner).toBe(outer), { isolation: "read committed" }),
+      { isolation: "serializable" },
+    );
+
+    expect(state.configs).toEqual([{ accessMode: "read write", isolationLevel: "serializable" }]);
+  });
+
+  it("rejects an isolation level PostgreSQL does not offer before opening anything", async () => {
+    const { unitOfWork: work, state } = unitOfWork();
+
+    await expect(
+      work.run("write", () => undefined, { isolation: "snapshot" as never }),
+    ).rejects.toMatchObject({ code: "SHIP_DRIZZLE_UNIT_OF_WORK_ISOLATION_INVALID" });
+    expect(state.transactions).toBe(0);
+  });
+});
+
+describe("classifyPostgresTransactionFailure", () => {
+  function sqlstate(code: string): Error {
+    return Object.assign(new Error(`SQLSTATE ${code}`), { code });
+  }
+
+  it("classifies serialization failures and deadlocks by SQLSTATE", () => {
+    expect(classifyPostgresTransactionFailure(sqlstate("40001"))).toBe("serialization");
+    expect(classifyPostgresTransactionFailure(sqlstate("40P01"))).toBe("deadlock");
+  });
+
+  it("reads the SQLSTATE anywhere in the cause chain", () => {
+    const wrapped = new Error("handler failed", {
+      cause: new Error("Failed query", { cause: sqlstate("40001") }),
+    });
+
+    expect(classifyPostgresTransactionFailure(wrapped)).toBe("serialization");
+    expect(unitOfWorkClassifier()(wrapped)).toBe("serialization");
+  });
+
+  it.each([
+    ["another SQLSTATE", sqlstate("23505")],
+    ["a numeric code", Object.assign(new Error("x"), { code: 40001 })],
+    ["a plain error", new Error("connection reset")],
+    ["a string", "40001"],
+    ["undefined", undefined],
+    ["a self-referencing cause chain", selfCaused()],
+  ])("returns undefined for %s", (_name, error) => {
+    expect(classifyPostgresTransactionFailure(error)).toBeUndefined();
+  });
+
+  function selfCaused(): Error {
+    const error = new Error("loop");
+    Object.defineProperty(error, "cause", { value: error });
+    return error;
+  }
+
+  function unitOfWorkClassifier() {
+    const { database } = fakeDatabase();
+    return createDrizzleUnitOfWork({ id: "database.primary", database, create: () => ({}) })
+      .classifyFailure;
+  }
 });
 
 describe("transactionForScope", () => {

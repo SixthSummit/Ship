@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { UnitOfWork } from "@sixthsummit/ship-core";
+import type {
+  OperationTransactionIsolation,
+  TransientTransactionFailure,
+  UnitOfWork,
+  UnitOfWorkRunOptions,
+} from "@sixthsummit/ship-core";
 import type { NodePgDatabase, NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
 import type { PgTransaction, PgTransactionConfig } from "drizzle-orm/pg-core";
 import type { ExtractTablesWithRelations } from "drizzle-orm/relations";
@@ -44,15 +49,54 @@ export interface DrizzleUnitOfWork<TCapabilities extends UnitOfWorkCapabilities>
   readonly adapter: "drizzle";
   readonly id: string;
   readonly nested: NestedUnitOfWorkPolicy;
+  /**
+   * Opens the declared scope. `options.isolation` applies to the outermost
+   * transaction only; a nested call joins the active scope at whatever level
+   * it already runs.
+   */
   run<TResult>(
     mode: UnitOfWorkMode,
     work: (capabilities: TCapabilities) => TResult | Promise<TResult>,
+    options?: UnitOfWorkRunOptions,
   ): Promise<TResult>;
+  /** {@link classifyPostgresTransactionFailure} over the cause chain. */
+  readonly classifyFailure: (error: unknown) => TransientTransactionFailure | undefined;
+}
+
+/** SQLSTATE class 40 members PostgreSQL documents as "retry the whole transaction". */
+const TRANSIENT_SQLSTATES: Readonly<Record<string, TransientTransactionFailure>> = Object.freeze({
+  "40001": "serialization",
+  "40P01": "deadlock",
+});
+const CAUSE_CHAIN_LIMIT = 16;
+
+/**
+ * Classifies a PostgreSQL error as a transient transaction failure the
+ * executor may retry: SQLSTATE `40001` (serialization_failure) or `40P01`
+ * (deadlock_detected). The SQLSTATE is read from `code` anywhere in the
+ * `cause` chain, because `pg` errors reach the executor wrapped by Drizzle and
+ * again by the kernel's handler-failure diagnostic. Anything else, including
+ * every other SQLSTATE, returns undefined.
+ */
+export function classifyPostgresTransactionFailure(
+  error: unknown,
+): TransientTransactionFailure | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < CAUSE_CHAIN_LIMIT && current !== undefined; depth += 1) {
+    if (typeof current !== "object" || current === null) return undefined;
+    const code = Reflect.get(current, "code");
+    if (typeof code === "string" && Object.hasOwn(TRANSIENT_SQLSTATES, code)) {
+      return TRANSIENT_SQLSTATES[code];
+    }
+    current = Reflect.get(current, "cause");
+  }
+  return undefined;
 }
 
 export type DrizzleUnitOfWorkErrorCode =
   | "SHIP_DRIZZLE_UNIT_OF_WORK_INVALID"
   | "SHIP_DRIZZLE_UNIT_OF_WORK_MODE_INVALID"
+  | "SHIP_DRIZZLE_UNIT_OF_WORK_ISOLATION_INVALID"
   | "SHIP_DRIZZLE_UNIT_OF_WORK_WORK_INVALID"
   | "SHIP_DRIZZLE_UNIT_OF_WORK_CAPABILITIES_INVALID"
   | "SHIP_DRIZZLE_NESTED_TRANSACTION_REJECTED"
@@ -106,8 +150,9 @@ export function createDrizzleUnitOfWork<
   const run = async <TResult>(
     mode: UnitOfWorkMode,
     work: (capabilities: TCapabilities) => TResult | Promise<TResult>,
+    options?: UnitOfWorkRunOptions,
   ): Promise<TResult> => {
-    assertRunArguments(definition.id, mode, work);
+    assertRunArguments(definition.id, mode, work, options);
     const currentStore = activeUnits.getStore();
     const active = currentStore?.get(instance);
     if (active) {
@@ -146,23 +191,26 @@ export function createDrizzleUnitOfWork<
       }
     }
 
-    return definition.database.transaction(async (transaction) => {
-      const capabilities = freezeCapabilities(
-        definition.id,
-        definition.create(transaction as DrizzleTransaction<TSchema>),
-      ) as TCapabilities;
-      scopeTransactions.set(capabilities, transaction);
-      const state: ActiveUnitOfWorkState = { closed: false, rollbackOnly: false };
-      const nextStore = new Map(currentStore);
-      nextStore.set(instance, Object.freeze({ mode, capabilities, state }));
-      try {
-        const result = await activeUnits.run(nextStore, () => work(capabilities));
-        if (state.rollbackOnly) throw state.rollbackCause;
-        return result;
-      } finally {
-        state.closed = true;
-      }
-    }, transactionConfig(mode));
+    return definition.database.transaction(
+      async (transaction) => {
+        const capabilities = freezeCapabilities(
+          definition.id,
+          definition.create(transaction as DrizzleTransaction<TSchema>),
+        ) as TCapabilities;
+        scopeTransactions.set(capabilities, transaction);
+        const state: ActiveUnitOfWorkState = { closed: false, rollbackOnly: false };
+        const nextStore = new Map(currentStore);
+        nextStore.set(instance, Object.freeze({ mode, capabilities, state }));
+        try {
+          const result = await activeUnits.run(nextStore, () => work(capabilities));
+          if (state.rollbackOnly) throw state.rollbackCause;
+          return result;
+        } finally {
+          state.closed = true;
+        }
+      },
+      transactionConfig(mode, options?.isolation),
+    );
   };
 
   return Object.freeze({
@@ -171,6 +219,7 @@ export function createDrizzleUnitOfWork<
     id: definition.id,
     nested,
     run,
+    classifyFailure: classifyPostgresTransactionFailure,
   }) satisfies DrizzleUnitOfWork<TCapabilities> & UnitOfWork<TCapabilities>;
 }
 
@@ -228,15 +277,26 @@ function assertDefinition(
   }
 }
 
+const ISOLATION_LEVELS = new Set<string>(["read committed", "repeatable read", "serializable"]);
+
 function assertRunArguments(
   id: string,
   mode: unknown,
   work: unknown,
+  options: unknown,
 ): asserts mode is UnitOfWorkMode {
   if (mode !== "read" && mode !== "write") {
     throw new DrizzleUnitOfWorkError(
       "SHIP_DRIZZLE_UNIT_OF_WORK_MODE_INVALID",
       `unit of work ${JSON.stringify(id)} mode must be read or write`,
+      { unitOfWorkId: id },
+    );
+  }
+  const isolation = options === undefined ? undefined : Reflect.get(Object(options), "isolation");
+  if (isolation !== undefined && !ISOLATION_LEVELS.has(isolation)) {
+    throw new DrizzleUnitOfWorkError(
+      "SHIP_DRIZZLE_UNIT_OF_WORK_ISOLATION_INVALID",
+      `unit of work ${JSON.stringify(id)} isolation must be read committed, repeatable read, or serializable`,
       { unitOfWorkId: id },
     );
   }
@@ -277,8 +337,20 @@ function freezeCapabilities(id: string, capabilities: unknown): UnitOfWorkCapabi
   return Object.freeze(Object.fromEntries(entries));
 }
 
-function transactionConfig(mode: UnitOfWorkMode): PgTransactionConfig {
-  return Object.freeze({ accessMode: mode === "read" ? "read only" : "read write" });
+/**
+ * One `SET TRANSACTION` statement carries both the access mode and, when the
+ * caller declared one, the isolation level. Without a declared level the
+ * transaction keeps the server default (`read committed` unless configured
+ * otherwise), exactly as before isolation could be declared.
+ */
+function transactionConfig(
+  mode: UnitOfWorkMode,
+  isolation: OperationTransactionIsolation | undefined,
+): PgTransactionConfig {
+  return Object.freeze({
+    accessMode: mode === "read" ? "read only" : "read write",
+    ...(isolation !== undefined ? { isolationLevel: isolation } : {}),
+  });
 }
 
 function invalidDefinition(message: string, unitOfWorkId?: string): DrizzleUnitOfWorkError {

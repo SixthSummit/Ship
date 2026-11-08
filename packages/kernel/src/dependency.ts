@@ -1,3 +1,5 @@
+import type { OperationTransactionIsolation, TransientTransactionFailure } from "./operation.js";
+
 const DEPENDENCY_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
 
 declare const dependencyValue: unique symbol;
@@ -42,13 +44,31 @@ export type ResolveDependencyBindings<TBindings extends DependencyBindings> = Re
     : never;
 }>;
 
+export interface UnitOfWorkRunOptions {
+  /**
+   * Isolation level for the outermost scope; a nested `run` joins the active
+   * scope and never changes it. Absent means the adapter's default
+   * (`read committed` on PostgreSQL).
+   */
+  readonly isolation?: OperationTransactionIsolation;
+}
+
 export interface UnitOfWork<TCapabilities> {
   readonly kind: "ship.unit-of-work";
   readonly id: string;
   run<TResult>(
     mode: "read" | "write",
     work: (capabilities: TCapabilities) => TResult | Promise<TResult>,
+    options?: UnitOfWorkRunOptions,
   ): Promise<TResult>;
+  /**
+   * Classifies a failure that crossed the transaction boundary as a transient
+   * driver failure the executor may retry (`serialization` for SQLSTATE 40001,
+   * `deadlock` for 40P01). Anything else returns undefined. An adapter that
+   * cannot classify leaves it out and the executor retries declared error
+   * codes only.
+   */
+  readonly classifyFailure?: (error: unknown) => TransientTransactionFailure | undefined;
 }
 
 export interface UnitOfWorkDependencyToken<TCapabilities>
@@ -153,7 +173,9 @@ export function isUnitOfWork(value: unknown): value is UnitOfWork<unknown> {
     Reflect.get(value, "kind") === "ship.unit-of-work" &&
     typeof Reflect.get(value, "id") === "string" &&
     DEPENDENCY_ID_PATTERN.test(Reflect.get(value, "id")) &&
-    typeof Reflect.get(value, "run") === "function"
+    typeof Reflect.get(value, "run") === "function" &&
+    (Reflect.get(value, "classifyFailure") === undefined ||
+      typeof Reflect.get(value, "classifyFailure") === "function")
   );
 }
 

@@ -1931,6 +1931,30 @@ describe("rich text documents", () => {
     ).toEqual(["portfolio.document-body"]);
   });
 
+  it("projects the serializable save with its retry policy into the graph and contract", () => {
+    const application = createCustomizedApplication(fixtureInfrastructure());
+    const policy = {
+      mode: "write",
+      isolation: "serializable",
+      retry: { on: ["serialization"], attempts: 3 },
+    };
+
+    expect(
+      application.graph.operations.find((operation) => operation.id === "portfolio.save-document")
+        ?.transaction,
+    ).toEqual(policy);
+    expect(
+      projectClientContract(application).operations.find(
+        (operation) => operation.id === "portfolio.save-document",
+      )?.transaction,
+    ).toEqual(policy);
+    // The sibling delete keeps the string form, which still projects as before.
+    expect(
+      application.graph.operations.find((operation) => operation.id === "portfolio.delete-document")
+        ?.transaction,
+    ).toBe("write");
+  });
+
   it("refuses markup outside the allowlist at the input boundary and in the capability", async () => {
     const infrastructure = fixtureInfrastructure({ unitOfWork: documentUnitOfWork() });
     const application = createCustomizedApplication(infrastructure);

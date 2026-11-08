@@ -31,6 +31,108 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const responseMarker: unique symbol = Symbol("ship.operation.response");
 
 export type OperationTransactionMode = "none" | "read" | "write";
+/** PostgreSQL isolation levels the unit of work can open; `read committed` is the default. */
+export type OperationTransactionIsolation = "read committed" | "repeatable read" | "serializable";
+/** Driver-level transient failures a unit of work can classify: SQLSTATE 40001 and 40P01. */
+export type TransientTransactionFailure = "serialization" | "deadlock";
+
+/**
+ * Executor-owned retry of the whole transaction. The handler re-runs with a
+ * fresh unit of work after a declared transient failure; nothing else is ever
+ * retried. Only the executor can prove the replay is safe: no effect runs
+ * before commit on a transactional operation, the aborted transaction has
+ * fully rolled back, and the validated input is replayed unchanged.
+ */
+export interface OperationTransactionRetry {
+  /**
+   * Failures that trigger a retry: `serialization` (SQLSTATE 40001),
+   * `deadlock` (40P01), or an error code this operation declares in `errors`.
+   */
+  readonly on: ReadonlyArray<TransientTransactionFailure | string>;
+  /** Total attempts including the first; 1 to 5. */
+  readonly attempts: number;
+}
+
+/** The object form of the declaration; `"read"` is `{ mode: "read" }` and so on. */
+export interface OperationTransactionOptions {
+  readonly mode: OperationTransactionMode;
+  /** Defaults to `read committed`; `none` operations cannot declare one. */
+  readonly isolation?: OperationTransactionIsolation;
+  /** Absent means the executor never retries; `none` operations cannot declare one. */
+  readonly retry?: OperationTransactionRetry;
+}
+
+export type OperationTransactionDeclaration =
+  | OperationTransactionMode
+  | OperationTransactionOptions;
+
+/** The declaration with every default resolved; what the executor and projections read. */
+export interface OperationTransactionPolicy {
+  readonly mode: OperationTransactionMode;
+  readonly isolation: OperationTransactionIsolation;
+  readonly retry?: OperationTransactionRetry;
+}
+
+export const OPERATION_TRANSACTION_ISOLATIONS: readonly OperationTransactionIsolation[] =
+  Object.freeze(["read committed", "repeatable read", "serializable"]);
+export const TRANSIENT_TRANSACTION_FAILURES: readonly TransientTransactionFailure[] = Object.freeze(
+  ["serialization", "deadlock"],
+);
+export const OPERATION_TRANSACTION_RETRY_MAX_ATTEMPTS = 5;
+const DEFAULT_TRANSACTION_ISOLATION: OperationTransactionIsolation = "read committed";
+const TRANSACTION_OPTION_KEYS = new Set(["mode", "isolation", "retry"]);
+const TRANSACTION_RETRY_KEYS = new Set(["on", "attempts"]);
+
+/** The transaction mode of either declaration form. */
+export function transactionMode(definition: {
+  readonly transaction: OperationTransactionDeclaration;
+}): OperationTransactionMode {
+  return typeof definition.transaction === "string"
+    ? definition.transaction
+    : definition.transaction.mode;
+}
+
+/** The declaration of either form with its defaults resolved. */
+export function transactionPolicy(definition: {
+  readonly transaction: OperationTransactionDeclaration;
+}): OperationTransactionPolicy {
+  const declaration = definition.transaction;
+  if (typeof declaration === "string") {
+    return Object.freeze({ mode: declaration, isolation: DEFAULT_TRANSACTION_ISOLATION });
+  }
+  return Object.freeze({
+    mode: declaration.mode,
+    isolation: declaration.isolation ?? DEFAULT_TRANSACTION_ISOLATION,
+    ...(declaration.retry ? { retry: declaration.retry } : {}),
+  });
+}
+
+/**
+ * The declaration as graphs and contracts project it: the mode string when
+ * the policy carries only defaults, so `{ mode: "write" }` projects and
+ * fingerprints exactly like `"write"`; otherwise the resolved object.
+ */
+export function projectTransaction(definition: {
+  readonly transaction: OperationTransactionDeclaration;
+}): OperationTransactionMode | OperationTransactionPolicy {
+  const policy = transactionPolicy(definition);
+  if (policy.isolation === DEFAULT_TRANSACTION_ISOLATION && policy.retry === undefined) {
+    return policy.mode;
+  }
+  return Object.freeze({
+    mode: policy.mode,
+    isolation: policy.isolation,
+    ...(policy.retry
+      ? {
+          retry: Object.freeze({
+            on: Object.freeze([...policy.retry.on]),
+            attempts: policy.retry.attempts,
+          }),
+        }
+      : {}),
+  });
+}
+
 export type OperationInputSchemas = Readonly<Record<string, RuntimeSchema>>;
 export type OperationOutputSchemas = Readonly<Record<number, RuntimeSchema>>;
 export type OperationTransportMetadataPrimitive = string | number | boolean | null;
@@ -259,7 +361,7 @@ export interface OperationDefinition<
   TDependencies extends DependencyBindings,
   TErrors extends readonly OperationErrorDefinition[],
   TAccess extends OperationAccess,
-  TTransaction extends OperationTransactionMode,
+  TTransaction extends OperationTransactionDeclaration,
   TSuccessStatus extends OperationOutputStatus<TOutput>,
   TEffects extends readonly EffectDependencyToken[],
   TTransport extends OperationTransport | undefined = undefined,
@@ -321,7 +423,7 @@ export interface Operation<
   TDependencies extends DependencyBindings,
   TErrors extends readonly OperationErrorDefinition[],
   TAccess extends OperationAccess,
-  TTransaction extends OperationTransactionMode,
+  TTransaction extends OperationTransactionDeclaration,
   TSuccessStatus extends OperationOutputStatus<TOutput>,
   TEffects extends readonly EffectDependencyToken[],
   TTransport extends OperationTransport | undefined = undefined,
@@ -357,7 +459,7 @@ export interface AnyOperation {
   readonly successStatus: number;
   readonly errors: readonly OperationErrorDefinition[];
   readonly access: OperationAccess;
-  readonly transaction: OperationTransactionMode;
+  readonly transaction: OperationTransactionDeclaration;
   readonly dependencies: DependencyBindings;
   readonly effects: readonly EffectDependencyToken[];
   readonly transport?: OperationTransport;
@@ -418,7 +520,7 @@ export function defineOperation<
   const TDependencies extends DependencyBindings,
   const TErrors extends readonly OperationErrorDefinition[],
   const TAccess extends OperationAccess,
-  const TTransaction extends OperationTransactionMode,
+  const TTransaction extends OperationTransactionDeclaration,
   const TSuccessStatus extends OperationOutputStatus<TOutput>,
   const TEffects extends readonly EffectDependencyToken[] = readonly [],
   const TTransport extends OperationTransport | undefined = undefined,
@@ -455,6 +557,7 @@ export function defineOperation<
     kind: "ship.operation" as const,
     input: Object.freeze({ ...definition.input }),
     output: Object.freeze({ ...definition.output }),
+    transaction: freezeTransactionDeclaration(definition.transaction) as TTransaction,
     errors: Object.freeze([...definition.errors]) as unknown as TErrors,
     dependencies: Object.freeze({ ...definition.dependencies }),
     effects: Object.freeze([...(definition.effects ?? [])]) as unknown as TEffects,
@@ -508,7 +611,7 @@ function assertOperationDefinition(
   DependencyBindings,
   readonly OperationErrorDefinition[],
   OperationAccess,
-  OperationTransactionMode,
+  OperationTransactionDeclaration,
   number,
   readonly EffectDependencyToken[],
   OperationTransport | undefined
@@ -581,15 +684,7 @@ function assertOperationDefinition(
     );
   }
 
-  const transaction = Reflect.get(definition, "transaction");
-  if (transaction !== "none" && transaction !== "read" && transaction !== "write") {
-    fail(
-      "SHIP_OPERATION_TRANSACTION_INVALID",
-      "transaction must be one of none, read, or write",
-      operationId,
-      "transaction",
-    );
-  }
+  assertTransactionDeclaration(Reflect.get(definition, "transaction"), operationId);
 
   assertDependencies(Reflect.get(definition, "dependencies"), operationId);
   assertEffects(Reflect.get(definition, "effects"), operationId);
@@ -666,6 +761,67 @@ function assertOperationDefinition(
   if (typeof Reflect.get(definition, "handler") !== "function") {
     fail("SHIP_OPERATION_HANDLER_INVALID", "handler must be a function", operationId, "handler");
   }
+}
+
+/**
+ * Shape check only: the mode must be a known mode and the object form may
+ * carry an isolation string and a `{ on: string[], attempts: number }` retry.
+ * Value rules (isolation names, attempt range, declared codes, nothing on
+ * `none`) are application diagnostics so every violation surfaces together at
+ * compile time instead of one throw at a time.
+ */
+function assertTransactionDeclaration(
+  value: unknown,
+  operationId: string,
+): asserts value is OperationTransactionDeclaration {
+  if (value === "none" || value === "read" || value === "write") return;
+  const message =
+    'transaction must be none, read, write, or { mode, isolation?: "read committed" | "repeatable read" | "serializable", retry?: { on: string[], attempts: number } }';
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail("SHIP_OPERATION_TRANSACTION_INVALID", message, operationId, "transaction");
+  }
+  const mode = Reflect.get(value, "mode");
+  if (
+    !Object.keys(value).every((key) => TRANSACTION_OPTION_KEYS.has(key)) ||
+    (mode !== "none" && mode !== "read" && mode !== "write")
+  ) {
+    fail("SHIP_OPERATION_TRANSACTION_INVALID", message, operationId, "transaction");
+  }
+  const isolation = Reflect.get(value, "isolation");
+  if (isolation !== undefined && typeof isolation !== "string") {
+    fail("SHIP_OPERATION_TRANSACTION_INVALID", message, operationId, "transaction.isolation");
+  }
+  const retry = Reflect.get(value, "retry");
+  if (retry === undefined) return;
+  if (
+    typeof retry !== "object" ||
+    retry === null ||
+    Array.isArray(retry) ||
+    !Object.keys(retry).every((key) => TRANSACTION_RETRY_KEYS.has(key)) ||
+    !Array.isArray(Reflect.get(retry, "on")) ||
+    !(Reflect.get(retry, "on") as unknown[]).every((reason) => typeof reason === "string") ||
+    typeof Reflect.get(retry, "attempts") !== "number"
+  ) {
+    fail("SHIP_OPERATION_TRANSACTION_INVALID", message, operationId, "transaction.retry");
+  }
+}
+
+function freezeTransactionDeclaration(
+  value: OperationTransactionDeclaration,
+): OperationTransactionDeclaration {
+  if (typeof value === "string") return value;
+  return Object.freeze({
+    mode: value.mode,
+    ...(value.isolation !== undefined ? { isolation: value.isolation } : {}),
+    ...(value.retry
+      ? {
+          retry: Object.freeze({
+            on: Object.freeze([...value.retry.on]),
+            attempts: value.retry.attempts,
+          }),
+        }
+      : {}),
+  });
 }
 
 const STREAM_RESPONSE_KEYS = new Set([

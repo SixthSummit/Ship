@@ -555,7 +555,7 @@ function renderInspectedNode(kind, node, permissions) {
     `operation ${node.id}`,
     `module: ${node.moduleId}`,
     `access: ${renderAccess(node.access)}`,
-    `transaction: ${node.transaction}`,
+    `transaction: ${renderTransaction(node.transaction)}`,
     `transport: ${node.transport?.binding ?? node.transport?.kind ?? "none"}`,
     `dependencies: ${displayIds(node.dependencies.map((item) => item.providerId))}`,
     `errors: ${displayIds(node.errors.map((item) => item.code))}`,
@@ -576,6 +576,16 @@ function renderInspectedNode(kind, node, permissions) {
         ]
       : []),
   ].join("\n");
+}
+
+/** `write`, or `write serializable retry=serialization,deadlock x3` for a declared policy. */
+function renderTransaction(transaction) {
+  if (typeof transaction === "string") return transaction;
+  const parts = [transaction.mode, transaction.isolation];
+  if (transaction.retry) {
+    parts.push(`retry=${transaction.retry.on.join(",")} x${transaction.retry.attempts}`);
+  }
+  return parts.join(" ");
 }
 
 function renderAccess(access) {

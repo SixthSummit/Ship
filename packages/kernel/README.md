@@ -13,6 +13,14 @@ cannot run inside a database transaction; persist an outbox command in the
 transaction and dispatch it from a separate operation when durable delivery is
 required.
 
+`transaction` is `"none"`, `"read"`, `"write"` or `{ mode, isolation?, retry? }`.
+`isolation` (`"read committed"` by default, `"repeatable read"`, `"serializable"`)
+is set by the unit of work on the outermost transaction; `retry: { on, attempts }`
+makes the executor, and only the executor, re-run the handler with a fresh unit
+of work after a `"serialization"` or `"deadlock"` failure the unit of work
+classifies, or after a listed declared error code, up to `attempts` (1 to 5).
+Results of such operations carry `attempts`. See ADR-0027.
+
 Actors carry an explicit `kind` (`human`, `system`, `provider`); `systemAccess()`
 and `providerAccess(id)` restrict operations by kind without granting any
 implicit privilege.
