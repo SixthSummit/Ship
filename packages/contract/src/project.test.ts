@@ -13,18 +13,23 @@ import {
   defineRichTextExtension,
   effectDependency,
   idempotencyStoreDependency,
+  type OperationTransactionDeclaration,
+  operationError,
   outboxIntent,
   publicAccess,
   type RealtimePublishBackend,
   type RichTextCapability,
   type RuntimeSchema,
   STORAGE_MODULE_ID,
+  type UnitOfWork,
+  unitOfWorkDependency,
   valueProvider,
 } from "@sixthsummit/ship-core";
 import { http } from "@sixthsummit/ship-hono";
 import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { createHttpOperationClient } from "./client.js";
 import { projectClientContract } from "./project.js";
 import { ContractProjectionError, contractSchema } from "./schema.js";
 
@@ -780,5 +785,131 @@ describe("projectClientContract rich text", () => {
       }),
     );
     expect(withoutRichText.richText).toBeUndefined();
+  });
+});
+
+describe("projectClientContract transaction policy", () => {
+  const transactionToken = unitOfWorkDependency<Record<string, never>>("database.primary");
+  const stale = operationError({ code: "ACCOUNT_STALE", status: 409, message: "Account is stale" });
+  const unitOfWork: UnitOfWork<Record<string, never>> = {
+    kind: "ship.unit-of-work",
+    id: "database.primary",
+    run: async (_mode, work) => work({}),
+  };
+  /**
+   * Fingerprint of this exact fixture with `transaction: "write"`, computed on
+   * the projector before isolation and retry could be declared. Existing
+   * consumers' contracts must keep hashing to the same value.
+   */
+  const PINNED_STRING_FORM_FINGERPRINT =
+    "sha256:140cc53fedba61ca221cbb2df77d102a43b5cd067bcf2cab929dfa4e3a843d0c";
+
+  function app(transaction: OperationTransactionDeclaration) {
+    const operation = defineOperation({
+      id: "accounts.rename",
+      transport: http.post("/accounts/:accountId/rename"),
+      input: {
+        params: z.object({ accountId: z.string().uuid() }),
+        body: z.object({ name: z.string().min(1) }),
+      },
+      output: { 200: z.object({ accountId: z.string().uuid(), name: z.string() }) },
+      successStatus: 200,
+      errors: [stale],
+      access: publicAccess(),
+      transaction: transaction as "write",
+      dependencies: { tx: transactionToken },
+      handler: ({ input }) => ({ accountId: input.params.accountId, name: input.body.name }),
+    });
+    return defineApp({
+      id: "fingerprint-pin",
+      modules: [
+        defineModule({
+          id: "accounts",
+          operations: [operation],
+          providers: [valueProvider(transactionToken, unitOfWork)],
+          imports: [],
+          exports: [],
+        }),
+      ],
+    });
+  }
+
+  it("keeps the string form's projection and fingerprint exactly as before", () => {
+    const contract = projectClientContract(app("write"));
+
+    expect(contract.operations[0]?.transaction).toBe("write");
+    expect(contract.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
+  });
+
+  it("projects an object form that carries only defaults identically to the string form", () => {
+    const bare = projectClientContract(app({ mode: "write" }));
+    const explicit = projectClientContract(app({ mode: "write", isolation: "read committed" }));
+
+    expect(bare.operations[0]?.transaction).toBe("write");
+    expect(bare.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
+    expect(explicit.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
+  });
+
+  it("projects isolation and retry client-safely and changes the fingerprint", () => {
+    const contract = projectClientContract(
+      app({
+        mode: "write",
+        isolation: "serializable",
+        retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
+      }),
+    );
+
+    expect(contract.operations[0]?.transaction).toEqual({
+      mode: "write",
+      isolation: "serializable",
+      retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
+    });
+    expect(contract.fingerprint).not.toBe(PINNED_STRING_FORM_FINGERPRINT);
+    expect(contract.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(Object.isFrozen(contract.operations[0]?.transaction)).toBe(true);
+    expect(JSON.stringify(contract)).not.toContain("handler");
+    expect(JSON.stringify(contract)).not.toContain("dependencies");
+
+    const isolationOnly = projectClientContract(
+      app({ mode: "write", isolation: "repeatable read" }),
+    );
+    expect(isolationOnly.operations[0]?.transaction).toEqual({
+      mode: "write",
+      isolation: "repeatable read",
+    });
+    expect(isolationOnly.fingerprint).not.toBe(contract.fingerprint);
+  });
+
+  it("is accepted by the HTTP operation client in both forms and rejected when malformed", () => {
+    const fetch = async () => new Response(null, { status: 204 });
+    const projected = projectClientContract(
+      app({ mode: "write", isolation: "serializable", retry: { on: ["deadlock"], attempts: 2 } }),
+    );
+
+    expect(() =>
+      createHttpOperationClient(projected, { baseUrl: "https://api.test", fetch }),
+    ).not.toThrow();
+    expect(() =>
+      createHttpOperationClient(projectClientContract(app("read")), {
+        baseUrl: "https://api.test",
+        fetch,
+      }),
+    ).not.toThrow();
+
+    for (const transaction of [
+      { mode: "write" },
+      { mode: "write", isolation: "snapshot" },
+      { mode: "write", isolation: "serializable", retry: { on: [], attempts: 2 } },
+      { mode: "write", isolation: "serializable", retry: { on: ["deadlock"], attempts: 0 } },
+      "ambient",
+    ]) {
+      const malformed = {
+        ...projected,
+        operations: [{ ...projected.operations[0], transaction }],
+      } as unknown as typeof projected;
+      expect(() =>
+        createHttpOperationClient(malformed, { baseUrl: "https://api.test", fetch }),
+      ).toThrow(expect.objectContaining({ code: "SHIP_CLIENT_CONTRACT_INVALID" }));
+    }
   });
 });

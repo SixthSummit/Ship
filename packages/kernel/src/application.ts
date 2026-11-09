@@ -31,7 +31,16 @@ import { isShipModule } from "./module.js";
 import type {
   AnyOperation,
   OperationStreamResponse,
+  OperationTransactionMode,
+  OperationTransactionPolicy,
   OperationTransportMetadata,
+} from "./operation.js";
+import {
+  OPERATION_TRANSACTION_ISOLATIONS,
+  OPERATION_TRANSACTION_RETRY_MAX_ATTEMPTS,
+  projectTransaction,
+  TRANSIENT_TRANSACTION_FAILURES,
+  transactionMode,
 } from "./operation.js";
 import type { AnyOutbox } from "./outbox.js";
 import { describeOutboxOperation, isOutboxDependencyToken } from "./outbox.js";
@@ -80,6 +89,10 @@ export type ApplicationDiagnosticCode =
   | "SHIP_OPERATION_UNIT_OF_WORK_REQUIRED"
   | "SHIP_OPERATION_UNIT_OF_WORK_FORBIDDEN"
   | "SHIP_OPERATION_UNIT_OF_WORK_MULTIPLE"
+  | "SHIP_OPERATION_TRANSACTION_ISOLATION_FORBIDDEN"
+  | "SHIP_OPERATION_TRANSACTION_ISOLATION_INVALID"
+  | "SHIP_OPERATION_TRANSACTION_RETRY_FORBIDDEN"
+  | "SHIP_OPERATION_TRANSACTION_RETRY_INVALID"
   | "SHIP_PROVIDER_UNIT_OF_WORK_FORBIDDEN"
   | "SHIP_OPERATION_EFFECT_UNDECLARED"
   | "SHIP_OPERATION_EFFECT_UNBOUND"
@@ -344,7 +357,8 @@ export interface OperationGraphNode {
   readonly successStatus: number;
   readonly errors: readonly OperationErrorGraphNode[];
   readonly access: AccessGraphNode;
-  readonly transaction: "none" | "read" | "write";
+  /** The mode string when the policy carries only defaults; otherwise the resolved isolation and retry policy. */
+  readonly transaction: OperationTransactionMode | OperationTransactionPolicy;
   readonly dependencies: readonly DependencyGraphNode[];
   readonly effects: readonly EffectGraphNode[];
   readonly transport?: TransportGraphNode;
@@ -696,6 +710,7 @@ function compileDiagnostics(
 
     for (const operation of module.operations) {
       checkOperationUnitOfWork(appId, module, operation, diagnostics);
+      checkOperationTransactionPolicy(appId, module, operation, diagnostics);
       checkOperationEffects(appId, module, operation, diagnostics);
       checkOperationOutbox(appId, module, operation, diagnostics);
       checkOperationStream(appId, module, operation, diagnostics);
@@ -1220,7 +1235,8 @@ function checkOperationUnitOfWork(
     path: "transaction",
   };
 
-  if (operation.transaction === "none" && entries.length > 0) {
+  const mode = transactionMode(operation);
+  if (mode === "none" && entries.length > 0) {
     diagnostics.push(
       diagnostic(
         "SHIP_OPERATION_UNIT_OF_WORK_FORBIDDEN",
@@ -1229,7 +1245,7 @@ function checkOperationUnitOfWork(
         context,
       ),
     );
-  } else if (operation.transaction !== "none" && entries.length === 0) {
+  } else if (mode !== "none" && entries.length === 0) {
     diagnostics.push(
       diagnostic(
         "SHIP_OPERATION_UNIT_OF_WORK_REQUIRED",
@@ -1245,6 +1261,110 @@ function checkOperationUnitOfWork(
         `operation ${JSON.stringify(operation.id)} declares multiple unit-of-work dependencies`,
         "Use exactly one atomic database boundary per operation.",
         context,
+      ),
+    );
+  }
+}
+
+/**
+ * Value rules for the object form of `transaction`. The definition validator
+ * only checks the shape, so one compile reports every violation at once.
+ */
+function checkOperationTransactionPolicy(
+  appId: string,
+  module: AnyModule,
+  operation: AnyOperation,
+  diagnostics: ApplicationDiagnostic[],
+): void {
+  if (typeof operation.transaction === "string") return;
+  const declaration = operation.transaction;
+  const context = { appId, moduleId: module.id, operationId: operation.id };
+  const label = JSON.stringify(operation.id);
+
+  if (declaration.isolation !== undefined) {
+    if (declaration.mode === "none") {
+      diagnostics.push(
+        diagnostic(
+          "SHIP_OPERATION_TRANSACTION_ISOLATION_FORBIDDEN",
+          `non-transactional operation ${label} declares an isolation level`,
+          "Set mode to read or write; isolation applies to the transaction the unit of work opens.",
+          { ...context, path: "transaction.isolation" },
+        ),
+      );
+    }
+    if (!OPERATION_TRANSACTION_ISOLATIONS.includes(declaration.isolation)) {
+      diagnostics.push(
+        diagnostic(
+          "SHIP_OPERATION_TRANSACTION_ISOLATION_INVALID",
+          `operation ${label} declares unknown isolation level ${JSON.stringify(declaration.isolation)}`,
+          `Use one of ${OPERATION_TRANSACTION_ISOLATIONS.map((level) => JSON.stringify(level)).join(", ")}.`,
+          { ...context, path: "transaction.isolation" },
+        ),
+      );
+    }
+  }
+
+  const retry = declaration.retry;
+  if (!retry) return;
+  const path = "transaction.retry";
+  if (declaration.mode === "none") {
+    diagnostics.push(
+      diagnostic(
+        "SHIP_OPERATION_TRANSACTION_RETRY_FORBIDDEN",
+        `non-transactional operation ${label} declares a transaction retry policy`,
+        "Set mode to read or write; the executor can only replay a handler whose work rolled back with its transaction.",
+        { ...context, path },
+      ),
+    );
+  }
+  if (
+    !Number.isInteger(retry.attempts) ||
+    retry.attempts < 1 ||
+    retry.attempts > OPERATION_TRANSACTION_RETRY_MAX_ATTEMPTS
+  ) {
+    diagnostics.push(
+      diagnostic(
+        "SHIP_OPERATION_TRANSACTION_RETRY_INVALID",
+        `operation ${label} declares retry attempts ${JSON.stringify(retry.attempts)}`,
+        `Declare an integer from 1 to ${OPERATION_TRANSACTION_RETRY_MAX_ATTEMPTS}, counting the first attempt.`,
+        { ...context, path: `${path}.attempts` },
+      ),
+    );
+  }
+  if (retry.on.length === 0) {
+    diagnostics.push(
+      diagnostic(
+        "SHIP_OPERATION_TRANSACTION_RETRY_INVALID",
+        `operation ${label} declares a retry policy that retries on nothing`,
+        'List "serialization", "deadlock", or declared error codes in retry.on.',
+        { ...context, path: `${path}.on` },
+      ),
+    );
+  }
+  const declaredCodes = new Set(operation.errors.map((error) => error.code));
+  const seen = new Set<string>();
+  for (const reason of retry.on) {
+    if (seen.has(reason)) {
+      diagnostics.push(
+        diagnostic(
+          "SHIP_OPERATION_TRANSACTION_RETRY_INVALID",
+          `operation ${label} lists retry reason ${JSON.stringify(reason)} more than once`,
+          "List each retry reason once.",
+          { ...context, path: `${path}.on` },
+        ),
+      );
+      continue;
+    }
+    seen.add(reason);
+    if (TRANSIENT_TRANSACTION_FAILURES.includes(reason as never) || declaredCodes.has(reason)) {
+      continue;
+    }
+    diagnostics.push(
+      diagnostic(
+        "SHIP_OPERATION_TRANSACTION_RETRY_INVALID",
+        `operation ${label} retries on ${JSON.stringify(reason)}, which is neither a transient failure nor one of its declared error codes`,
+        'Use "serialization", "deadlock", or a code from the errors list of this operation.',
+        { ...context, path: `${path}.on` },
       ),
     );
   }
@@ -1296,7 +1416,7 @@ function checkOperationEffects(
       ),
     );
   }
-  if (operation.effects.length > 0 && operation.transaction !== "none") {
+  if (operation.effects.length > 0 && transactionMode(operation) !== "none") {
     diagnostics.push(
       diagnostic(
         "SHIP_OPERATION_EFFECT_TRANSACTION_FORBIDDEN",
@@ -1323,7 +1443,7 @@ function checkOperationOutbox(
     left.localeCompare(right),
   )) {
     if (!isOutboxDependencyToken(token) || token.role !== "writer") continue;
-    if (operation.transaction === "write") continue;
+    if (transactionMode(operation) === "write") continue;
     diagnostics.push(
       diagnostic(
         "SHIP_OUTBOX_WRITER_TRANSACTION_INVALID",
@@ -1349,7 +1469,7 @@ function checkOperationCache(
 ): void {
   const context = { appId, moduleId: module.id, operationId: operation.id };
   if (operation.cache) {
-    if (operation.transaction === "write") {
+    if (transactionMode(operation) === "write") {
       diagnostics.push(
         diagnostic(
           "SHIP_CACHE_TRANSACTION_FORBIDDEN",
@@ -1433,7 +1553,7 @@ function checkOperationCache(
   if (
     operation.invalidates &&
     operation.invalidates.length > 0 &&
-    operation.transaction !== "write"
+    transactionMode(operation) !== "write"
   ) {
     diagnostics.push(
       diagnostic(
@@ -1664,11 +1784,11 @@ function checkOperationStream(
   if (response?.mode !== "stream") return;
   const context = { appId, moduleId: module.id, operationId: operation.id };
 
-  if (operation.transaction !== "none") {
+  if (transactionMode(operation) !== "none") {
     diagnostics.push(
       diagnostic(
         "SHIP_OPERATION_STREAM_TRANSACTION_FORBIDDEN",
-        `streaming operation ${JSON.stringify(operation.id)} declares transaction ${JSON.stringify(operation.transaction)}`,
+        `streaming operation ${JSON.stringify(operation.id)} declares transaction ${JSON.stringify(transactionMode(operation))}`,
         'Streams outlive any bounded transaction; declare transaction "none" and open scoped work inside the handler.',
         { ...context, path: "transaction" },
       ),
@@ -2010,7 +2130,7 @@ function projectOperation(moduleId: string, operation: AnyOperation): OperationG
         .sort(compareBy((error) => error.code)),
     ),
     access: projectAccess(operation.access),
-    transaction: operation.transaction,
+    transaction: projectTransaction(operation),
     dependencies: projectDependencies(operation.dependencies),
     effects: Object.freeze(
       operation.effects

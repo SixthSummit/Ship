@@ -108,13 +108,34 @@ export interface ClientContractChannel {
   readonly presence: boolean;
 }
 
+export type ClientContractTransactionMode = "none" | "read" | "write";
+export type ClientContractTransactionIsolation =
+  | "read committed"
+  | "repeatable read"
+  | "serializable";
+
+/**
+ * The resolved transaction policy, projected only when it carries more than
+ * the defaults. `on` lists `serialization`, `deadlock` and declared error codes.
+ */
+export interface ClientContractTransactionPolicy {
+  readonly mode: ClientContractTransactionMode;
+  readonly isolation: ClientContractTransactionIsolation;
+  readonly retry?: { readonly on: readonly string[]; readonly attempts: number };
+}
+
+/** The mode string for a default policy, so existing fingerprints are unchanged; otherwise the resolved policy. */
+export type ClientContractTransaction =
+  | ClientContractTransactionMode
+  | ClientContractTransactionPolicy;
+
 export interface ClientContractOperation {
   readonly id: string;
   readonly input: Readonly<Record<string, ProjectedContractSchema>>;
   readonly success: readonly ClientContractSuccess[];
   readonly errors: readonly ClientContractError[];
   readonly access: ClientContractAccess;
-  readonly transaction: "none" | "read" | "write";
+  readonly transaction: ClientContractTransaction;
   readonly transport?: ClientContractTransport;
   /** Present when the executor enforces an idempotency window for this operation. */
   readonly idempotency?: { readonly windowMs: number };

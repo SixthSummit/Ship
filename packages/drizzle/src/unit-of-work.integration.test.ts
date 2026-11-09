@@ -10,10 +10,15 @@ import {
   valueProvider,
 } from "@sixthsummit/ship-core";
 import { type PostgresTestDb, setupPostgresTestDb, truncateAll } from "@sixthsummit/ship-testing";
-import { pgTable, serial, text } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { integer, pgTable, serial, text } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { createDrizzleUnitOfWork, type DrizzleTransaction } from "./unit-of-work.js";
+import {
+  classifyPostgresTransactionFailure,
+  createDrizzleUnitOfWork,
+  type DrizzleTransaction,
+} from "./unit-of-work.js";
 
 const domainWrites = pgTable("uow_domain_writes", {
   id: serial("id").primaryKey(),
@@ -25,13 +30,20 @@ const auditWrites = pgTable("uow_audit_writes", {
   action: text("action").notNull(),
 });
 
-const schema = { domainWrites, auditWrites };
+const counters = pgTable("uow_counters", {
+  id: serial("id").primaryKey(),
+  value: integer("value").notNull(),
+});
+
+const schema = { domainWrites, auditWrites, counters };
 type Schema = typeof schema;
 type Transaction = DrizzleTransaction<Schema>;
 
 interface TransactionCapabilities {
   readonly domain: DomainRepository;
   readonly audit: AuditRepository;
+  readonly counters: CounterRepository;
+  readonly probe: TransactionProbe;
 }
 
 const transactionToken = unitOfWorkDependency<TransactionCapabilities>("database.integration");
@@ -57,6 +69,47 @@ class AuditRepository {
   }
 }
 
+class CounterRepository {
+  constructor(private readonly transaction: Transaction) {}
+
+  async sum(): Promise<number> {
+    const [row] = await this.transaction
+      .select({ total: sql<number>`coalesce(sum(${counters.value}), 0)::int` })
+      .from(counters);
+    return row?.total ?? 0;
+  }
+
+  async append(value: number): Promise<void> {
+    await this.transaction.insert(counters).values({ value });
+  }
+}
+
+/** Reads transaction settings PostgreSQL reports for the open transaction. */
+class TransactionProbe {
+  constructor(private readonly transaction: Transaction) {}
+
+  async isolation(): Promise<string> {
+    const result = await this.transaction.execute(sql`show transaction_isolation`);
+    return String((result.rows[0] as { transaction_isolation: string }).transaction_isolation);
+  }
+}
+
+/** Resolves every arrival once `size` callers have arrived; later arrivals pass straight through. */
+function createBarrier(size: number) {
+  let arrived = 0;
+  let release!: () => void;
+  const open = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return {
+    arrive(): Promise<void> {
+      arrived += 1;
+      if (arrived >= size) release();
+      return open;
+    },
+  };
+}
+
 describe("Drizzle unit of work integration", () => {
   let context: PostgresTestDb<Schema>;
 
@@ -80,6 +133,8 @@ describe("Drizzle unit of work integration", () => {
       create: (transaction) => ({
         domain: new DomainRepository(transaction),
         audit: new AuditRepository(transaction),
+        counters: new CounterRepository(transaction),
+        probe: new TransactionProbe(transaction),
       }),
     });
   }
@@ -252,6 +307,140 @@ describe("Drizzle unit of work integration", () => {
       work.run("read", () => work.run("write", ({ domain }) => domain.insert("not-allowed"))),
     ).rejects.toMatchObject({ code: "SHIP_DRIZZLE_TRANSACTION_MODE_ESCALATION" });
     expect(await context.db.select().from(domainWrites)).toHaveLength(0);
+  });
+
+  it("applies the declared isolation level to the outermost transaction only", async () => {
+    const work = unitOfWork();
+
+    expect(await work.run("read", ({ probe }) => probe.isolation())).toBe("read committed");
+    expect(
+      await work.run("read", ({ probe }) => probe.isolation(), { isolation: "repeatable read" }),
+    ).toBe("repeatable read");
+    expect(
+      await work.run(
+        "write",
+        ({ probe }) =>
+          // A nested run joins the open transaction; its own level is ignored.
+          work.run("write", ({ probe: nested }) => nested.isolation(), {
+            isolation: "read committed",
+          }),
+        { isolation: "serializable" },
+      ),
+    ).toBe("serializable");
+  });
+
+  it("retries a serializable write that PostgreSQL aborts with 40001 and commits it once", async () => {
+    const work = unitOfWork();
+    const barrier = createBarrier(2);
+    const handlerRuns: number[] = [];
+    const operation = defineOperation({
+      id: "counters.append",
+      input: { body: z.object({ writer: z.number().int() }) },
+      output: { 200: z.object({ value: z.number().int() }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: {
+        mode: "write",
+        isolation: "serializable",
+        retry: { on: ["serialization"], attempts: 3 },
+      },
+      dependencies: { tx: transactionToken },
+      handler: async ({ input, services }) => {
+        handlerRuns.push(input.body.writer);
+        // Classic write skew: read the whole table, then append a value
+        // derived from what was read. Under SERIALIZABLE the second committer
+        // of two concurrent runs is aborted with a serialization failure.
+        const next = (await services.tx.counters.sum()) + 1;
+        await barrier.arrive();
+        await services.tx.counters.append(next);
+        return { value: next };
+      },
+    });
+    const operationExecutor = createExecutor(
+      defineApp({
+        id: "serializable",
+        modules: [
+          defineModule({
+            id: "counters",
+            operations: [operation],
+            providers: [valueProvider(transactionToken, work)],
+            imports: [],
+            exports: [],
+          }),
+        ],
+      }),
+    );
+
+    const results = await Promise.all([
+      operationExecutor.run("counters.append", { body: { writer: 1 } }),
+      operationExecutor.run("counters.append", { body: { writer: 2 } }),
+    ]);
+
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(results.map((result) => result.attempts).sort()).toEqual([1, 2]);
+    // Three handler runs: both first attempts plus the one retry. Two rows:
+    // the retried attempt observed the committed row and appended after it.
+    expect(handlerRuns).toHaveLength(3);
+    expect((await context.db.select().from(counters)).map((row) => row.value).sort()).toEqual([
+      1, 2,
+    ]);
+  });
+
+  it("gives up after the declared attempts and surfaces the serialization failure", async () => {
+    const work = unitOfWork();
+    const operation = defineOperation({
+      id: "counters.append",
+      input: {},
+      output: { 200: z.object({ ok: z.literal(true) }) },
+      successStatus: 200,
+      errors: [],
+      access: publicAccess(),
+      transaction: {
+        mode: "write",
+        isolation: "serializable",
+        retry: { on: ["serialization"], attempts: 2 },
+      },
+      dependencies: { tx: transactionToken },
+      handler: async ({ services }) => {
+        const next = (await services.tx.counters.sum()) + 1;
+        // A rival serializable transaction on its own connection that reads
+        // the same rows and commits first, on every attempt.
+        await context.db.transaction(
+          async (rival) => {
+            await new CounterRepository(rival).sum();
+            await new CounterRepository(rival).append(100 + next);
+          },
+          { isolationLevel: "serializable" },
+        );
+        await services.tx.counters.append(next);
+        return { ok: true as const };
+      },
+    });
+    const operationExecutor = createExecutor(
+      defineApp({
+        id: "serializable-exhausted",
+        modules: [
+          defineModule({
+            id: "counters",
+            operations: [operation],
+            providers: [valueProvider(transactionToken, work)],
+            imports: [],
+            exports: [],
+          }),
+        ],
+      }),
+    );
+    const failing = operationExecutor.run("counters.append", {});
+
+    await expect(failing).rejects.toMatchObject({
+      code: expect.stringMatching(/^SHIP_OPERATION_(TRANSACTION|HANDLER)_FAILED$/),
+    });
+    expect(classifyPostgresTransactionFailure(await failing.catch((error) => error))).toBe(
+      "serialization",
+    );
+    // Only the rivals committed, one per attempt; the operation never did.
+    expect((await context.db.select().from(counters)).map((row) => row.value)).toEqual([101, 202]);
   });
 
   it("rolls back a joined failure even when outer work catches it", async () => {

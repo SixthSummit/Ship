@@ -89,6 +89,7 @@ export type {
   UnitOfWorkMode,
 } from "./unit-of-work.js";
 export {
+  classifyPostgresTransactionFailure,
   createDrizzleUnitOfWork,
   DrizzleUnitOfWorkError,
   transactionForScope,

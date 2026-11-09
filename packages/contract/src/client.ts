@@ -924,9 +924,7 @@ function assertContract(contract: ClientContract): void {
       !Array.isArray(operation.success) ||
       operation.success.length === 0 ||
       !Array.isArray(operation.errors) ||
-      (operation.transaction !== "none" &&
-        operation.transaction !== "read" &&
-        operation.transaction !== "write") ||
+      !isContractTransaction(operation.transaction) ||
       (operation.publishes !== undefined && !Array.isArray(operation.publishes)) ||
       (operation.attachments !== undefined && !Array.isArray(operation.attachments)) ||
       (operation.richText !== undefined && !Array.isArray(operation.richText))
@@ -984,6 +982,26 @@ function assertContract(contract: ClientContract): void {
     if (operation.transport !== undefined) assertContractTransport(operation);
     assertContractStreamResponse(operation);
   }
+}
+
+const TRANSACTION_MODES = new Set(["none", "read", "write"]);
+const TRANSACTION_ISOLATIONS = new Set(["read committed", "repeatable read", "serializable"]);
+
+/** The mode string, or the resolved `{ mode, isolation, retry? }` policy a newer projector emits. */
+function isContractTransaction(value: unknown): boolean {
+  if (typeof value === "string") return TRANSACTION_MODES.has(value);
+  if (!isRecord(value) || !TRANSACTION_MODES.has(value.mode as string)) return false;
+  if (!TRANSACTION_ISOLATIONS.has(value.isolation as string)) return false;
+  if (value.retry === undefined) return true;
+  const retry = value.retry;
+  return (
+    isRecord(retry) &&
+    Array.isArray(retry.on) &&
+    retry.on.length > 0 &&
+    retry.on.every((reason) => typeof reason === "string" && reason.length > 0) &&
+    Number.isInteger(retry.attempts) &&
+    (retry.attempts as number) >= 1
+  );
 }
 
 function isDeclaredFailureHeaders(value: unknown): value is readonly string[] {

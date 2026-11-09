@@ -199,6 +199,7 @@ export type {
   ResolveDependencyBindings,
   UnitOfWork,
   UnitOfWorkDependencyToken,
+  UnitOfWorkRunOptions,
 } from "./dependency.js";
 export {
   dependency,
@@ -413,18 +414,30 @@ export type {
   OperationStreamArguments,
   OperationStreamFrameInput,
   OperationStreamResponse,
+  OperationTransactionDeclaration,
+  OperationTransactionIsolation,
   OperationTransactionMode,
+  OperationTransactionOptions,
+  OperationTransactionPolicy,
+  OperationTransactionRetry,
   OperationTransport,
   OperationTransportMetadata,
   OperationTransportMetadataPrimitive,
   OperationTransportMetadataValue,
+  TransientTransactionFailure,
 } from "./operation.js";
 export {
   defineOperation,
   InvalidOperationDefinitionError,
   isExplicitOperationResponse,
   isOperationStreamResponse,
+  OPERATION_TRANSACTION_ISOLATIONS,
+  OPERATION_TRANSACTION_RETRY_MAX_ATTEMPTS,
+  projectTransaction,
   respond,
+  TRANSIENT_TRANSACTION_FAILURES,
+  transactionMode,
+  transactionPolicy,
 } from "./operation.js";
 export type {
   OperationErrorDefinition,

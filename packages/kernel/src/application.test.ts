@@ -17,6 +17,7 @@ import {
 } from "./dependency.js";
 import { type AnyModule, defineModule } from "./module.js";
 import { defineOperation } from "./operation.js";
+import { operationError } from "./operation-error.js";
 import { defineProvider } from "./provider.js";
 
 const clockToken = dependency<{ now(): Date }>("platform.clock");
@@ -285,6 +286,160 @@ describe("compileApp", () => {
     expect(diagnosticCodes([module("accounts", { operations: [operation], providers })])).toEqual(
       codes,
     );
+  });
+
+  describe("transaction policy", () => {
+    const stale = operationError({
+      code: "ACCOUNT_STALE",
+      status: 409,
+      message: "Account is stale",
+    });
+    function transactional(transaction: unknown) {
+      return defineOperation({
+        id: "accounts.save",
+        input: {},
+        output: { 200: z.object({ ok: z.literal(true) }) },
+        successStatus: 200,
+        errors: [stale],
+        access: publicAccess(),
+        transaction: transaction as "write",
+        dependencies: { tx: unitOfWorkToken },
+        handler: () => ({ ok: true as const }),
+      });
+    }
+    function compile(transaction: unknown, dependencies?: "none") {
+      const declared = transactional(transaction);
+      const operation =
+        dependencies === "none" ? { ...declared, dependencies: {} } : (declared as never);
+      return module("accounts", {
+        operations: [operation as never],
+        providers: [provider(unitOfWorkToken, {}, "singleton")],
+      });
+    }
+
+    it("compiles the object form and projects the resolved policy into the graph", () => {
+      const app = defineApp({
+        id: "fixture-api",
+        modules: [
+          compile({
+            mode: "write",
+            isolation: "serializable",
+            retry: { on: ["serialization", "deadlock", "ACCOUNT_STALE"], attempts: 3 },
+          }),
+        ],
+      });
+
+      expect(app.graph.operations[0]?.transaction).toEqual({
+        mode: "write",
+        isolation: "serializable",
+        retry: { on: ["serialization", "deadlock", "ACCOUNT_STALE"], attempts: 3 },
+      });
+    });
+
+    it("projects an object form carrying only defaults as the mode string", () => {
+      const app = defineApp({
+        id: "fixture-api",
+        modules: [compile({ mode: "write", isolation: "read committed" })],
+      });
+
+      expect(app.graph.operations[0]?.transaction).toBe("write");
+    });
+
+    it.each([
+      [
+        "isolation on a none operation",
+        { mode: "none", isolation: "serializable" },
+        "none",
+        ["SHIP_OPERATION_TRANSACTION_ISOLATION_FORBIDDEN"],
+      ],
+      [
+        "an unknown isolation level",
+        { mode: "write", isolation: "snapshot" },
+        undefined,
+        ["SHIP_OPERATION_TRANSACTION_ISOLATION_INVALID"],
+      ],
+      [
+        "retry on a none operation",
+        { mode: "none", retry: { on: ["deadlock"], attempts: 2 } },
+        "none",
+        ["SHIP_OPERATION_TRANSACTION_RETRY_FORBIDDEN"],
+      ],
+      [
+        "zero attempts",
+        { mode: "write", retry: { on: ["serialization"], attempts: 0 } },
+        undefined,
+        ["SHIP_OPERATION_TRANSACTION_RETRY_INVALID"],
+      ],
+      [
+        "more than five attempts",
+        { mode: "write", retry: { on: ["serialization"], attempts: 6 } },
+        undefined,
+        ["SHIP_OPERATION_TRANSACTION_RETRY_INVALID"],
+      ],
+      [
+        "fractional attempts",
+        { mode: "write", retry: { on: ["serialization"], attempts: 2.5 } },
+        undefined,
+        ["SHIP_OPERATION_TRANSACTION_RETRY_INVALID"],
+      ],
+      [
+        "an empty retry list",
+        { mode: "write", retry: { on: [], attempts: 2 } },
+        undefined,
+        ["SHIP_OPERATION_TRANSACTION_RETRY_INVALID"],
+      ],
+      [
+        "an undeclared error code",
+        { mode: "write", retry: { on: ["ACCOUNT_NOT_FOUND"], attempts: 2 } },
+        undefined,
+        ["SHIP_OPERATION_TRANSACTION_RETRY_INVALID"],
+      ],
+      [
+        "a repeated retry reason",
+        { mode: "write", retry: { on: ["deadlock", "deadlock"], attempts: 2 } },
+        undefined,
+        ["SHIP_OPERATION_TRANSACTION_RETRY_INVALID"],
+      ],
+      [
+        "isolation and retry together on a none operation",
+        {
+          mode: "none",
+          isolation: "repeatable read",
+          retry: { on: ["serialization"], attempts: 2 },
+        },
+        "none",
+        [
+          "SHIP_OPERATION_TRANSACTION_ISOLATION_FORBIDDEN",
+          "SHIP_OPERATION_TRANSACTION_RETRY_FORBIDDEN",
+        ],
+      ],
+    ] satisfies readonly [
+      string,
+      unknown,
+      "none" | undefined,
+      readonly ApplicationDiagnosticCode[],
+    ][])("rejects %s", (_name, transaction, dependencies, codes) => {
+      expect(diagnosticCodes([compile(transaction, dependencies)])).toEqual(codes);
+    });
+
+    it("accepts every valid isolation level and retry reason without diagnostics", () => {
+      for (const isolation of ["read committed", "repeatable read", "serializable"]) {
+        expect(() =>
+          defineApp({
+            id: "fixture-api",
+            modules: [
+              compile({ mode: "read", isolation, retry: { on: ["serialization"], attempts: 5 } }),
+            ],
+          }),
+        ).not.toThrow();
+      }
+      expect(() =>
+        defineApp({
+          id: "fixture-api",
+          modules: [compile({ mode: "write", retry: { on: ["ACCOUNT_STALE"], attempts: 1 } })],
+        }),
+      ).not.toThrow();
+    });
   });
 
   it("rejects multiple unit-of-work dependencies", () => {

@@ -13,7 +13,12 @@ import { defineApp } from "./application.js";
 import { dependency, type UnitOfWork, unitOfWorkDependency } from "./dependency.js";
 import { createExecutor, OperationExecutionError, type OperationRunOptions } from "./executor.js";
 import { defineModule } from "./module.js";
-import { defineOperation, type OperationContext, respond } from "./operation.js";
+import {
+  defineOperation,
+  type OperationContext,
+  type OperationTransactionDeclaration,
+  respond,
+} from "./operation.js";
 import {
   type OperationErrorDefinition,
   OperationFailure,
@@ -917,6 +922,305 @@ describe("createExecutor", () => {
     const result = await executor.run("fixture.read", { params: { id: 1 } }, { requestId: "   " });
 
     expect(result.requestId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe("transaction isolation and retry", () => {
+  type Transaction = OperationTransactionDeclaration;
+
+  /** SQLSTATE-shaped failure the way a driver raises it. */
+  function sqlstate(code: string): Error & { code: string } {
+    return Object.assign(new Error(`SQLSTATE ${code}`), { code });
+  }
+
+  /** Classifies like the Drizzle adapter: SQLSTATE anywhere in the cause chain. */
+  function classify(error: unknown): "serialization" | "deadlock" | undefined {
+    for (let current = error; typeof current === "object" && current !== null; ) {
+      const code = Reflect.get(current, "code");
+      if (code === "40001") return "serialization";
+      if (code === "40P01") return "deadlock";
+      current = Reflect.get(current, "cause");
+    }
+    return undefined;
+  }
+
+  /**
+   * A controller that records every scope it opens, the options it received,
+   * and how many scopes committed (work resolved) versus rolled back.
+   */
+  function controller(options: { readonly failCommit?: (attempt: number) => unknown } = {}) {
+    const scopes: { readonly id: number; readonly options: unknown }[] = [];
+    const state = { commits: 0, rollbacks: 0 };
+    const capabilitiesByScope: object[] = [];
+    const unitOfWork: UnitOfWork<TransactionCapabilities> = {
+      kind: "ship.unit-of-work",
+      id: "database.primary",
+      classifyFailure: classify,
+      async run(_mode, work, runOptions) {
+        const id = scopes.length + 1;
+        scopes.push({ id, options: runOptions });
+        const capabilities: TransactionCapabilities = { records: { save: (value) => value } };
+        capabilitiesByScope.push(capabilities);
+        try {
+          const result = await work(capabilities);
+          const commitFailure = options.failCommit?.(id);
+          if (commitFailure !== undefined) throw commitFailure;
+          state.commits += 1;
+          return result;
+        } catch (error) {
+          state.rollbacks += 1;
+          throw error;
+        }
+      },
+    };
+    return { unitOfWork, scopes, state, capabilitiesByScope };
+  }
+
+  function fixture(
+    transaction: Transaction,
+    unitOfWork: UnitOfWork<TransactionCapabilities>,
+    handler: (arguments_: {
+      readonly input: { readonly body: { readonly value: number } };
+      readonly services: { readonly tx: TransactionCapabilities };
+    }) => unknown,
+  ) {
+    const operation = defineOperation({
+      id: "fixture.write",
+      input: { body: z.object({ value: z.number() }) },
+      output: { 200: z.object({ value: z.number() }) },
+      successStatus: 200,
+      errors: [conflict, notFound],
+      access: publicAccess(),
+      transaction: transaction as "write",
+      dependencies: { tx: transactionToken },
+      handler,
+    });
+    const module = defineModule({
+      id: "fixture",
+      operations: [operation],
+      providers: [valueProvider(transactionToken, unitOfWork)],
+      imports: [],
+      exports: [],
+    });
+    return createExecutor(defineApp({ id: "fixture-api", modules: [module] }));
+  }
+
+  const serializable: Transaction = {
+    mode: "write",
+    isolation: "serializable",
+    retry: { on: ["serialization"], attempts: 3 },
+  };
+
+  it("passes a non-default isolation level to the unit of work and nothing for the default", async () => {
+    const strict = controller();
+    await fixture(serializable, strict.unitOfWork, () => ({ value: 1 })).run(
+      "fixture.write",
+      { body: { value: 1 } },
+      runOptions,
+    );
+    expect(strict.scopes.map((scope) => scope.options)).toEqual([{ isolation: "serializable" }]);
+
+    const plain = controller();
+    await fixture("write", plain.unitOfWork, () => ({ value: 1 })).run(
+      "fixture.write",
+      { body: { value: 1 } },
+      runOptions,
+    );
+    const explicit = controller();
+    await fixture({ mode: "write", isolation: "read committed" }, explicit.unitOfWork, () => ({
+      value: 1,
+    })).run("fixture.write", { body: { value: 1 } }, runOptions);
+    expect(plain.scopes.map((scope) => scope.options)).toEqual([undefined]);
+    expect(explicit.scopes.map((scope) => scope.options)).toEqual([undefined]);
+  });
+
+  it("re-runs the handler in a fresh unit of work after a serialization failure at commit", async () => {
+    const db = controller({
+      failCommit: (attempt) => (attempt === 1 ? sqlstate("40001") : undefined),
+    });
+    const handler = vi.fn(({ input, services }) => ({
+      value: services.tx.records.save(input.body.value),
+    }));
+
+    await expect(
+      fixture(serializable, db.unitOfWork, handler).run(
+        "fixture.write",
+        { body: { value: 7 } },
+        runOptions,
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      status: 200,
+      data: { value: 7 },
+      requestId: "request-1",
+      attempts: 2,
+    });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(db.state).toEqual({ commits: 1, rollbacks: 1 });
+    expect(handler.mock.calls[0]?.[0].services.tx).toBe(db.capabilitiesByScope[0]);
+    expect(handler.mock.calls[1]?.[0].services.tx).toBe(db.capabilitiesByScope[1]);
+    expect(handler.mock.calls[1]?.[0].services.tx).not.toBe(db.capabilitiesByScope[0]);
+  });
+
+  it("retries a driver failure the handler surfaced, wrapped by the handler-failure diagnostic", async () => {
+    const db = controller();
+    let calls = 0;
+    const handler = vi.fn(() => {
+      calls += 1;
+      if (calls === 1) throw sqlstate("40P01");
+      return { value: 1 };
+    });
+
+    await expect(
+      fixture(
+        { mode: "write", retry: { on: ["deadlock"], attempts: 2 } },
+        db.unitOfWork,
+        handler,
+      ).run("fixture.write", { body: { value: 1 } }, runOptions),
+    ).resolves.toMatchObject({ ok: true, attempts: 2 });
+    expect(db.state).toEqual({ commits: 1, rollbacks: 1 });
+  });
+
+  it("stops at the declared attempt count and surfaces the last transient failure", async () => {
+    const db = controller({ failCommit: () => sqlstate("40001") });
+    const handler = vi.fn(() => ({ value: 1 }));
+
+    await expect(
+      fixture(serializable, db.unitOfWork, handler).run(
+        "fixture.write",
+        { body: { value: 1 } },
+        runOptions,
+      ),
+    ).rejects.toMatchObject({
+      code: "SHIP_OPERATION_TRANSACTION_FAILED",
+      cause: expect.objectContaining({ code: "40001" }),
+    });
+    expect(handler).toHaveBeenCalledTimes(3);
+    expect(db.state).toEqual({ commits: 0, rollbacks: 3 });
+  });
+
+  it("retries a declared error code listed in the policy and returns the last failure with its attempts", async () => {
+    const db = controller();
+    const handler = vi.fn(() => {
+      throw operationFailure(conflict);
+    });
+
+    await expect(
+      fixture(
+        { mode: "write", retry: { on: ["FIXTURE_CONFLICT"], attempts: 2 } },
+        db.unitOfWork,
+        handler,
+      ).run("fixture.write", { body: { value: 1 } }, runOptions),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 409,
+      error: { code: "FIXTURE_CONFLICT" },
+      attempts: 2,
+    });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(db.state).toEqual({ commits: 0, rollbacks: 2 });
+  });
+
+  it("never retries a declared failure the policy does not list", async () => {
+    const db = controller();
+    const handler = vi.fn(() => {
+      throw operationFailure(notFound, { details: { id: 1 } });
+    });
+
+    await expect(
+      fixture(serializable, db.unitOfWork, handler).run(
+        "fixture.write",
+        { body: { value: 1 } },
+        runOptions,
+      ),
+    ).resolves.toMatchObject({ ok: false, status: 404, attempts: 1 });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("never retries a transient kind the policy does not list, nor an unclassified failure", async () => {
+    const deadlocked = controller({ failCommit: () => sqlstate("40P01") });
+    await expect(
+      fixture(serializable, deadlocked.unitOfWork, () => ({ value: 1 })).run(
+        "fixture.write",
+        { body: { value: 1 } },
+        runOptions,
+      ),
+    ).rejects.toMatchObject({ code: "SHIP_OPERATION_TRANSACTION_FAILED" });
+    expect(deadlocked.state).toEqual({ commits: 0, rollbacks: 1 });
+
+    const unavailable = controller({ failCommit: () => new Error("connection reset") });
+    await expect(
+      fixture(serializable, unavailable.unitOfWork, () => ({ value: 1 })).run(
+        "fixture.write",
+        { body: { value: 1 } },
+        runOptions,
+      ),
+    ).rejects.toMatchObject({ code: "SHIP_OPERATION_TRANSACTION_FAILED" });
+    expect(unavailable.state).toEqual({ commits: 0, rollbacks: 1 });
+
+    const crashed = controller();
+    const handler = vi.fn(() => {
+      throw new Error("handler defect");
+    });
+    await expect(
+      fixture(serializable, crashed.unitOfWork, handler).run(
+        "fixture.write",
+        { body: { value: 1 } },
+        runOptions,
+      ),
+    ).rejects.toMatchObject({ code: "SHIP_OPERATION_HANDLER_FAILED" });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries declared codes alone when the unit of work cannot classify driver failures", async () => {
+    const db = controller({
+      failCommit: (attempt) => (attempt === 1 ? sqlstate("40001") : undefined),
+    });
+    const unclassifying: UnitOfWork<TransactionCapabilities> = {
+      kind: "ship.unit-of-work",
+      id: "database.primary",
+      run: db.unitOfWork.run,
+    };
+
+    await expect(
+      fixture(serializable, unclassifying, () => ({ value: 1 })).run(
+        "fixture.write",
+        { body: { value: 1 } },
+        runOptions,
+      ),
+    ).rejects.toMatchObject({ code: "SHIP_OPERATION_TRANSACTION_FAILED" });
+    expect(db.state).toEqual({ commits: 0, rollbacks: 1 });
+  });
+
+  it("does not retry once the caller has aborted", async () => {
+    const abort = new AbortController();
+    const db = controller({
+      failCommit: () => {
+        abort.abort();
+        return sqlstate("40001");
+      },
+    });
+
+    await expect(
+      fixture(serializable, db.unitOfWork, () => ({ value: 1 })).run(
+        "fixture.write",
+        { body: { value: 1 } },
+        { ...runOptions, signal: abort.signal },
+      ),
+    ).rejects.toMatchObject({ code: "SHIP_OPERATION_TRANSACTION_FAILED" });
+    expect(db.state).toEqual({ commits: 0, rollbacks: 1 });
+  });
+
+  it("reports no attempt count when the operation declares no retry policy", async () => {
+    const db = controller();
+    const result = await fixture(
+      { mode: "write", isolation: "repeatable read" },
+      db.unitOfWork,
+      () => ({ value: 1 }),
+    ).run("fixture.write", { body: { value: 1 } }, runOptions);
+
+    expect(result).toEqual({ ok: true, status: 200, data: { value: 1 }, requestId: "request-1" });
+    expect("attempts" in result).toBe(false);
   });
 });
 

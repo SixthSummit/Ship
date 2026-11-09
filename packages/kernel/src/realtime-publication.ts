@@ -10,6 +10,7 @@ import { defineJob } from "./job.js";
 import type { AnyModule } from "./module.js";
 import { defineModule } from "./module.js";
 import type { AnyOperation } from "./operation.js";
+import { transactionMode } from "./operation.js";
 import type {
   AnyOutbox,
   Outbox,
@@ -291,7 +292,7 @@ export function findRealtimePublicationOutbox(
 
 /** How an operation's declared publications are delivered. */
 export function publicationDelivery(operation: AnyOperation): PublicationDelivery {
-  return operation.transaction === "none" ? "immediate" : "outbox";
+  return transactionMode(operation) === "none" ? "immediate" : "outbox";
 }
 
 /**
@@ -308,7 +309,7 @@ export function checkRealtimePublicationDispatch(
   const publishers: { readonly module: AnyModule; readonly operation: AnyOperation }[] = [];
   for (const module of modules) {
     for (const operation of module.operations) {
-      if (operation.publishes.length > 0 && operation.transaction === "write") {
+      if (operation.publishes.length > 0 && transactionMode(operation) === "write") {
         publishers.push({ module, operation });
       }
       const role = describeOutboxOperation(operation);

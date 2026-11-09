@@ -196,7 +196,16 @@ export function defineDocumentOperations(options: DocumentOperationOptions) {
     successStatus: 200,
     errors: [options.tenantAccessDenied, documentInvalid],
     access: permission("portfolio:write"),
-    transaction: "write",
+    // Saving reconciles the embedded images against what the row currently
+    // holds and then writes the row: a guard and a write that must share one
+    // snapshot. SERIALIZABLE gives that; PostgreSQL may then abort a
+    // concurrent save with a serialization failure, so the executor re-runs
+    // the whole transaction up to three times before reporting it.
+    transaction: {
+      mode: "write",
+      isolation: "serializable",
+      retry: { on: ["serialization"], attempts: 3 },
+    },
     dependencies: { tx: options.portfolioUnitOfWork, body: documentBody.binding },
     handler: async ({ input, services, context }) => {
       const scope = await options.authorizeTenant(input.params.tenantId, context);
