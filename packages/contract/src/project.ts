@@ -156,7 +156,7 @@ function projectOperation(
     success,
     errors,
     access,
-    transaction: operation.transaction,
+    transaction: node.transaction,
     ...(operation.idempotency ? { idempotency: { windowMs: operation.idempotency.windowMs } } : {}),
     ...(node.cache
       ? {

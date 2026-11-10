@@ -7,7 +7,10 @@ import {
   InvalidOperationDefinitionError,
   isExplicitOperationResponse,
   type OperationDefinitionDiagnosticCode,
+  projectTransaction,
   respond,
+  transactionMode,
+  transactionPolicy,
 } from "./operation.js";
 import { operationError } from "./operation-error.js";
 
@@ -376,5 +379,83 @@ describe("declared redirect outputs", () => {
         message: expect.stringContaining("redirect output 302"),
       });
     }
+  });
+});
+
+describe("transaction declarations", () => {
+  it("accepts the string form and reads it as a default policy", () => {
+    const operation = defineOperation({ ...validDefinition(), transaction: "write" as const });
+
+    expect(operation.transaction).toBe("write");
+    expect(transactionMode(operation)).toBe("write");
+    expect(transactionPolicy(operation)).toEqual({ mode: "write", isolation: "read committed" });
+    expect(projectTransaction(operation)).toBe("write");
+  });
+
+  it("accepts the object form, freezes a copy, and resolves the defaults", () => {
+    const retry = { on: ["serialization", "ACCOUNT_NOT_FOUND"], attempts: 3 };
+    const operation = defineOperation({
+      ...validDefinition(),
+      transaction: { mode: "write", isolation: "serializable", retry } as const,
+    });
+
+    expect(operation.transaction).toEqual({ mode: "write", isolation: "serializable", retry });
+    expect(Object.isFrozen(operation.transaction)).toBe(true);
+    expect(Object.isFrozen((operation.transaction as { retry: unknown }).retry)).toBe(true);
+    expect((operation.transaction as { retry: { on: unknown } }).retry.on).not.toBe(retry.on);
+    expect(transactionMode(operation)).toBe("write");
+    expect(transactionPolicy(operation)).toEqual({
+      mode: "write",
+      isolation: "serializable",
+      retry,
+    });
+    expect(projectTransaction(operation)).toEqual({
+      mode: "write",
+      isolation: "serializable",
+      retry,
+    });
+  });
+
+  it("projects an object form that carries only defaults exactly like the string form", () => {
+    const explicit = defineOperation({
+      ...validDefinition(),
+      transaction: { mode: "read", isolation: "read committed" } as const,
+    });
+    const bare = defineOperation({ ...validDefinition(), transaction: { mode: "read" } as const });
+
+    expect(projectTransaction(explicit)).toBe("read");
+    expect(projectTransaction(bare)).toBe("read");
+    expect(transactionPolicy(bare)).toEqual({ mode: "read", isolation: "read committed" });
+  });
+
+  it("accepts the object form with mode none so compile diagnostics can name the misuse", () => {
+    const operation = defineUnknown({
+      ...validDefinition(),
+      dependencies: {},
+      transaction: { mode: "none", retry: { on: ["deadlock"], attempts: 2 } },
+    }) as { transaction: unknown };
+
+    expect(transactionMode(operation as never)).toBe("none");
+  });
+
+  it.each([
+    ["an array", []],
+    ["an unknown mode", { mode: "ambient" }],
+    ["a missing mode", { isolation: "serializable" }],
+    ["an unknown key", { mode: "write", deferrable: true }],
+    ["a non-string isolation", { mode: "write", isolation: 2 }],
+    ["a string retry", { mode: "write", retry: "serialization" }],
+    ["a retry without attempts", { mode: "write", retry: { on: ["serialization"] } }],
+    [
+      "a retry whose on is not an array",
+      { mode: "write", retry: { on: "serialization", attempts: 2 } },
+    ],
+    ["a retry with non-string reasons", { mode: "write", retry: { on: [40001], attempts: 2 } }],
+    [
+      "a retry with an unknown key",
+      { mode: "write", retry: { on: ["deadlock"], attempts: 2, backoff: 1 } },
+    ],
+  ])("rejects %s as a transaction declaration", (_name, transaction) => {
+    expectDiagnostic({ ...validDefinition(), transaction }, "SHIP_OPERATION_TRANSACTION_INVALID");
   });
 });

@@ -147,6 +147,59 @@ inside the unit of work. Expected declared failures roll back before becoming
 result values. Immediate external effects are rejected inside a database
 transaction; use a durable outbox capability and dispatch separately.
 
+### Isolation level and retry policy
+
+The declaration also accepts an object. The string form stays valid and means
+the defaults: `"write"` is `{ mode: "write" }`.
+
+```ts
+transaction: {
+  mode: "write",
+  isolation: "serializable", // "read committed" (default) | "repeatable read" | "serializable"
+  retry: { on: ["serialization"], attempts: 3 },
+},
+```
+
+**Isolation.** By default the unit of work opens at PostgreSQL's own default,
+`READ COMMITTED`, and only the access mode is set. An operation whose guard and
+write must see one snapshot (a participant check followed by a cursor update,
+for example) declares `isolation`, and the Drizzle unit of work sets that level
+on the outermost transaction together with the access mode. A nested `run`
+joins the open transaction and never changes its level. `none` operations
+cannot declare an isolation level (`SHIP_OPERATION_TRANSACTION_ISOLATION_FORBIDDEN`),
+and an unknown level is rejected at compile time
+(`SHIP_OPERATION_TRANSACTION_ISOLATION_INVALID`).
+
+**Retry.** PostgreSQL documents that applications using `SERIALIZABLE` or
+`REPEATABLE READ` must be prepared to retry: a transaction can be aborted with
+a serialization failure (SQLSTATE `40001`) or a deadlock (`40P01`) through no
+fault of its own. `retry.on` lists what re-runs the operation, `"serialization"`,
+`"deadlock"`, or an error code the operation declares in `errors`, and
+`attempts` is the total count including the first, from 1 to 5. On a listed
+failure the executor discards the aborted unit of work, waits a short jittered
+backoff that grows per attempt, and runs the handler again with a fresh unit of
+work and the same validated input. Nothing else is ever retried: an unlisted
+declared failure, an unexpected handler error, an output schema failure, or a
+cancelled request are final on the first attempt. Results of an operation with
+a retry policy carry `attempts`, the number of transactions opened, for
+telemetry (`ship.operation.transaction.attempts`).
+
+Retry belongs in the executor, and only there. It is the one component that
+knows re-running the handler is safe: no immediate effect may run before commit
+on a transactional operation, the aborted transaction has fully rolled back
+(including its idempotency claim and its outbox and cache-invalidation
+intents), and the validated input can be replayed unchanged, so every effect
+runs once, after the attempt that commits. A retry loop written inside a
+handler cannot prove any of that. `none` operations cannot declare a retry
+policy (`SHIP_OPERATION_TRANSACTION_RETRY_FORBIDDEN`); an empty `on`, an
+attempt count outside 1 to 5, a repeated reason, or an error code the operation
+does not declare is `SHIP_OPERATION_TRANSACTION_RETRY_INVALID`.
+
+The compiled graph, the client contract, and OpenAPI (`x-ship-transaction`)
+project the resolved `{ mode, isolation, retry? }` only when it carries more
+than the defaults; a string declaration, or an object form with default values,
+projects as the mode string, so existing contract fingerprints are unchanged.
+
 ## Responses and expected failures
 
 Success outputs are indexed by status. Return the declared default body or use

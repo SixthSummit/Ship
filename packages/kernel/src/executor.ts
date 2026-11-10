@@ -20,6 +20,7 @@ import {
   type DependencyToken,
   isUnitOfWork,
   isUnitOfWorkDependencyToken,
+  type UnitOfWork,
 } from "./dependency.js";
 import type { IdempotencyStore, StoredIdempotentResult } from "./idempotency.js";
 import { isIdempotencyStore, isStoredIdempotentResult } from "./idempotency.js";
@@ -44,7 +45,7 @@ import type {
   OperationOutputSchemas,
   OperationStream,
 } from "./operation.js";
-import { isExplicitOperationResponse } from "./operation.js";
+import { isExplicitOperationResponse, transactionMode, transactionPolicy } from "./operation.js";
 import type { OperationErrorDefinition, OperationErrorDetails } from "./operation-error.js";
 import { OperationFailure, validateOperationFailureHeaders } from "./operation-error.js";
 import { createOutboxWriter, isOutboxBackend, isOutboxDependencyToken } from "./outbox.js";
@@ -89,6 +90,12 @@ export interface OperationSuccessResult<TStatus extends number = number, TData =
   readonly cache?: "hit" | "miss";
   /** Present when the executor replayed a stored idempotent result instead of running the handler. */
   readonly replayed?: true;
+  /**
+   * Present only on operations that declare a transaction retry policy: how
+   * many transactions the executor opened, including the one that produced
+   * this result. Telemetry attribute `ship.operation.transaction.attempts`.
+   */
+  readonly attempts?: number;
 }
 
 export interface OperationErrorPayload<TCode extends string = string, TDetails = unknown> {
@@ -108,6 +115,8 @@ export interface OperationFailureResult<
   readonly requestId: string;
   /** Only headers declared by the matching application error may appear here. */
   readonly headers?: Readonly<Record<string, string>>;
+  /** As on {@link OperationSuccessResult}: transactions opened under a declared retry policy. */
+  readonly attempts?: number;
 }
 
 export type FrameworkOperationFailure =
@@ -388,6 +397,8 @@ export function createExecutor<
     const operationId = operation.id;
     const requestId = context.requestId;
     const parsedInput = { value: input };
+    /** Set only when the operation declares a transaction retry policy. */
+    let transactionAttempts: number | undefined;
     try {
       const idempotency = await prepareIdempotency(
         app,
@@ -398,7 +409,7 @@ export function createExecutor<
       );
 
       const runOperation = async (): Promise<OperationSuccessResult | OperationFailureResult> => {
-        if (operation.transaction === "none") {
+        if (transactionMode(operation) === "none") {
           return await runWithIdempotency(operation, idempotency, undefined, requestId, () =>
             invokeOperation(
               app,
@@ -438,48 +449,78 @@ export function createExecutor<
           );
         }
 
-        try {
-          return await controller.run(operation.transaction, (capabilities) =>
-            runWithIdempotency(
-              operation,
-              idempotency,
-              capabilities as object,
-              requestId,
-              async () => {
-                const result = await invokeOperation(
-                  app,
-                  operation,
-                  parsedInput.value,
-                  context,
-                  operationProviders,
-                  singletonProviders,
-                  new Map([[unitOfWorkToken.id, capabilities]]),
-                  stream,
-                );
-                // Inside the transaction: the purge intent commits with the
-                // change it describes, and a rollback leaves no intent.
-                await recordCacheInvalidation(
-                  app,
-                  operation,
-                  parsedInput.value,
-                  context,
-                  capabilities as object,
-                  operationProviders,
-                  singletonProviders,
-                );
-                return result;
-              },
-            ),
+        const policy = transactionPolicy(operation);
+        const work = (capabilities: unknown) =>
+          runWithIdempotency(
+            operation,
+            idempotency,
+            capabilities as object,
+            requestId,
+            async () => {
+              const result = await invokeOperation(
+                app,
+                operation,
+                parsedInput.value,
+                context,
+                operationProviders,
+                singletonProviders,
+                new Map([[unitOfWorkToken.id, capabilities]]),
+                stream,
+              );
+              // Inside the transaction: the purge intent commits with the
+              // change it describes, and a rollback leaves no intent.
+              await recordCacheInvalidation(
+                app,
+                operation,
+                parsedInput.value,
+                context,
+                capabilities as object,
+                operationProviders,
+                singletonProviders,
+              );
+              return result;
+            },
           );
-        } catch (error) {
-          if (error instanceof OperationExecutionError || error instanceof OperationFailure) {
-            throw error;
+        // Only a non-default isolation level reaches the unit of work. The
+        // default keeps the two-argument call, so a unit of work written or
+        // doubled against that form sees exactly what it did before.
+        const attempt = (): Promise<OperationSuccessResult | OperationFailureResult> =>
+          policy.isolation === "read committed"
+            ? controller.run(policy.mode as "read" | "write", work)
+            : controller.run(policy.mode as "read" | "write", work, {
+                isolation: policy.isolation,
+              });
+
+        // Each attempt opens a fresh unit of work. The handler, its idempotency
+        // claim and its outbox and invalidation intents all live inside that
+        // transaction, so a rolled-back attempt leaves nothing behind and
+        // every effect runs once, after the attempt that commits.
+        for (let attempts = 1; ; attempts += 1) {
+          try {
+            const result = await attempt();
+            if (!policy.retry) return result;
+            transactionAttempts = attempts;
+            return Object.freeze({ ...result, attempts });
+          } catch (error) {
+            if (policy.retry) transactionAttempts = attempts;
+            if (
+              policy.retry &&
+              attempts < policy.retry.attempts &&
+              !context.signal?.aborted &&
+              retryReason(error, policy.retry.on, controller) !== undefined
+            ) {
+              await transactionRetryDelay(attempts, context.signal);
+              continue;
+            }
+            if (error instanceof OperationExecutionError || error instanceof OperationFailure) {
+              throw error;
+            }
+            throw new OperationExecutionError(
+              "SHIP_OPERATION_TRANSACTION_FAILED",
+              `transaction failed while running operation ${JSON.stringify(operation.id)}`,
+              { operationId: operation.id, providerId: unitOfWorkToken.id, cause: error },
+            );
           }
-          throw new OperationExecutionError(
-            "SHIP_OPERATION_TRANSACTION_FAILED",
-            `transaction failed while running operation ${JSON.stringify(operation.id)}`,
-            { operationId: operation.id, providerId: unitOfWorkToken.id, cause: error },
-          );
         }
       };
 
@@ -527,7 +568,10 @@ export function createExecutor<
     } catch (error) {
       if (error instanceof OperationExecutionError) throw error;
       if (error instanceof OperationFailure) {
-        return handleDeclaredFailure(operation, error, requestId);
+        const failure = await handleDeclaredFailure(operation, error, requestId);
+        return transactionAttempts === undefined
+          ? failure
+          : Object.freeze({ ...failure, attempts: transactionAttempts });
       }
       throw new OperationExecutionError(
         "SHIP_OPERATION_HANDLER_FAILED",
@@ -1116,7 +1160,7 @@ async function resolveBindings(
       services[name] = createOutboxWriter(token.outbox, backend, scope);
       continue;
     }
-    if (isChannelPublicationToken(token) && operation.transaction === "write") {
+    if (isChannelPublicationToken(token) && transactionMode(operation) === "write") {
       services[name] = await resolveOutboxChannelPublisher(
         app,
         operation,
@@ -1745,6 +1789,48 @@ function normalizeIssue(issue: SchemaIssue, prefix?: string): ValidationIssue {
     path: Object.freeze(prefix ? [prefix, ...path] : path),
     message: issue.message,
     ...(typeof code === "string" ? { code } : {}),
+  });
+}
+
+/**
+ * Why a failed transaction attempt may be re-run: a declared error code the
+ * handler raised, or a transient driver failure the unit of work classified
+ * anywhere in the cause chain (a handler-thrown 40001 arrives wrapped in
+ * SHIP_OPERATION_HANDLER_FAILED). Everything else is final.
+ */
+function retryReason(
+  error: unknown,
+  on: ReadonlyArray<string>,
+  controller: UnitOfWork<unknown>,
+): string | undefined {
+  if (error instanceof OperationFailure) return on.includes(error.code) ? error.code : undefined;
+  if (error instanceof OperationExecutionError && error.code === "SHIP_OPERATION_ABORTED") {
+    return undefined;
+  }
+  const kind = controller.classifyFailure?.(error);
+  return kind !== undefined && on.includes(kind) ? kind : undefined;
+}
+
+const TRANSACTION_RETRY_BASE_DELAY_MS = 20;
+const TRANSACTION_RETRY_MAX_DELAY_MS = 500;
+
+/** Full jitter over an exponential window: 0-20 ms, 0-40 ms, 0-80 ms, ... capped at 500 ms. */
+function transactionRetryDelay(attempt: number, signal: AbortSignal | undefined): Promise<void> {
+  const window = Math.min(
+    TRANSACTION_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
+    TRANSACTION_RETRY_MAX_DELAY_MS,
+  );
+  const delay = Math.floor(Math.random() * window);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delay);
+    function onAbort(): void {
+      clearTimeout(timer);
+      resolve();
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 

@@ -178,7 +178,7 @@ function projectHttpOperation(
     ...(requestBody ? { requestBody } : {}),
     responses,
     "x-ship-access": operation.access as unknown as JsonValue,
-    "x-ship-transaction": operation.transaction,
+    "x-ship-transaction": operation.transaction as unknown as JsonValue,
     ...(operation.transport?.metadata?.queryParsing
       ? { "x-ship-query-parsing": operation.transport.metadata.queryParsing }
       : {}),
@@ -328,7 +328,7 @@ function projectWebhookOperation(
     requestBody: projectRequestBody(operation, { type: "string", format: "binary" }),
     responses,
     "x-ship-access": operation.access as unknown as JsonValue,
-    "x-ship-transaction": operation.transaction,
+    "x-ship-transaction": operation.transaction as unknown as JsonValue,
     "x-ship-contract-fingerprint": contract.fingerprint,
     "x-ship-webhook": webhook,
   });
