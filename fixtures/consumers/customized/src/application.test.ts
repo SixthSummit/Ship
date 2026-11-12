@@ -1931,7 +1931,7 @@ describe("rich text documents", () => {
     ).toEqual(["portfolio.document-body"]);
   });
 
-  it("projects the serializable save with its retry policy into the graph and contract", () => {
+  it("keeps the serializable save's retry policy in the graph and out of the client contract", () => {
     const application = createCustomizedApplication(fixtureInfrastructure());
     const policy = {
       mode: "write",
@@ -1943,16 +1943,20 @@ describe("rich text documents", () => {
       application.graph.operations.find((operation) => operation.id === "portfolio.save-document")
         ?.transaction,
     ).toEqual(policy);
-    expect(
-      projectClientContract(application).operations.find(
-        (operation) => operation.id === "portfolio.save-document",
-      )?.transaction,
-    ).toEqual(policy);
-    // The sibling delete keeps the string form, which still projects as before.
+    // The sibling delete keeps the string form in the graph.
     expect(
       application.graph.operations.find((operation) => operation.id === "portfolio.delete-document")
         ?.transaction,
     ).toBe("write");
+    // Executor policy never reaches the client contract, so a server-only
+    // change to isolation or retry leaves the committed artifacts untouched.
+    const contract = projectClientContract(application);
+    expect(
+      contract.operations.find((operation) => operation.id === "portfolio.save-document"),
+    ).not.toHaveProperty("transaction");
+    // (`retry` alone would also match the console's job-retry operations.)
+    expect(JSON.stringify(contract)).not.toMatch(/"transaction"|"isolation"/u);
+    expect(contract.operations.some((operation) => "transaction" in operation)).toBe(false);
   });
 
   it("refuses markup outside the allowlist at the input boundary and in the capability", async () => {

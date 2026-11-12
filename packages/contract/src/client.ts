@@ -991,8 +991,13 @@ function assertContract(contract: ClientContract): void {
 const TRANSACTION_MODES = new Set(["none", "read", "write"]);
 const TRANSACTION_ISOLATIONS = new Set(["read committed", "repeatable read", "serializable"]);
 
-/** The mode string, or the resolved `{ mode, isolation, retry? }` policy a newer projector emits. */
+/**
+ * Absent in contracts emitted since 1.6; before that the mode string or the
+ * resolved `{ mode, isolation, retry? }` policy. Both legacy shapes still load,
+ * a malformed one still fails.
+ */
 function isContractTransaction(value: unknown): boolean {
+  if (value === undefined) return true;
   if (typeof value === "string") return TRANSACTION_MODES.has(value);
   if (!isRecord(value) || !TRANSACTION_MODES.has(value.mode as string)) return false;
   if (!TRANSACTION_ISOLATIONS.has(value.isolation as string)) return false;

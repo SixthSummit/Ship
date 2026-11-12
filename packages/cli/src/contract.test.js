@@ -56,6 +56,11 @@ describe("Ship contract CLI", () => {
       info: { title: "Graph fixture", version: "1.2.3" },
       "x-ship-app-id": "graph-fixture",
     });
+    // Executor policy is not part of the client artifacts.
+    for (const artifact of [firstContract, firstOpenApi, firstTypeScript]) {
+      expect(artifact).not.toContain("transaction");
+    }
+
     // The digest is reported, never stored: a stored one changes with every
     // regeneration and conflicts between any two branches.
     for (const artifact of [firstContract, firstOpenApi, firstTypeScript]) {
@@ -134,6 +139,47 @@ describe("Ship contract CLI", () => {
       operation.id === "reports.summary" ? rightReports : operation,
     );
     expect(JSON.parse(mergedContract)).toEqual(regenerated);
+  });
+
+  it("leaves the client artifacts unchanged when only the transaction policy changes", async () => {
+    const policyApp = resolve(sourceDirectory, "__fixtures__/graph/transaction-policy.config.ts");
+    const emitted = await generateContractArtifacts({
+      appPath: policyApp,
+      cwd: resolve(temporaryDirectory, "policy"),
+      title: "Policy fixture",
+      version: "1.0.0",
+    });
+    const contract = await readFile(emitted.contract, "utf8");
+    const openapi = await readFile(emitted.openapi, "utf8");
+    const typescript = await readFile(emitted.typescript, "utf8");
+
+    // The fixture declares serializable isolation with a retry policy on
+    // `accounts.rename`; none of it reaches the three committed files.
+    for (const artifact of [contract, openapi, typescript]) {
+      expect(artifact).not.toMatch(/"transaction"|x-ship-transaction|serializable|"retry"/u);
+    }
+    expect(JSON.parse(contract).operations.map((operation) => operation.id)).toEqual([
+      "accounts.read",
+      "accounts.rename",
+    ]);
+
+    // Operators opt in to the policy on the OpenAPI document explicitly.
+    const operatorFacing = await generateContractArtifacts({
+      appPath: policyApp,
+      cwd: resolve(temporaryDirectory, "policy-with-metadata"),
+      title: "Policy fixture",
+      version: "1.0.0",
+      includeServerMetadata: true,
+    });
+    const documented = JSON.parse(await readFile(operatorFacing.openapi, "utf8"));
+    expect(documented.paths["/accounts/{accountId}/rename"].post["x-ship-transaction"]).toEqual({
+      mode: "write",
+      isolation: "serializable",
+      retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
+    });
+    expect(documented.paths["/accounts/{accountId}"].get["x-ship-transaction"]).toBe("read");
+    expect(await readFile(operatorFacing.contract, "utf8")).toBe(contract);
+    expect(await readFile(operatorFacing.typescript, "utf8")).toBe(typescript);
   });
 
   it("runs deterministic generation through the packed CLI entrypoint", async () => {

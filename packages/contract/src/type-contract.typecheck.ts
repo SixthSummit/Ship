@@ -52,7 +52,6 @@ const manifest = {
         },
       ],
       access: { kind: "authenticated" },
-      transaction: "read",
       transport: {
         kind: "http",
         binding: "hono",
@@ -77,7 +76,6 @@ const manifest = {
       ],
       errors: [],
       access: { kind: "public" },
-      transaction: "none",
       transport: {
         kind: "http",
         binding: "hono",
@@ -119,7 +117,6 @@ const manifest = {
       ],
       errors: [],
       access: { kind: "authenticated" },
-      transaction: "read",
       transport: {
         kind: "http",
         binding: "GET /files/export",

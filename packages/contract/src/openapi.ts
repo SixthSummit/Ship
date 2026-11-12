@@ -1,4 +1,4 @@
-import type { AnyModule, CompiledApplication } from "@sixthsummit/ship-core";
+import type { AnyModule, CompiledApplication, OperationGraphNode } from "@sixthsummit/ship-core";
 import type { ClientContractError, ClientContractOperation } from "./project.js";
 import { isWebhookTransport, projectClientContract } from "./project.js";
 import {
@@ -14,7 +14,16 @@ export interface OpenApiProjectionOptions {
   readonly version: string;
   readonly description?: string;
   readonly serverUrls?: readonly string[];
+  /**
+   * Also document executor policy (`x-ship-transaction`: mode, isolation,
+   * retry) on every operation. Off by default: a client document that carries
+   * it changes whenever a server-only declaration does. Turn it on for an
+   * operator-facing document.
+   */
+  readonly includeServerMetadata?: boolean;
 }
+
+type OperationTransactions = ReadonlyMap<string, OperationGraphNode["transaction"]>;
 
 export type OpenApiDocument = JsonObject & {
   readonly openapi: "3.1.0";
@@ -31,6 +40,10 @@ export function projectOpenApi<
   // manifest's former `fingerprint`, one would conflict on every merge.
   const contract = projectClientContract(application);
   const documented = projectClientContract(application, { includeWebhooks: true });
+  const transactions: OperationTransactions | undefined =
+    options.includeServerMetadata === true
+      ? new Map(application.graph.operations.map((node) => [node.id, node.transaction]))
+      : undefined;
   const paths: Record<string, JsonValue> = {};
   const unbound: string[] = [];
 
@@ -50,9 +63,10 @@ export function projectOpenApi<
     }
     const openApiPath = path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/gu, "{$1}");
     const pathItem = (paths[openApiPath] ?? {}) as Record<string, JsonValue>;
+    const transaction = transactions?.get(operation.id);
     pathItem[method.toLowerCase()] = isWebhookTransport(operation.transport)
-      ? projectWebhookOperation(operation)
-      : projectHttpOperation(operation);
+      ? projectWebhookOperation(operation, transaction)
+      : projectHttpOperation(operation, transaction);
     paths[openApiPath] = pathItem;
   }
 
@@ -70,7 +84,10 @@ export function projectOpenApi<
   }) as OpenApiDocument;
 }
 
-function projectHttpOperation(operation: ClientContractOperation): JsonObject {
+function projectHttpOperation(
+  operation: ClientContractOperation,
+  transaction: OperationGraphNode["transaction"] | undefined,
+): JsonObject {
   const parameters: JsonValue[] = [];
   let requestBody: JsonValue | undefined;
   const method = String(operation.transport?.metadata?.method);
@@ -175,7 +192,9 @@ function projectHttpOperation(operation: ClientContractOperation): JsonObject {
     ...(requestBody ? { requestBody } : {}),
     responses,
     "x-ship-access": operation.access as unknown as JsonValue,
-    "x-ship-transaction": operation.transaction as unknown as JsonValue,
+    ...(transaction !== undefined
+      ? { "x-ship-transaction": transaction as unknown as JsonValue }
+      : {}),
     ...(operation.transport?.metadata?.queryParsing
       ? { "x-ship-query-parsing": operation.transport.metadata.queryParsing }
       : {}),
@@ -236,7 +255,10 @@ function projectStreamResponse(
  * is opaque signed bytes, so no parameters are projected; the kernel's webhook
  * metadata is recorded under `x-ship-webhook` next to the raw body policy.
  */
-function projectWebhookOperation(operation: ClientContractOperation): JsonObject {
+function projectWebhookOperation(
+  operation: ClientContractOperation,
+  transaction: OperationGraphNode["transaction"] | undefined,
+): JsonObject {
   const webhook = operation.transport?.metadata?.webhook;
   if (!isJsonObject(webhook)) {
     throw new ContractProjectionError(
@@ -321,7 +343,9 @@ function projectWebhookOperation(operation: ClientContractOperation): JsonObject
     requestBody: projectRequestBody(operation, { type: "string", format: "binary" }),
     responses,
     "x-ship-access": operation.access as unknown as JsonValue,
-    "x-ship-transaction": operation.transaction as unknown as JsonValue,
+    ...(transaction !== undefined
+      ? { "x-ship-transaction": transaction as unknown as JsonValue }
+      : {}),
     "x-ship-webhook": webhook,
   });
 }

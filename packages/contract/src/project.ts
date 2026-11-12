@@ -176,7 +176,8 @@ function projectOperation(
     success,
     errors,
     access,
-    transaction: node.transaction,
+    // `node.transaction` stays out: executor policy that no client acts on,
+    // and copying it made server-only changes regenerate the client contract.
     ...(operation.idempotency ? { idempotency: { windowMs: operation.idempotency.windowMs } } : {}),
     ...(node.cache
       ? {

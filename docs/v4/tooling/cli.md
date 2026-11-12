@@ -67,7 +67,7 @@ ship-api inspect operation <id> [--format json]
 ship-api inspect provider <id> [--format json]
 ```
 
-Inspection reports ownership, dependencies, access, transaction mode, transport binding, and declared failures as applicable. This is the bounded-context entry point for understanding an unfamiliar operation without reading the whole repository.
+Inspection reports ownership, dependencies, access, the resolved transaction policy (`transaction: write serializable retry=serialization x3` when isolation or retry is declared, the mode string otherwise), transport binding, and declared failures as applicable. This is the bounded-context entry point for understanding an unfamiliar operation without reading the whole repository. The policy lives here and in `.ship/graph.json` (`ship-api check --emit`), not in the client contract, so operators and transaction ratchets read the graph.
 
 ### `affected` — project downstream impact
 
@@ -88,8 +88,11 @@ ship-api contract \
   [--openapi .ship/openapi.json] \
   [--openapi-title "My API"] \
   [--api-version 1.0.0] \
+  [--include-server-metadata] \
   [--format human|json]
 ```
+
+`--include-server-metadata` adds `x-ship-transaction` (the resolved executor policy) to every OpenAPI operation for an operator-facing document. It is off by default so a server-only change leaves the committed artifacts alone.
 
 Both artifacts derive from the same compiled operation graph and are
 deterministic for the same declarations. The files store no digest of
