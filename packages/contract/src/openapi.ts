@@ -1,5 +1,5 @@
 import type { AnyModule, CompiledApplication } from "@sixthsummit/ship-core";
-import type { ClientContract, ClientContractError, ClientContractOperation } from "./project.js";
+import type { ClientContractError, ClientContractOperation } from "./project.js";
 import { isWebhookTransport, projectClientContract } from "./project.js";
 import {
   ContractProjectionError,
@@ -26,8 +26,9 @@ export function projectOpenApi<
   const TApp extends CompiledApplication<string, readonly AnyModule[]>,
 >(application: TApp, options: OpenApiProjectionOptions): OpenApiDocument {
   assertOptions(options);
-  // The document fingerprint is the browser manifest's; webhooks are appended
-  // as provider-facing paths without changing the client-visible contract.
+  // Webhooks are appended as provider-facing paths without changing the
+  // client-visible contract. The document embeds no digest of itself: like the
+  // manifest's former `fingerprint`, one would conflict on every merge.
   const contract = projectClientContract(application);
   const documented = projectClientContract(application, { includeWebhooks: true });
   const paths: Record<string, JsonValue> = {};
@@ -50,8 +51,8 @@ export function projectOpenApi<
     const openApiPath = path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/gu, "{$1}");
     const pathItem = (paths[openApiPath] ?? {}) as Record<string, JsonValue>;
     pathItem[method.toLowerCase()] = isWebhookTransport(operation.transport)
-      ? projectWebhookOperation(operation, contract)
-      : projectHttpOperation(operation, contract);
+      ? projectWebhookOperation(operation)
+      : projectHttpOperation(operation);
     paths[openApiPath] = pathItem;
   }
 
@@ -65,15 +66,11 @@ export function projectOpenApi<
     ...(options.serverUrls?.length ? { servers: options.serverUrls.map((url) => ({ url })) } : {}),
     paths,
     "x-ship-app-id": contract.appId,
-    "x-ship-contract-fingerprint": contract.fingerprint,
     ...(unbound.length > 0 ? { "x-ship-unbound-operations": unbound.sort() } : {}),
   }) as OpenApiDocument;
 }
 
-function projectHttpOperation(
-  operation: ClientContractOperation,
-  contract: ClientContract,
-): JsonObject {
+function projectHttpOperation(operation: ClientContractOperation): JsonObject {
   const parameters: JsonValue[] = [];
   let requestBody: JsonValue | undefined;
   const method = String(operation.transport?.metadata?.method);
@@ -184,7 +181,6 @@ function projectHttpOperation(
       : {}),
     ...(operation.cache ? { "x-ship-cache": operation.cache as unknown as JsonValue } : {}),
     ...(operation.invalidates ? { "x-ship-invalidates": [...operation.invalidates] } : {}),
-    "x-ship-contract-fingerprint": contract.fingerprint,
   });
 }
 
@@ -240,10 +236,7 @@ function projectStreamResponse(
  * is opaque signed bytes, so no parameters are projected; the kernel's webhook
  * metadata is recorded under `x-ship-webhook` next to the raw body policy.
  */
-function projectWebhookOperation(
-  operation: ClientContractOperation,
-  contract: ClientContract,
-): JsonObject {
+function projectWebhookOperation(operation: ClientContractOperation): JsonObject {
   const webhook = operation.transport?.metadata?.webhook;
   if (!isJsonObject(webhook)) {
     throw new ContractProjectionError(
@@ -329,7 +322,6 @@ function projectWebhookOperation(
     responses,
     "x-ship-access": operation.access as unknown as JsonValue,
     "x-ship-transaction": operation.transaction as unknown as JsonValue,
-    "x-ship-contract-fingerprint": contract.fingerprint,
     "x-ship-webhook": webhook,
   });
 }

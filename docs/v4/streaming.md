@@ -6,7 +6,7 @@ Constraints: transaction must be "none"; no idempotency declaration; no `cache` 
 
 ## Manifest projection (ship-contract)
 operations[id].response = { mode: "stream", framing: "sse", frame: <schemaRef>, terminal?: <schemaRef>, limits: { heartbeatMs, maxDurationMs, maxFrames } }
-Non-stream operations keep their existing response projection. The frame/terminal schema refs participate in the manifest fingerprint.
+Non-stream operations keep their existing response projection. The frame/terminal schema refs are part of the manifest, so a change to either regenerates the operation's entry (and the digest `fingerprintClientContract()` computes).
 
 ## HTTP
 Request: the operation's normal method/path/input; client sends `Accept: text/event-stream`.

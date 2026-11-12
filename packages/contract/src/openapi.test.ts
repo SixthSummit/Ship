@@ -87,7 +87,8 @@ describe("projectOpenApi", () => {
 
     expect(document.openapi).toBe("3.1.0");
     expect(document["x-ship-app-id"]).toBe("openapi-fixture");
-    expect(document["x-ship-contract-fingerprint"]).toMatch(/^sha256:/u);
+    // No digest anywhere in the document: it would conflict on every merge.
+    expect(JSON.stringify(document)).not.toContain("x-ship-contract-fingerprint");
     expect(patch.operationId).toBe("accounts.update");
     expect(patch["x-ship-access"]).toEqual({
       kind: "permissions",

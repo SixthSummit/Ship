@@ -52,7 +52,7 @@ try {
   };
   const metadata = {
     fixtureProtocolVersion: 1,
-    graphHash: contract.fingerprint,
+    graphHash: generated.fingerprint,
     operations: Object.fromEntries(contract.operations.map((o) => [o.id, { transport: "http" }])),
   };
   const forms = renderOperationFormBinding(
@@ -137,7 +137,7 @@ try {
   const manifest = {
     fixtureProtocolVersion: 1,
     wireFixtureVersion: 1,
-    graphHash: contract.fingerprint,
+    graphHash: generated.fingerprint,
     producer: {
       repository: "SixthSummit/Ship",
       head: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
