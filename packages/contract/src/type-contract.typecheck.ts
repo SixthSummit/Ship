@@ -6,7 +6,6 @@ import type { ClientTypeContract } from "./type-contract.js";
 const manifest = {
   schemaVersion: 1,
   appId: "generated-type-fixture",
-  fingerprint: `sha256:${"0".repeat(64)}`,
   operations: [
     {
       id: "accounts.read",

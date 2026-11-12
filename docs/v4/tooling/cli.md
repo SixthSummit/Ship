@@ -91,11 +91,15 @@ ship-api contract \
   [--format human|json]
 ```
 
-Both artifacts derive from the same compiled operation graph and carry the
-same deterministic fingerprint. The command writes each file atomically and
-fails before writing if the output paths collide. ShipAngular and other clients
-consume the client-safe manifest; API documentation and external integrations
-consume the OpenAPI 3.1 projection.
+Both artifacts derive from the same compiled operation graph and are
+deterministic for the same declarations. The files store no digest of
+themselves, so two branches that change different operations merge cleanly;
+the command reports the contract's SHA-256 on stdout (`fingerprint` in
+`--format json`) for builds that want a label. The command writes each file
+atomically and fails before writing if the output paths collide. ShipAngular
+and other clients consume the client-safe manifest; API documentation and
+external integrations consume the OpenAPI 3.1 projection. To verify committed
+artifacts in CI, run the command and `git diff --exit-code -- .ship/`.
 
 The `check`, `inspect`, `affected`, and `contract` implementations are also
 available programmatically from `@sixthsummit/ship-cli`. Structured diagnostics

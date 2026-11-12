@@ -1,7 +1,7 @@
 import { defineApp, defineMailer, defineModule } from "@sixthsummit/ship-core";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { projectClientContract } from "./project.js";
+import { fingerprintClientContract, projectClientContract } from "./project.js";
 
 function application(withMailer: boolean) {
   const mailer = defineMailer({
@@ -46,9 +46,11 @@ describe("projectClientContract mailers", () => {
     expect(Object.isFrozen(contract.mailers)).toBe(true);
   });
 
-  it("omits the field and keeps the fingerprint when no mailer is declared", () => {
+  it("omits the field when no mailer is declared, so the digest differs only when one is", () => {
     const without = projectClientContract(application(false));
     expect(without.mailers).toBeUndefined();
-    expect(without.fingerprint).not.toBe(projectClientContract(application(true)).fingerprint);
+    expect(fingerprintClientContract(without)).not.toBe(
+      fingerprintClientContract(projectClientContract(application(true))),
+    );
   });
 });

@@ -6,6 +6,36 @@ listed, it had no consumer-facing migration. For the full v3 → v4 move, see
 [MIGRATION_V3_TO_V4.md](./MIGRATION_V3_TO_V4.md).
 
 ---
+## Kernel line — the client contract no longer stores its fingerprint (ship-contract minor, ship-cli minor, ship-angular patch)
+
+**Who's affected:** every kernel-line app that commits `.ship/contract.json`,
+`.ship/contract.ts` and `.ship/openapi.json`. Until now each file carried a
+SHA-256 of the whole contract (`fingerprint`, `x-ship-contract-fingerprint`),
+so any two open pull requests that changed different operations conflicted on
+that line as soon as one merged.
+
+**What you change.**
+
+- **Upgrade `@sixthsummit/ship-contract` and `@sixthsummit/ship-cli` together**,
+  and `@sixthsummit/ship-angular` to the release that lists `fingerprint` as
+  optional on `ShipApiClientContractManifest` and `ShipStreamManifest`.
+- **Run `ship-api contract` once and commit the result.** The diff removes the
+  fingerprint lines and nothing else; this is the only regeneration the upgrade
+  needs. Copy the files to the frontend as before.
+- **Replace reads of `contract.fingerprint`** with
+  `fingerprintClientContract(contract)` from `@sixthsummit/ship-contract/project`;
+  it returns the same value the file used to carry. `ship-api contract` still
+  prints the digest (`fingerprint` in `--format json`).
+- **Keep verifying by regenerate-and-diff** (`ship-api contract` then
+  `git diff --exit-code -- .ship/`); that check never depended on the stored
+  value. After merging two branches, regenerate once more.
+
+**What does NOT change:** already-committed contracts keep loading.
+`createHttpOperationClient` and the ShipAngular adapters accept the field when
+present (a malformed one is still rejected) and do not require it. Operation
+ids, schemas, access, transport and the TypeScript `AppContract` are untouched.
+
+---
 ## Kernel line — `createHonoAdapter({ cors })` (ship-hono minor, ship-cli minor)
 
 **Who's affected:** kernel-line apps with a browser client on another origin.

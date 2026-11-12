@@ -30,7 +30,7 @@ import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createHttpOperationClient } from "./client.js";
-import { projectClientContract } from "./project.js";
+import { fingerprintClientContract, projectClientContract } from "./project.js";
 import { ContractProjectionError, contractSchema } from "./schema.js";
 
 describe("projectClientContract", () => {
@@ -60,7 +60,11 @@ describe("projectClientContract", () => {
     const second = projectClientContract(app);
 
     expect(first).toEqual(second);
-    expect(first.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    // The contract stores no digest of itself; tooling computes one on demand.
+    expect(first.fingerprint).toBeUndefined();
+    expect(Object.hasOwn(first, "fingerprint")).toBe(false);
+    expect(fingerprintClientContract(first)).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(fingerprintClientContract(first)).toBe(fingerprintClientContract(second));
     expect(first.operations[0]).toMatchObject({
       id: "accounts.read",
       input: {
@@ -89,10 +93,10 @@ describe("projectClientContract", () => {
     const reversed = projectClientContract(defineApp({ id: "ordered", modules: [beta, alpha] }));
 
     expect(reversed).toEqual(forward);
-    expect(reversed.fingerprint).toBe(forward.fingerprint);
+    expect(fingerprintClientContract(reversed)).toBe(fingerprintClientContract(forward));
   });
 
-  it("changes the fingerprint when a wire contract changes", () => {
+  it("changes the computed fingerprint when a wire contract changes", () => {
     const first = projectClientContract(
       defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha")] }),
     );
@@ -100,7 +104,23 @@ describe("projectClientContract", () => {
       defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha-v2")] }),
     );
 
-    expect(second.fingerprint).not.toBe(first.fingerprint);
+    expect(fingerprintClientContract(second)).not.toBe(fingerprintClientContract(first));
+  });
+
+  it("computes the same fingerprint for a contract that still stores its legacy digest", () => {
+    const contract = projectClientContract(
+      defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha")] }),
+    );
+    const digest = fingerprintClientContract(contract);
+    // A file committed by an older projector carries the digest as a field;
+    // the field never participates in the hash, so both shapes agree.
+    expect(fingerprintClientContract({ ...contract, fingerprint: digest })).toBe(digest);
+    expect(
+      fingerprintClientContract({ ...contract, fingerprint: `sha256:${"0".repeat(64)}` }),
+    ).toBe(digest);
+    // Key order in the loaded JSON does not matter either.
+    const { operations, appId, schemaVersion, ...rest } = contract;
+    expect(fingerprintClientContract({ operations, ...rest, appId, schemaVersion })).toBe(digest);
   });
 
   it("rejects schemas that have no safe projection with a stable location", () => {
@@ -446,7 +466,9 @@ describe("projectClientContract channels", () => {
       expect(serialized).not.toContain(forbidden);
     }
     expect(serialized).not.toMatch(/room|namespace|socket|ack/iu);
-    expect(projectClientContract(app).fingerprint).toBe(contract.fingerprint);
+    expect(fingerprintClientContract(projectClientContract(app))).toBe(
+      fingerprintClientContract(contract),
+    );
   });
 
   it("reports the channel id when a payload schema cannot be projected", () => {
@@ -656,7 +678,9 @@ describe("projectClientContract attachments", () => {
       }),
     );
     expect(withoutAttachments.attachments).toEqual({});
-    expect(withoutAttachments.fingerprint).not.toBe(contract.fingerprint);
+    expect(fingerprintClientContract(withoutAttachments)).not.toBe(
+      fingerprintClientContract(contract),
+    );
   });
 });
 
@@ -798,8 +822,9 @@ describe("projectClientContract transaction policy", () => {
   };
   /**
    * Fingerprint of this exact fixture with `transaction: "write"`, computed on
-   * the projector before isolation and retry could be declared. Existing
-   * consumers' contracts must keep hashing to the same value.
+   * the projector before isolation and retry could be declared and before the
+   * digest left the emitted file. Existing consumers' contracts must keep
+   * hashing to the same value through `fingerprintClientContract`.
    */
   const PINNED_STRING_FORM_FINGERPRINT =
     "sha256:140cc53fedba61ca221cbb2df77d102a43b5cd067bcf2cab929dfa4e3a843d0c";
@@ -838,7 +863,7 @@ describe("projectClientContract transaction policy", () => {
     const contract = projectClientContract(app("write"));
 
     expect(contract.operations[0]?.transaction).toBe("write");
-    expect(contract.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
+    expect(fingerprintClientContract(contract)).toBe(PINNED_STRING_FORM_FINGERPRINT);
   });
 
   it("projects an object form that carries only defaults identically to the string form", () => {
@@ -846,8 +871,8 @@ describe("projectClientContract transaction policy", () => {
     const explicit = projectClientContract(app({ mode: "write", isolation: "read committed" }));
 
     expect(bare.operations[0]?.transaction).toBe("write");
-    expect(bare.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
-    expect(explicit.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
+    expect(fingerprintClientContract(bare)).toBe(PINNED_STRING_FORM_FINGERPRINT);
+    expect(fingerprintClientContract(explicit)).toBe(PINNED_STRING_FORM_FINGERPRINT);
   });
 
   it("projects isolation and retry client-safely and changes the fingerprint", () => {
@@ -864,8 +889,8 @@ describe("projectClientContract transaction policy", () => {
       isolation: "serializable",
       retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
     });
-    expect(contract.fingerprint).not.toBe(PINNED_STRING_FORM_FINGERPRINT);
-    expect(contract.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(fingerprintClientContract(contract)).not.toBe(PINNED_STRING_FORM_FINGERPRINT);
+    expect(fingerprintClientContract(contract)).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(Object.isFrozen(contract.operations[0]?.transaction)).toBe(true);
     expect(JSON.stringify(contract)).not.toContain("handler");
     expect(JSON.stringify(contract)).not.toContain("dependencies");
@@ -877,7 +902,7 @@ describe("projectClientContract transaction policy", () => {
       mode: "write",
       isolation: "repeatable read",
     });
-    expect(isolationOnly.fingerprint).not.toBe(contract.fingerprint);
+    expect(fingerprintClientContract(isolationOnly)).not.toBe(fingerprintClientContract(contract));
   });
 
   it("is accepted by the HTTP operation client in both forms and rejected when malformed", () => {

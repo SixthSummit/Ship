@@ -10,6 +10,9 @@ const sourceDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(sourceDirectory, "..");
 const cliPath = resolve(packageDirectory, "src/bin.js");
 const fixtureApp = resolve(sourceDirectory, "__fixtures__/graph/ship.config.ts");
+const mergeFixture = (variant) =>
+  resolve(sourceDirectory, `__fixtures__/contract-merge/${variant}.config.ts`);
+const ARTIFACTS = ["contract", "openapi", "typescript"];
 
 describe("Ship contract CLI", () => {
   let temporaryDirectory;
@@ -40,6 +43,7 @@ describe("Ship contract CLI", () => {
     const secondTypeScript = await readFile(second.typescript, "utf8");
 
     expect(first.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(first.fingerprint).toBe(second.fingerprint);
     expect(first.operations).toBe(1);
     expect(secondContract).toBe(firstContract);
     expect(secondOpenApi).toBe(firstOpenApi);
@@ -50,8 +54,86 @@ describe("Ship contract CLI", () => {
     expect(JSON.parse(firstOpenApi)).toMatchObject({
       openapi: "3.1.0",
       info: { title: "Graph fixture", version: "1.2.3" },
-      "x-ship-contract-fingerprint": first.fingerprint,
+      "x-ship-app-id": "graph-fixture",
     });
+    // The digest is reported, never stored: a stored one changes with every
+    // regeneration and conflicts between any two branches.
+    for (const artifact of [firstContract, firstOpenApi, firstTypeScript]) {
+      expect(artifact).not.toContain("fingerprint");
+    }
+  });
+
+  it("emits artifacts that three-way merge cleanly when two branches change different operations", async () => {
+    const emitted = {};
+    for (const variant of ["base", "left", "right"]) {
+      emitted[variant] = await generateContractArtifacts({
+        appPath: mergeFixture(variant),
+        cwd: resolve(temporaryDirectory, variant),
+        title: "Merge fixture",
+        version: "1.0.0",
+      });
+    }
+    expect(emitted.left.fingerprint).not.toBe(emitted.base.fingerprint);
+    expect(emitted.right.fingerprint).not.toBe(emitted.base.fingerprint);
+
+    for (const artifact of ARTIFACTS) {
+      const merge = spawnSync(
+        "git",
+        [
+          "merge-file",
+          "-p",
+          "-L",
+          "left",
+          "-L",
+          "base",
+          "-L",
+          "right",
+          emitted.left[artifact],
+          emitted.base[artifact],
+          emitted.right[artifact],
+        ],
+        { encoding: "utf8" },
+      );
+      // `git merge-file` exits with the number of conflicts; anything below
+      // zero is a usage error. Both must be zero for every artifact.
+      expect({ artifact, status: merge.status, stderr: merge.stderr }).toEqual({
+        artifact,
+        status: 0,
+        stderr: "",
+      });
+      expect(merge.stdout).not.toMatch(/^(?:<{7}|={7}|>{7})/mu);
+      // The merged result carries both changes and nothing else.
+      const merged =
+        artifact === "typescript"
+          ? JSON.parse(
+              merge.stdout.slice(
+                merge.stdout.indexOf("export const clientContract = ") +
+                  "export const clientContract = ".length,
+                merge.stdout.indexOf(" as const satisfies ClientContract;"),
+              ),
+            )
+          : JSON.parse(merge.stdout);
+      const serialized = JSON.stringify(merged);
+      expect(serialized).toContain("displayName");
+      expect(serialized).toContain("limit");
+      expect(serialized).not.toContain("fingerprint");
+    }
+
+    // The merged manifest is exactly what regenerating from the merged
+    // declarations would produce, which is what a consumer's verify step checks.
+    const mergedContract = spawnSync(
+      "git",
+      ["merge-file", "-p", emitted.left.contract, emitted.base.contract, emitted.right.contract],
+      { encoding: "utf8" },
+    ).stdout;
+    const regenerated = JSON.parse(await readFile(emitted.left.contract, "utf8"));
+    const rightReports = JSON.parse(await readFile(emitted.right.contract, "utf8")).operations.find(
+      (operation) => operation.id === "reports.summary",
+    );
+    regenerated.operations = regenerated.operations.map((operation) =>
+      operation.id === "reports.summary" ? rightReports : operation,
+    );
+    expect(JSON.parse(mergedContract)).toEqual(regenerated);
   });
 
   it("runs deterministic generation through the packed CLI entrypoint", async () => {

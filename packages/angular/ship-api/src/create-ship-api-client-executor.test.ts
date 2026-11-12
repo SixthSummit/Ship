@@ -270,6 +270,11 @@ describe('createShipApiClientExecutor', () => {
         fixtureClient(async () => ok())
       )
     ).not.toThrow();
+    // Manifests emitted since ship-contract 1.6 carry no digest of themselves.
+    const { fingerprint: _legacy, ...unfingerprinted } = manifest;
+    expect(() =>
+      createShipApiClientExecutor<Contract>(unfingerprinted, () => fixtureClient(async () => ok()))
+    ).not.toThrow();
     expect(() =>
       createShipApiClientExecutor<Contract>(
         {

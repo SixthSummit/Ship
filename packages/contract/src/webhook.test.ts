@@ -21,7 +21,7 @@ import { http } from "@sixthsummit/ship-hono";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { projectOpenApi } from "./openapi.js";
-import { isWebhookTransport, projectClientContract } from "./project.js";
+import { fingerprintClientContract, isWebhookTransport, projectClientContract } from "./project.js";
 
 const storeToken = idempotencyStoreDependency("platform.idempotency");
 const store = {
@@ -161,7 +161,9 @@ describe("webhook response mode projection", () => {
       application([ping, voice.operation, status.operation, download.operation]),
     );
     expect(manifest.operations.map((operation) => operation.id)).toEqual(["ingress.ping"]);
-    expect(manifest.fingerprint).toBe(projectClientContract(application([ping])).fingerprint);
+    expect(fingerprintClientContract(manifest)).toBe(
+      fingerprintClientContract(projectClientContract(application([ping]))),
+    );
   });
 
   it("projects a mounted replay operation as an ordinary permission-gated HTTP operation", () => {
@@ -270,7 +272,8 @@ describe("webhook contract projection", () => {
     const withWebhook = projectClientContract(application([ping, webhook.operation]));
     const without = projectClientContract(application([ping]));
     expect(withWebhook.operations.map((operation) => operation.id)).toEqual(["ingress.ping"]);
-    expect(withWebhook.fingerprint).toBe(without.fingerprint);
+    expect(withWebhook).toEqual(without);
+    expect(fingerprintClientContract(withWebhook)).toBe(fingerprintClientContract(without));
     expect(isWebhookTransport(webhook.operation.transport)).toBe(true);
     expect(isWebhookTransport(ping.transport)).toBe(false);
     expect(isWebhookTransport(undefined)).toBe(false);
@@ -288,8 +291,8 @@ describe("webhook contract projection", () => {
       title: "Billing",
       version: "1.0.0",
     });
-    const manifest = projectClientContract(application([ping]));
-    expect(document["x-ship-contract-fingerprint"]).toBe(manifest.fingerprint);
+    expect(document["x-ship-app-id"]).toBe(projectClientContract(application([ping])).appId);
+    expect(document["x-ship-contract-fingerprint"]).toBeUndefined();
     const path = (document.paths as Record<string, Record<string, Record<string, unknown>>>)[
       "/webhooks/fixture"
     ]?.post;

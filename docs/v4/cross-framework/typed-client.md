@@ -48,7 +48,30 @@ ship-api contract \
   --api-version 4.0.0
 ```
 
-All three artifacts are deterministic and come from the same compiled declarations. `contract.json` includes a SHA-256 fingerprint; the TypeScript contract preserves the literal manifest and derives an `AppContract` from its JSON Schemas; OpenAPI embeds the same fingerprint. CI can regenerate and diff these files to detect drift.
+All three artifacts are deterministic and come from the same compiled declarations. `contract.json` is the manifest; the TypeScript contract preserves the literal manifest and derives an `AppContract` from its JSON Schemas; OpenAPI documents the same operations. Each file changes only where an operation changed, so two branches that edit different operations merge without conflicts.
+
+None of the files stores a digest of itself. The command prints one (`OK <appId> sha256:…`, or `fingerprint` in `--format json`), and `fingerprintClientContract()` from `@sixthsummit/ship-contract/project` computes the same value from a loaded contract when a build wants a label or a cache key.
+
+### Verify in CI
+
+Regenerate and diff. A stale or hand-edited artifact shows up as a difference against what the declarations produce:
+
+```bash
+ship-api contract --app ship.config.ts --api-version "$API_VERSION"
+git diff --exit-code -- .ship/
+```
+
+Wire that pair as the application's `contract:verify` script and run it in the pull-request gate. After merging two branches, run `ship-api contract` once more; the merged declarations are authoritative and the diff must be empty.
+
+### Upgrading from a stored fingerprint
+
+Contracts emitted before `@sixthsummit/ship-contract` 1.6 carried `fingerprint: "sha256:…"` in `contract.json` and `contract.ts`, and OpenAPI carried `x-ship-contract-fingerprint`. Every regeneration rewrote that line, so any two open pull requests conflicted on it as soon as one merged.
+
+1. Upgrade `@sixthsummit/ship-contract` and `@sixthsummit/ship-cli` together, and `@sixthsummit/ship-angular` to a version that accepts a manifest without the field (its `ShipApiClientContractManifest` and `ShipStreamManifest` types list `fingerprint` as optional).
+2. Run `ship-api contract` once and commit the three files. This is the only regeneration the upgrade needs; the diff removes the fingerprint lines and nothing else.
+3. Copy the files to the frontend as before.
+
+Until that regeneration lands, every client keeps loading the committed contract: `createHttpOperationClient` and the ShipAngular adapters accept the field when present (and still reject a malformed one) and do not require it. Code that read `contract.fingerprint` should call `fingerprintClientContract(contract)` instead.
 
 The generated client contracts intentionally contain no handlers, provider implementations, database types, credentials, or observability configuration. Compile `.ship/contract.ts` into an application-owned browser package or copy it through a deterministic build step; do not import the server application to recover its types.
 
