@@ -29,6 +29,37 @@ workaround); compat-tier apps already had `createApp({ cors })`.
   Existing apps can copy that file.
 
 ---
+## Kernel line — the client contract no longer carries `transaction` (ship-contract minor, ship-cli minor)
+
+**Who's affected:** every kernel-line app that commits `.ship/contract.json`,
+`.ship/contract.ts` and `.ship/openapi.json`. Until now each operation entry
+copied its transaction declaration (`transaction: "write"` or the resolved
+`{ mode, isolation, retry }`) and OpenAPI carried `x-ship-transaction`, so a
+server-only change (moving an operation onto the unit of work, tuning
+isolation or retry) regenerated the artifacts every frontend copies.
+
+**What you change.**
+
+- **Upgrade `@sixthsummit/ship-contract` and `@sixthsummit/ship-cli` together,
+  run `ship-api contract` once and commit.** The diff removes the `transaction`
+  lines and nothing else; this is the only regeneration the upgrade needs.
+  Afterwards, changing a declaration produces no diff in the three files.
+- **Read the policy from the graph**, not the contract: `ship-api check --emit`
+  writes it per operation to `.ship/graph.json` and `ship-api inspect operation
+  <id>` renders it. Point any transaction ratchet at the graph.
+- **Operator-facing OpenAPI** can opt back in with
+  `ship-api contract --include-server-metadata` or
+  `projectOpenApi(app, { includeServerMetadata: true })`, which adds
+  `x-ship-transaction` and changes nothing else.
+
+**What does NOT change:** already-committed contracts keep loading.
+`createHttpOperationClient` accepts an operation with the mode string, with the
+resolved policy, or without the field, and still rejects a malformed value.
+`ClientContractOperation.transaction` is now optional; the
+`ClientContractTransaction*` types remain exported for code that typed the old
+shape. Declarations, the executor and the graph are untouched.
+
+---
 ## Kernel line — `hono`, `drizzle-orm` and `ioredis` become peer dependencies of the adapters (minor)
 
 **Who's affected:** apps that install `@sixthsummit/ship-hono` without listing

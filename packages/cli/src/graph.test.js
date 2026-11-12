@@ -50,6 +50,29 @@ describe("Ship application graph CLI", () => {
     expect(JSON.parse(await readFile(target, "utf8"))).toEqual(result.graph);
   });
 
+  it("shows each operation's transaction policy in the emitted graph and in inspect output", async () => {
+    const appPath = resolve(fixtureDirectory, "transaction-policy.config.ts");
+    const target = resolve(temporaryDirectory, ".ship/graph.json");
+    const policy = {
+      mode: "write",
+      isolation: "serializable",
+      retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
+    };
+
+    await checkApplication({ appPath, emit: target });
+    const graph = JSON.parse(await readFile(target, "utf8"));
+    const byId = Object.fromEntries(graph.operations.map((node) => [node.id, node.transaction]));
+    expect(byId).toEqual({ "accounts.rename": policy, "accounts.read": "read" });
+
+    const rename = await inspectApplication("operation", "accounts.rename", { appPath });
+    expect(rename.node.transaction).toEqual(policy);
+    expect(__test.renderSuccess(rename, "human")).toContain(
+      "transaction: write serializable retry=serialization,ACCOUNT_STALE x3",
+    );
+    const read = await inspectApplication("operation", "accounts.read", { appPath });
+    expect(__test.renderSuccess(read, "human")).toContain("transaction: read");
+  });
+
   it("inspects app, module, operation, and provider nodes", async () => {
     const options = { appPath: fixtureApp };
     const appResult = await inspectApplication("app", undefined, options);

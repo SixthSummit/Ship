@@ -120,6 +120,11 @@ export function registerApplicationCommands(program, options = {}) {
     .option("--openapi <path>", "OpenAPI output", ".ship/openapi.json")
     .option("--openapi-title <title>", "OpenAPI document title")
     .option("--api-version <version>", "Advertised API version", "0.0.0")
+    .option(
+      "--include-server-metadata",
+      "Document executor policy (x-ship-transaction) in OpenAPI",
+      false,
+    )
     .option("--format <format>", "Output format: human or json", "human")
     .action(async (options) => {
       process.exitCode = await runGraphCommand(
@@ -131,6 +136,7 @@ export function registerApplicationCommands(program, options = {}) {
             openapi: options.openapi,
             title: options.openapiTitle,
             version: options.apiVersion,
+            includeServerMetadata: options.includeServerMetadata === true,
           }),
         options,
       );

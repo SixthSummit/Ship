@@ -15,6 +15,7 @@ import { GraphCliError, loadApplication } from "./graph.js";
  * @property {string=} version
  * @property {string=} description
  * @property {readonly string[]=} serverUrls
+ * @property {boolean=} includeServerMetadata Document executor policy (`x-ship-transaction`) in OpenAPI; off by default so server-only changes leave the artifacts alone.
  */
 /**
  * @typedef {object} ContractArtifactResult
@@ -45,6 +46,7 @@ export async function generateContractArtifacts(options = {}) {
     version: options.version?.trim() || "0.0.0",
     ...(options.description ? { description: options.description } : {}),
     ...(options.serverUrls ? { serverUrls: options.serverUrls } : {}),
+    ...(options.includeServerMetadata === true ? { includeServerMetadata: true } : {}),
   });
   const contractPath = resolve(cwd, options.out ?? DEFAULT_CONTRACT_PATH);
   const openapiPath = resolve(cwd, options.openapi ?? DEFAULT_OPENAPI_PATH);
