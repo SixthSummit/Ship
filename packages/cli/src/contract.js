@@ -1,7 +1,10 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { projectOpenApi } from "@sixthsummit/ship-contract/openapi";
-import { projectClientContract } from "@sixthsummit/ship-contract/project";
+import {
+  fingerprintClientContract,
+  projectClientContract,
+} from "@sixthsummit/ship-contract/project";
 import { GraphCliError, loadApplication } from "./graph.js";
 
 /**
@@ -22,7 +25,7 @@ import { GraphCliError, loadApplication } from "./graph.js";
  * @property {"contract"} command
  * @property {true} ok
  * @property {string} appId
- * @property {`sha256:${string}`} fingerprint
+ * @property {`sha256:${string}`} fingerprint Digest of the emitted contract, reported here only; the files carry none so unrelated regenerations merge cleanly.
  * @property {number} operations
  * @property {string} contract
  * @property {string} openapi
@@ -73,7 +76,7 @@ export async function generateContractArtifacts(options = {}) {
     command: "contract",
     ok: true,
     appId: application.id,
-    fingerprint: contract.fingerprint,
+    fingerprint: fingerprintClientContract(contract),
     operations: contract.operations.length,
     contract: contractPath,
     openapi: openapiPath,

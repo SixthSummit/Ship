@@ -17,7 +17,8 @@ import type { OperationClient as ShipApiOperationClient } from '@sixthsummit/shi
 export interface ShipApiClientContractManifest {
   readonly schemaVersion: 1;
   readonly appId: string;
-  readonly fingerprint: `sha256:${string}`;
+  /** Stored by projectors before ship-contract 1.6; newer manifests carry none. Never interpreted. */
+  readonly fingerprint?: `sha256:${string}`;
   readonly operations: readonly {
     readonly id: string;
     /** ShipAPI marks stream responses inside the HTTP transport. They use a separate adapter. */
@@ -282,8 +283,9 @@ function indexDeclarations(manifest: ShipApiClientContractManifest): ReadonlyMap
     manifest.schemaVersion !== 1 ||
     typeof manifest.appId !== 'string' ||
     manifest.appId.length === 0 ||
-    typeof manifest.fingerprint !== 'string' ||
-    !/^sha256:[a-f0-9]{64}$/u.test(manifest.fingerprint) ||
+    (manifest.fingerprint !== undefined &&
+      (typeof manifest.fingerprint !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/u.test(manifest.fingerprint))) ||
     !Array.isArray(manifest.operations)
   ) {
     throw new ProtocolError('ShipAPI client manifest is invalid', {

@@ -903,8 +903,12 @@ function assertContract(contract: ClientContract): void {
     contract.schemaVersion !== 1 ||
     typeof contract.appId !== "string" ||
     contract.appId.length === 0 ||
-    typeof contract.fingerprint !== "string" ||
-    !/^sha256:[a-f0-9]{64}$/u.test(contract.fingerprint) ||
+    // Contracts emitted before ship-contract 1.6 carry their own digest; it
+    // is never verified here (that is `ship-api contract` plus a diff), only
+    // kept well-formed so a hand-edited file still fails loudly.
+    (contract.fingerprint !== undefined &&
+      (typeof contract.fingerprint !== "string" ||
+        !/^sha256:[a-f0-9]{64}$/u.test(contract.fingerprint))) ||
     !Array.isArray(contract.operations) ||
     (contract.channels !== undefined && !isRecord(contract.channels)) ||
     (contract.attachments !== undefined && !isRecord(contract.attachments)) ||

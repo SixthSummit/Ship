@@ -31,7 +31,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createHttpOperationClient } from "./client.js";
 import { projectOpenApi } from "./openapi.js";
-import { projectClientContract } from "./project.js";
+import { fingerprintClientContract, projectClientContract } from "./project.js";
 import { ContractProjectionError, contractSchema } from "./schema.js";
 
 describe("projectClientContract", () => {
@@ -61,7 +61,11 @@ describe("projectClientContract", () => {
     const second = projectClientContract(app);
 
     expect(first).toEqual(second);
-    expect(first.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    // The contract stores no digest of itself; tooling computes one on demand.
+    expect(first.fingerprint).toBeUndefined();
+    expect(Object.hasOwn(first, "fingerprint")).toBe(false);
+    expect(fingerprintClientContract(first)).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(fingerprintClientContract(first)).toBe(fingerprintClientContract(second));
     expect(first.operations[0]).toMatchObject({
       id: "accounts.read",
       input: {
@@ -90,10 +94,10 @@ describe("projectClientContract", () => {
     const reversed = projectClientContract(defineApp({ id: "ordered", modules: [beta, alpha] }));
 
     expect(reversed).toEqual(forward);
-    expect(reversed.fingerprint).toBe(forward.fingerprint);
+    expect(fingerprintClientContract(reversed)).toBe(fingerprintClientContract(forward));
   });
 
-  it("changes the fingerprint when a wire contract changes", () => {
+  it("changes the computed fingerprint when a wire contract changes", () => {
     const first = projectClientContract(
       defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha")] }),
     );
@@ -101,7 +105,23 @@ describe("projectClientContract", () => {
       defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha-v2")] }),
     );
 
-    expect(second.fingerprint).not.toBe(first.fingerprint);
+    expect(fingerprintClientContract(second)).not.toBe(fingerprintClientContract(first));
+  });
+
+  it("computes the same fingerprint for a contract that still stores its legacy digest", () => {
+    const contract = projectClientContract(
+      defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha")] }),
+    );
+    const digest = fingerprintClientContract(contract);
+    // A file committed by an older projector carries the digest as a field;
+    // the field never participates in the hash, so both shapes agree.
+    expect(fingerprintClientContract({ ...contract, fingerprint: digest })).toBe(digest);
+    expect(
+      fingerprintClientContract({ ...contract, fingerprint: `sha256:${"0".repeat(64)}` }),
+    ).toBe(digest);
+    // Key order in the loaded JSON does not matter either.
+    const { operations, appId, schemaVersion, ...rest } = contract;
+    expect(fingerprintClientContract({ operations, ...rest, appId, schemaVersion })).toBe(digest);
   });
 
   it("rejects schemas that have no safe projection with a stable location", () => {
@@ -447,7 +467,9 @@ describe("projectClientContract channels", () => {
       expect(serialized).not.toContain(forbidden);
     }
     expect(serialized).not.toMatch(/room|namespace|socket|ack/iu);
-    expect(projectClientContract(app).fingerprint).toBe(contract.fingerprint);
+    expect(fingerprintClientContract(projectClientContract(app))).toBe(
+      fingerprintClientContract(contract),
+    );
   });
 
   it("reports the channel id when a payload schema cannot be projected", () => {
@@ -657,7 +679,9 @@ describe("projectClientContract attachments", () => {
       }),
     );
     expect(withoutAttachments.attachments).toEqual({});
-    expect(withoutAttachments.fingerprint).not.toBe(contract.fingerprint);
+    expect(fingerprintClientContract(withoutAttachments)).not.toBe(
+      fingerprintClientContract(contract),
+    );
   });
 });
 
@@ -857,9 +881,9 @@ describe("projectClientContract transaction policy", () => {
     for (const contract of [bare, explicit, declared, isolationOnly]) {
       // A server-only change to the policy produces no diff in the artifacts.
       expect(contract).toEqual(string);
-      expect(contract.fingerprint).toBe(string.fingerprint);
+      expect(fingerprintClientContract(contract)).toBe(fingerprintClientContract(string));
     }
-    expect(string.fingerprint).toBe(PINNED_FINGERPRINT);
+    expect(fingerprintClientContract(string)).toBe(PINNED_FINGERPRINT);
     const serialized = JSON.stringify(declared);
     for (const forbidden of ["transaction", "isolation", "serializable", "retry", "attempts"]) {
       expect(serialized).not.toContain(forbidden);

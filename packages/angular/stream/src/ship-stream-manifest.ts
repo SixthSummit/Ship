@@ -50,7 +50,8 @@ export interface ShipStreamManifestEntry {
 export interface ShipStreamManifest {
   readonly schemaVersion: 1;
   readonly appId: string;
-  readonly fingerprint: `sha256:${string}`;
+  /** Stored by projectors before ship-contract 1.6; newer manifests carry none. Never interpreted. */
+  readonly fingerprint?: `sha256:${string}`;
   readonly operations: readonly ShipStreamManifestEntry[];
 }
 
@@ -78,8 +79,9 @@ export function resolveShipStreamOperation(
     manifest.schemaVersion !== 1 ||
     typeof manifest.appId !== 'string' ||
     manifest.appId.length === 0 ||
-    typeof manifest.fingerprint !== 'string' ||
-    !/^sha256:[a-f0-9]{64}$/u.test(manifest.fingerprint) ||
+    (manifest.fingerprint !== undefined &&
+      (typeof manifest.fingerprint !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/u.test(manifest.fingerprint))) ||
     !Array.isArray(manifest.operations)
   ) {
     invalid('The ShipAPI stream manifest is invalid');

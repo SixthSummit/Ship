@@ -5,7 +5,7 @@ import { type CustomizedInfrastructure, createCustomizedApplication } from "./ap
 declare const infrastructure: CustomizedInfrastructure;
 const application = createCustomizedApplication(infrastructure);
 const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
-  { schemaVersion: 1, appId: "golden-customized", fingerprint: "sha256:test", operations: [] },
+  { schemaVersion: 1, appId: "golden-customized", operations: [] },
   { baseUrl: "https://golden.example.test" },
 );
 

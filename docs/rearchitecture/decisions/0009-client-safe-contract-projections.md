@@ -25,6 +25,8 @@ The projection excludes handlers and provider implementations. Zod 4 schemas pro
 
 OpenAPI 3.1 is generated from the same manifest and carries the same fingerprint. `ship-api contract` emits both artifacts deterministically.
 
+> **Amended 2026-11.** The fingerprint is no longer stored in the emitted files. A digest of the whole contract written into the contract changes on every regeneration, so two branches that changed different operations always conflicted on that one line in `contract.json`, `contract.ts` and `openapi.json`. Consumers verify committed artifacts by regenerating and diffing, which never depended on the stored value, and the client only ever checked its shape. `fingerprintClientContract()` in `@sixthsummit/ship-contract/project` computes the same SHA-256 on demand; `ship-api contract` reports it on stdout; clients accept manifests with or without the legacy field. The rest of this decision stands.
+
 The default HTTP client implements a structural `OperationClient<TContract>` keyed by stable operation ID. `OperationTypeContract` is independent of Hono, and `ApplicationContractOf<typeof app>` is only a backend/co-located convenience. A separately published application contract may satisfy the structural type without resolving server runtime declarations.
 
 Declared application and framework failures return as discriminated values. Network, cancellation, configuration, codec, and protocol failures throw. Every response must carry `X-Request-Id`; the client preserves status, response metadata, details, and unknown additive error fields. Framework error codes are reserved against application declarations.

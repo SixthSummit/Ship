@@ -27,7 +27,15 @@ export type ClientContractAccess =
 export interface ClientContract {
   readonly schemaVersion: 1;
   readonly appId: string;
-  readonly fingerprint: `sha256:${string}`;
+  /**
+   * Legacy: projectors before `@sixthsummit/ship-contract` 1.6 stored the
+   * contract's own SHA-256 here, which made every pair of regenerated
+   * contracts conflict on this one line. The field is no longer emitted;
+   * `fingerprintClientContract()` from `@sixthsummit/ship-contract/project`
+   * computes the same digest on demand. Clients ignore the value and accept
+   * both shapes, so already-committed contracts still load.
+   */
+  readonly fingerprint?: `sha256:${string}`;
   readonly operations: readonly ClientContractOperation[];
   /** Declared realtime channels keyed by id. Carries no transport detail. Absent in pre-realtime manifests. */
   readonly channels?: Readonly<Record<string, ClientContractChannel>>;
