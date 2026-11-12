@@ -158,8 +158,10 @@ contracts merely because they exist.
 
 ## 6. Contract projection
 
-The client manifest contains JSON-safe operation metadata and a deterministic
-fingerprint. Unsupported schema behavior fails projection with a located
+The client manifest contains JSON-safe operation metadata and is deterministic
+for the same declarations; it stores no digest of itself, and
+`fingerprintClientContract()` computes one on demand. Unsupported schema
+behavior fails projection with a located
 diagnostic rather than degrading to `any`. Non-JSON values require an explicit
 client codec and schema declaration.
 

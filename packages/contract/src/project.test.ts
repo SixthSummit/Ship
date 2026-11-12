@@ -30,7 +30,8 @@ import { createInMemoryCacheBackend } from "@sixthsummit/ship-testing/cache";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createHttpOperationClient } from "./client.js";
-import { projectClientContract } from "./project.js";
+import { projectOpenApi } from "./openapi.js";
+import { fingerprintClientContract, projectClientContract } from "./project.js";
 import { ContractProjectionError, contractSchema } from "./schema.js";
 
 describe("projectClientContract", () => {
@@ -60,7 +61,11 @@ describe("projectClientContract", () => {
     const second = projectClientContract(app);
 
     expect(first).toEqual(second);
-    expect(first.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    // The contract stores no digest of itself; tooling computes one on demand.
+    expect(first.fingerprint).toBeUndefined();
+    expect(Object.hasOwn(first, "fingerprint")).toBe(false);
+    expect(fingerprintClientContract(first)).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    expect(fingerprintClientContract(first)).toBe(fingerprintClientContract(second));
     expect(first.operations[0]).toMatchObject({
       id: "accounts.read",
       input: {
@@ -89,10 +94,10 @@ describe("projectClientContract", () => {
     const reversed = projectClientContract(defineApp({ id: "ordered", modules: [beta, alpha] }));
 
     expect(reversed).toEqual(forward);
-    expect(reversed.fingerprint).toBe(forward.fingerprint);
+    expect(fingerprintClientContract(reversed)).toBe(fingerprintClientContract(forward));
   });
 
-  it("changes the fingerprint when a wire contract changes", () => {
+  it("changes the computed fingerprint when a wire contract changes", () => {
     const first = projectClientContract(
       defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha")] }),
     );
@@ -100,7 +105,23 @@ describe("projectClientContract", () => {
       defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha-v2")] }),
     );
 
-    expect(second.fingerprint).not.toBe(first.fingerprint);
+    expect(fingerprintClientContract(second)).not.toBe(fingerprintClientContract(first));
+  });
+
+  it("computes the same fingerprint for a contract that still stores its legacy digest", () => {
+    const contract = projectClientContract(
+      defineApp({ id: "fingerprint", modules: [moduleWithOperation("alpha.read", "/alpha")] }),
+    );
+    const digest = fingerprintClientContract(contract);
+    // A file committed by an older projector carries the digest as a field;
+    // the field never participates in the hash, so both shapes agree.
+    expect(fingerprintClientContract({ ...contract, fingerprint: digest })).toBe(digest);
+    expect(
+      fingerprintClientContract({ ...contract, fingerprint: `sha256:${"0".repeat(64)}` }),
+    ).toBe(digest);
+    // Key order in the loaded JSON does not matter either.
+    const { operations, appId, schemaVersion, ...rest } = contract;
+    expect(fingerprintClientContract({ operations, ...rest, appId, schemaVersion })).toBe(digest);
   });
 
   it("rejects schemas that have no safe projection with a stable location", () => {
@@ -446,7 +467,9 @@ describe("projectClientContract channels", () => {
       expect(serialized).not.toContain(forbidden);
     }
     expect(serialized).not.toMatch(/room|namespace|socket|ack/iu);
-    expect(projectClientContract(app).fingerprint).toBe(contract.fingerprint);
+    expect(fingerprintClientContract(projectClientContract(app))).toBe(
+      fingerprintClientContract(contract),
+    );
   });
 
   it("reports the channel id when a payload schema cannot be projected", () => {
@@ -656,7 +679,9 @@ describe("projectClientContract attachments", () => {
       }),
     );
     expect(withoutAttachments.attachments).toEqual({});
-    expect(withoutAttachments.fingerprint).not.toBe(contract.fingerprint);
+    expect(fingerprintClientContract(withoutAttachments)).not.toBe(
+      fingerprintClientContract(contract),
+    );
   });
 });
 
@@ -797,12 +822,14 @@ describe("projectClientContract transaction policy", () => {
     run: async (_mode, work) => work({}),
   };
   /**
-   * Fingerprint of this exact fixture with `transaction: "write"`, computed on
-   * the projector before isolation and retry could be declared. Existing
-   * consumers' contracts must keep hashing to the same value.
+   * Fingerprint of this exact fixture once the transaction declaration left the
+   * client contract. Every form of the declaration must hash to this value, so
+   * a server-only change to mode, isolation or retry never regenerates a
+   * consumer's committed artifacts. Change it only with a deliberate manifest
+   * change.
    */
-  const PINNED_STRING_FORM_FINGERPRINT =
-    "sha256:140cc53fedba61ca221cbb2df77d102a43b5cd067bcf2cab929dfa4e3a843d0c";
+  const PINNED_FINGERPRINT =
+    "sha256:313bcf169064f716330604f75b20d7910dac10fc6520531df83e350665c8ace4";
 
   function app(transaction: OperationTransactionDeclaration) {
     const operation = defineOperation({
@@ -834,81 +861,105 @@ describe("projectClientContract transaction policy", () => {
     });
   }
 
-  it("keeps the string form's projection and fingerprint exactly as before", () => {
-    const contract = projectClientContract(app("write"));
+  const policy = {
+    mode: "write",
+    isolation: "serializable",
+    retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
+  } as const;
 
-    expect(contract.operations[0]?.transaction).toBe("write");
-    expect(contract.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
-  });
-
-  it("projects an object form that carries only defaults identically to the string form", () => {
+  it("keeps every form of the declaration out of the client contract and its fingerprint", () => {
+    const string = projectClientContract(app("write"));
     const bare = projectClientContract(app({ mode: "write" }));
     const explicit = projectClientContract(app({ mode: "write", isolation: "read committed" }));
-
-    expect(bare.operations[0]?.transaction).toBe("write");
-    expect(bare.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
-    expect(explicit.fingerprint).toBe(PINNED_STRING_FORM_FINGERPRINT);
-  });
-
-  it("projects isolation and retry client-safely and changes the fingerprint", () => {
-    const contract = projectClientContract(
-      app({
-        mode: "write",
-        isolation: "serializable",
-        retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
-      }),
-    );
-
-    expect(contract.operations[0]?.transaction).toEqual({
-      mode: "write",
-      isolation: "serializable",
-      retry: { on: ["serialization", "ACCOUNT_STALE"], attempts: 3 },
-    });
-    expect(contract.fingerprint).not.toBe(PINNED_STRING_FORM_FINGERPRINT);
-    expect(contract.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
-    expect(Object.isFrozen(contract.operations[0]?.transaction)).toBe(true);
-    expect(JSON.stringify(contract)).not.toContain("handler");
-    expect(JSON.stringify(contract)).not.toContain("dependencies");
-
+    const declared = projectClientContract(app(policy));
     const isolationOnly = projectClientContract(
       app({ mode: "write", isolation: "repeatable read" }),
     );
-    expect(isolationOnly.operations[0]?.transaction).toEqual({
-      mode: "write",
-      isolation: "repeatable read",
-    });
-    expect(isolationOnly.fingerprint).not.toBe(contract.fingerprint);
+
+    expect(string.operations[0]).not.toHaveProperty("transaction");
+    expect(Object.hasOwn(declared.operations[0] as object, "transaction")).toBe(false);
+    for (const contract of [bare, explicit, declared, isolationOnly]) {
+      // A server-only change to the policy produces no diff in the artifacts.
+      expect(contract).toEqual(string);
+      expect(fingerprintClientContract(contract)).toBe(fingerprintClientContract(string));
+    }
+    expect(fingerprintClientContract(string)).toBe(PINNED_FINGERPRINT);
+    const serialized = JSON.stringify(declared);
+    for (const forbidden of ["transaction", "isolation", "serializable", "retry", "attempts"]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    expect(serialized).not.toContain("handler");
+    expect(serialized).not.toContain("dependencies");
   });
 
-  it("is accepted by the HTTP operation client in both forms and rejected when malformed", () => {
+  it("keeps the resolved policy on the compiled graph for operators", () => {
+    expect(app(policy).graph.operations[0]?.transaction).toEqual(policy);
+    expect(
+      app({ mode: "write", isolation: "repeatable read" }).graph.operations[0]?.transaction,
+    ).toEqual({ mode: "write", isolation: "repeatable read" });
+    expect(app({ mode: "write" }).graph.operations[0]?.transaction).toBe("write");
+    expect(app("read").graph.operations[0]?.transaction).toBe("read");
+  });
+
+  it("documents the policy in OpenAPI only when server metadata is requested", () => {
+    const options = { title: "Accounts", version: "1.0.0" };
+    const clientFacing = projectOpenApi(app(policy), options);
+    const operatorFacing = projectOpenApi(app(policy), { ...options, includeServerMetadata: true });
+    const path = "/accounts/{accountId}/rename";
+    const read = (document: typeof clientFacing) =>
+      (document.paths as Record<string, Record<string, Record<string, unknown>>>)[path]?.post;
+
+    expect(JSON.stringify(clientFacing)).not.toContain("x-ship-transaction");
+    expect(read(operatorFacing)?.["x-ship-transaction"]).toEqual(policy);
+    expect(
+      read(projectOpenApi(app("write"), { ...options, includeServerMetadata: true }))?.[
+        "x-ship-transaction"
+      ],
+    ).toBe("write");
+    // The document is otherwise identical: the flag adds exactly one extension.
+    const { "x-ship-transaction": _policy, ...rest } = read(operatorFacing) ?? {};
+    expect(rest).toEqual(read(clientFacing));
+    expect(projectOpenApi(app("write"), options)).toEqual(clientFacing);
+  });
+
+  it("is accepted by the HTTP operation client without a transaction, with a legacy one, and rejected when malformed", () => {
     const fetch = async () => new Response(null, { status: 204 });
-    const projected = projectClientContract(
-      app({ mode: "write", isolation: "serializable", retry: { on: ["deadlock"], attempts: 2 } }),
-    );
+    const projected = projectClientContract(app(policy));
+    const withTransaction = (transaction: unknown) =>
+      ({
+        ...projected,
+        operations: [{ ...projected.operations[0], transaction }],
+      }) as unknown as typeof projected;
 
     expect(() =>
       createHttpOperationClient(projected, { baseUrl: "https://api.test", fetch }),
     ).not.toThrow();
-    expect(() =>
-      createHttpOperationClient(projectClientContract(app("read")), {
-        baseUrl: "https://api.test",
-        fetch,
-      }),
-    ).not.toThrow();
+    // Contracts committed by older projectors carry the mode string or the
+    // resolved policy; both keep loading.
+    for (const legacy of [
+      "read",
+      "write",
+      { mode: "write", isolation: "serializable", retry: { on: ["deadlock"], attempts: 2 } },
+      { mode: "write", isolation: "repeatable read" },
+    ]) {
+      expect(() =>
+        createHttpOperationClient(withTransaction(legacy), { baseUrl: "https://api.test", fetch }),
+      ).not.toThrow();
+    }
 
-    for (const transaction of [
+    for (const malformed of [
       { mode: "write" },
       { mode: "write", isolation: "snapshot" },
       { mode: "write", isolation: "serializable", retry: { on: [], attempts: 2 } },
       { mode: "write", isolation: "serializable", retry: { on: ["deadlock"], attempts: 0 } },
       "ambient",
+      null,
     ]) {
-      const malformed = {
-        ...projected,
-        operations: [{ ...projected.operations[0], transaction }],
-      } as unknown as typeof projected;
       expect(() =>
-        createHttpOperationClient(malformed, { baseUrl: "https://api.test", fetch }),
+        createHttpOperationClient(withTransaction(malformed), {
+          baseUrl: "https://api.test",
+          fetch,
+        }),
       ).toThrow(expect.objectContaining({ code: "SHIP_CLIENT_CONTRACT_INVALID" }));
     }
   });

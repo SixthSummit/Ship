@@ -876,6 +876,27 @@ describe("createHttpOperationClient", () => {
         { baseUrl: "https://api.example.test" },
       ),
     ).not.toThrow();
+    // Contracts emitted before 1.6 carry their own digest; the client accepts
+    // a well-formed one, rejects a malformed one, and never requires it.
+    expect(projected.fingerprint).toBeUndefined();
+    expect(() =>
+      createHttpOperationClient<ApplicationContractOf<typeof application>>(
+        { ...projected, fingerprint: `sha256:${"a".repeat(64)}` },
+        { baseUrl: "https://api.example.test" },
+      ),
+    ).not.toThrow();
+    for (const fingerprint of ["sha256:short", "md5:abc", 42, null]) {
+      expect(() =>
+        createHttpOperationClient<ApplicationContractOf<typeof application>>(
+          { ...projected, fingerprint } as never,
+          { baseUrl: "https://api.example.test" },
+        ),
+      ).toThrowError(
+        expect.objectContaining<Partial<OperationClientError>>({
+          code: "SHIP_CLIENT_CONTRACT_INVALID",
+        }),
+      );
+    }
 
     const clear = projected.operations.find(({ id }) => id === "files.clear");
     expect(clear?.transport?.metadata).toBeDefined();

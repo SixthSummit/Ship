@@ -59,6 +59,12 @@ describe('resolveShipStreamOperation', () => {
     });
   });
 
+  it('accepts a manifest without the legacy fingerprint field', () => {
+    const { fingerprint: _legacy, ...unfingerprinted } = manifest(streamEntry);
+
+    expect(resolveShipStreamOperation(unfingerprinted, 'agent.run').id).toBe('agent.run');
+  });
+
   it('omits the terminal schema when the operation declares none', () => {
     const entry: ShipStreamManifestEntry = {
       ...streamEntry,

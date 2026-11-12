@@ -450,42 +450,46 @@ export function createExecutor<
         }
 
         const policy = transactionPolicy(operation);
-        const attempt = (): Promise<OperationSuccessResult | OperationFailureResult> =>
-          controller.run(
-            policy.mode as "read" | "write",
-            (capabilities) =>
-              runWithIdempotency(
+        const work = (capabilities: unknown) =>
+          runWithIdempotency(
+            operation,
+            idempotency,
+            capabilities as object,
+            requestId,
+            async () => {
+              const result = await invokeOperation(
+                app,
                 operation,
-                idempotency,
+                parsedInput.value,
+                context,
+                operationProviders,
+                singletonProviders,
+                new Map([[unitOfWorkToken.id, capabilities]]),
+                stream,
+              );
+              // Inside the transaction: the purge intent commits with the
+              // change it describes, and a rollback leaves no intent.
+              await recordCacheInvalidation(
+                app,
+                operation,
+                parsedInput.value,
+                context,
                 capabilities as object,
-                requestId,
-                async () => {
-                  const result = await invokeOperation(
-                    app,
-                    operation,
-                    parsedInput.value,
-                    context,
-                    operationProviders,
-                    singletonProviders,
-                    new Map([[unitOfWorkToken.id, capabilities]]),
-                    stream,
-                  );
-                  // Inside the transaction: the purge intent commits with the
-                  // change it describes, and a rollback leaves no intent.
-                  await recordCacheInvalidation(
-                    app,
-                    operation,
-                    parsedInput.value,
-                    context,
-                    capabilities as object,
-                    operationProviders,
-                    singletonProviders,
-                  );
-                  return result;
-                },
-              ),
-            policy.isolation === "read committed" ? undefined : { isolation: policy.isolation },
+                operationProviders,
+                singletonProviders,
+              );
+              return result;
+            },
           );
+        // Only a non-default isolation level reaches the unit of work. The
+        // default keeps the two-argument call, so a unit of work written or
+        // doubled against that form sees exactly what it did before.
+        const attempt = (): Promise<OperationSuccessResult | OperationFailureResult> =>
+          policy.isolation === "read committed"
+            ? controller.run(policy.mode as "read" | "write", work)
+            : controller.run(policy.mode as "read" | "write", work, {
+                isolation: policy.isolation,
+              });
 
         // Each attempt opens a fresh unit of work. The handler, its idempotency
         // claim and its outbox and invalidation intents all live inside that

@@ -903,8 +903,12 @@ function assertContract(contract: ClientContract): void {
     contract.schemaVersion !== 1 ||
     typeof contract.appId !== "string" ||
     contract.appId.length === 0 ||
-    typeof contract.fingerprint !== "string" ||
-    !/^sha256:[a-f0-9]{64}$/u.test(contract.fingerprint) ||
+    // Contracts emitted before ship-contract 1.6 carry their own digest; it
+    // is never verified here (that is `ship-api contract` plus a diff), only
+    // kept well-formed so a hand-edited file still fails loudly.
+    (contract.fingerprint !== undefined &&
+      (typeof contract.fingerprint !== "string" ||
+        !/^sha256:[a-f0-9]{64}$/u.test(contract.fingerprint))) ||
     !Array.isArray(contract.operations) ||
     (contract.channels !== undefined && !isRecord(contract.channels)) ||
     (contract.attachments !== undefined && !isRecord(contract.attachments)) ||
@@ -987,8 +991,13 @@ function assertContract(contract: ClientContract): void {
 const TRANSACTION_MODES = new Set(["none", "read", "write"]);
 const TRANSACTION_ISOLATIONS = new Set(["read committed", "repeatable read", "serializable"]);
 
-/** The mode string, or the resolved `{ mode, isolation, retry? }` policy a newer projector emits. */
+/**
+ * Absent in contracts emitted since 1.6; before that the mode string or the
+ * resolved `{ mode, isolation, retry? }` policy. Both legacy shapes still load,
+ * a malformed one still fails.
+ */
 function isContractTransaction(value: unknown): boolean {
+  if (value === undefined) return true;
   if (typeof value === "string") return TRANSACTION_MODES.has(value);
   if (!isRecord(value) || !TRANSACTION_MODES.has(value.mode as string)) return false;
   if (!TRANSACTION_ISOLATIONS.has(value.isolation as string)) return false;

@@ -949,16 +949,17 @@ describe("transaction isolation and retry", () => {
    * and how many scopes committed (work resolved) versus rolled back.
    */
   function controller(options: { readonly failCommit?: (attempt: number) => unknown } = {}) {
-    const scopes: { readonly id: number; readonly options: unknown }[] = [];
+    const scopes: { readonly id: number; readonly options: unknown; readonly arity: number }[] = [];
     const state = { commits: 0, rollbacks: 0 };
     const capabilitiesByScope: object[] = [];
     const unitOfWork: UnitOfWork<TransactionCapabilities> = {
       kind: "ship.unit-of-work",
       id: "database.primary",
       classifyFailure: classify,
-      async run(_mode, work, runOptions) {
+      async run(...call) {
+        const [, work, runOptions] = call;
         const id = scopes.length + 1;
-        scopes.push({ id, options: runOptions });
+        scopes.push({ id, options: runOptions, arity: call.length });
         const capabilities: TransactionCapabilities = { records: { save: (value) => value } };
         capabilitiesByScope.push(capabilities);
         try {
@@ -1019,6 +1020,7 @@ describe("transaction isolation and retry", () => {
       runOptions,
     );
     expect(strict.scopes.map((scope) => scope.options)).toEqual([{ isolation: "serializable" }]);
+    expect(strict.scopes.map((scope) => scope.arity)).toEqual([3]);
 
     const plain = controller();
     await fixture("write", plain.unitOfWork, () => ({ value: 1 })).run(
@@ -1032,6 +1034,10 @@ describe("transaction isolation and retry", () => {
     })).run("fixture.write", { body: { value: 1 } }, runOptions);
     expect(plain.scopes.map((scope) => scope.options)).toEqual([undefined]);
     expect(explicit.scopes.map((scope) => scope.options)).toEqual([undefined]);
+    // The default is the two-argument call, not an explicit undefined: a unit
+    // of work doubled with `toHaveBeenCalledWith(mode, work)` keeps matching.
+    expect(plain.scopes.map((scope) => scope.arity)).toEqual([2]);
+    expect(explicit.scopes.map((scope) => scope.arity)).toEqual([2]);
   });
 
   it("re-runs the handler in a fresh unit of work after a serialization failure at commit", async () => {

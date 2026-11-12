@@ -79,17 +79,37 @@ export function projectClientContract<
   const richText: Record<string, ClientContractRichText> = Object.fromEntries(
     (application.graph.richText ?? []).map((node) => [node.id, projectRichText(node)]),
   );
-  const unsigned = stableJson({
-    schemaVersion: 1,
-    appId: application.id,
-    operations,
-    channels,
-    attachments,
-    ...(Object.keys(mailers).length > 0 ? { mailers } : {}),
-    ...(Object.keys(richText).length > 0 ? { richText } : {}),
-  });
-  const fingerprint = `sha256:${createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
-  return deepFreeze({ ...unsigned, fingerprint }) as unknown as ClientContract;
+  // The contract carries no digest of itself: a stored hash changes whenever
+  // any operation changes, so two branches editing different operations
+  // always conflicted on that one line. `fingerprintClientContract` computes
+  // it on demand for tooling that wants one.
+  return deepFreeze(
+    stableJson({
+      schemaVersion: 1,
+      appId: application.id,
+      operations,
+      channels,
+      attachments,
+      ...(Object.keys(mailers).length > 0 ? { mailers } : {}),
+      ...(Object.keys(richText).length > 0 ? { richText } : {}),
+    }),
+  ) as unknown as ClientContract;
+}
+
+/**
+ * The SHA-256 digest of a client contract's content, as `sha256:<hex>`.
+ *
+ * Hashes the stable (key-sorted) JSON of every field except a legacy
+ * `fingerprint`, so a contract emitted by an older projector hashes to the
+ * value it carried and a contract emitted today hashes to the same value it
+ * would have carried. Deterministic for equal content; use it to label a
+ * build, bust a cache or compare two emitted contracts without a byte diff.
+ */
+export function fingerprintClientContract(contract: ClientContract): `sha256:${string}` {
+  const { fingerprint: _legacy, ...content } = contract;
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(stableJson(content)))
+    .digest("hex")}`;
 }
 
 function projectOperation(
@@ -156,7 +176,8 @@ function projectOperation(
     success,
     errors,
     access,
-    transaction: node.transaction,
+    // `node.transaction` stays out: executor policy that no client acts on,
+    // and copying it made server-only changes regenerate the client contract.
     ...(operation.idempotency ? { idempotency: { windowMs: operation.idempotency.windowMs } } : {}),
     ...(node.cache
       ? {

@@ -380,8 +380,11 @@ async function verifyCli(artifacts) {
   );
   if (
     emittedGraph.appId !== "packed-consumer" ||
-    contractResult.fingerprint !== emittedContract.fingerprint ||
-    emittedOpenApi["x-ship-contract-fingerprint"] !== emittedContract.fingerprint ||
+    // The CLI reports the digest; the files store none so regenerations merge.
+    !/^sha256:[a-f0-9]{64}$/u.test(contractResult.fingerprint) ||
+    Object.hasOwn(emittedContract, "fingerprint") ||
+    Object.hasOwn(emittedOpenApi, "x-ship-contract-fingerprint") ||
+    emittedOpenApi["x-ship-app-id"] !== "packed-consumer" ||
     migrationResult.routes !== 1 ||
     migrationResult.mapped !== 1
   ) {
@@ -520,7 +523,7 @@ const memoryVerdict = await new InMemorySlidingWindowBackend().check({ key: "act
 if (
   !result.ok || result.data.ok !== true ||
   response.status !== 200 || !remote.ok || remote.data.ok !== true ||
-  openapi["x-ship-contract-fingerprint"] !== contract.fingerprint ||
+  openapi["x-ship-app-id"] !== contract.appId || "fingerprint" in contract ||
   page.items[0]?.id !== "record-1" || credential?.token !== "packed-token" ||
   typeof isOtelDisabledByEnv !== "function" || !parity.passed || legacyResponse.status !== 200 ||
   recordedEffects.join(",") !== "packed.read,packed.read,packed.read,packed.read" ||
