@@ -7,7 +7,7 @@ import type { NotesCapabilities } from "./repository.js";
 declare const unitOfWork: UnitOfWork<NotesCapabilities>;
 const application = createNotesApplication(unitOfWork);
 const client = createHttpOperationClient<ApplicationContractOf<typeof application>>(
-  { schemaVersion: 1, appId: "golden-minimal", fingerprint: "sha256:test", operations: [] },
+  { schemaVersion: 1, appId: "golden-minimal", operations: [] },
   { baseUrl: "https://golden.example.test" },
 );
 

@@ -131,10 +131,36 @@ describe("focused Ship CLI", () => {
     ]);
 
     expect(process.exitCode).toBe(0);
-    expect(JSON.parse(await readFile(openapi, "utf8"))).toMatchObject({
+    const document = await readFile(openapi, "utf8");
+    expect(JSON.parse(document)).toMatchObject({
       info: { title: "CLI fixture", version: "2.0.0" },
     });
+    expect(document).not.toContain("x-ship-transaction");
     await expect(readFile(typescript, "utf8")).resolves.toContain("type AppContract");
+
+    await createCli({ version: "1.0.0" }).parseAsync([
+      "node",
+      "ship-api",
+      "contract",
+      "--app",
+      fixtureApp,
+      "--out",
+      contract,
+      "--typescript",
+      typescript,
+      "--openapi",
+      openapi,
+      "--include-server-metadata",
+      "--format",
+      "json",
+    ]);
+
+    expect(process.exitCode).toBe(0);
+    expect(
+      JSON.parse(await readFile(openapi, "utf8")).paths["/accounts/{accountId}"].get[
+        "x-ship-transaction"
+      ],
+    ).toBe("none");
   });
 
   it("executes legacy route accounting through Commander", async () => {

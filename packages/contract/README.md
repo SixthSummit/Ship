@@ -35,6 +35,12 @@ only client-side misuse rejects. The exact wire and manifest contract is documen
 [`docs/v4/streaming.md`](../../docs/v4/streaming.md).
 
 Inbound webhook operations are provider-facing: `projectClientContract`
-excludes them (and their presence leaves the manifest fingerprint unchanged),
+excludes them (and their presence leaves the manifest unchanged),
 `ApplicationContractOf` omits them, and `projectOpenApi` documents them with
 the raw media types and the kernel's webhook facts under `x-ship-webhook`.
+
+The emitted manifest stores no digest of itself, so two branches that change
+different operations merge without conflicts. `fingerprintClientContract()`
+from `@sixthsummit/ship-contract/project` computes the SHA-256 of a contract's
+content on demand (the same value the file used to carry as `fingerprint`), and
+the client accepts manifests with or without that legacy field.

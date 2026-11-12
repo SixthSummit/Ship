@@ -1,5 +1,5 @@
-import type { AnyModule, CompiledApplication } from "@sixthsummit/ship-core";
-import type { ClientContract, ClientContractError, ClientContractOperation } from "./project.js";
+import type { AnyModule, CompiledApplication, OperationGraphNode } from "@sixthsummit/ship-core";
+import type { ClientContractError, ClientContractOperation } from "./project.js";
 import { isWebhookTransport, projectClientContract } from "./project.js";
 import {
   ContractProjectionError,
@@ -14,7 +14,16 @@ export interface OpenApiProjectionOptions {
   readonly version: string;
   readonly description?: string;
   readonly serverUrls?: readonly string[];
+  /**
+   * Also document executor policy (`x-ship-transaction`: mode, isolation,
+   * retry) on every operation. Off by default: a client document that carries
+   * it changes whenever a server-only declaration does. Turn it on for an
+   * operator-facing document.
+   */
+  readonly includeServerMetadata?: boolean;
 }
+
+type OperationTransactions = ReadonlyMap<string, OperationGraphNode["transaction"]>;
 
 export type OpenApiDocument = JsonObject & {
   readonly openapi: "3.1.0";
@@ -26,10 +35,15 @@ export function projectOpenApi<
   const TApp extends CompiledApplication<string, readonly AnyModule[]>,
 >(application: TApp, options: OpenApiProjectionOptions): OpenApiDocument {
   assertOptions(options);
-  // The document fingerprint is the browser manifest's; webhooks are appended
-  // as provider-facing paths without changing the client-visible contract.
+  // Webhooks are appended as provider-facing paths without changing the
+  // client-visible contract. The document embeds no digest of itself: like the
+  // manifest's former `fingerprint`, one would conflict on every merge.
   const contract = projectClientContract(application);
   const documented = projectClientContract(application, { includeWebhooks: true });
+  const transactions: OperationTransactions | undefined =
+    options.includeServerMetadata === true
+      ? new Map(application.graph.operations.map((node) => [node.id, node.transaction]))
+      : undefined;
   const paths: Record<string, JsonValue> = {};
   const unbound: string[] = [];
 
@@ -49,9 +63,10 @@ export function projectOpenApi<
     }
     const openApiPath = path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/gu, "{$1}");
     const pathItem = (paths[openApiPath] ?? {}) as Record<string, JsonValue>;
+    const transaction = transactions?.get(operation.id);
     pathItem[method.toLowerCase()] = isWebhookTransport(operation.transport)
-      ? projectWebhookOperation(operation, contract)
-      : projectHttpOperation(operation, contract);
+      ? projectWebhookOperation(operation, transaction)
+      : projectHttpOperation(operation, transaction);
     paths[openApiPath] = pathItem;
   }
 
@@ -65,14 +80,13 @@ export function projectOpenApi<
     ...(options.serverUrls?.length ? { servers: options.serverUrls.map((url) => ({ url })) } : {}),
     paths,
     "x-ship-app-id": contract.appId,
-    "x-ship-contract-fingerprint": contract.fingerprint,
     ...(unbound.length > 0 ? { "x-ship-unbound-operations": unbound.sort() } : {}),
   }) as OpenApiDocument;
 }
 
 function projectHttpOperation(
   operation: ClientContractOperation,
-  contract: ClientContract,
+  transaction: OperationGraphNode["transaction"] | undefined,
 ): JsonObject {
   const parameters: JsonValue[] = [];
   let requestBody: JsonValue | undefined;
@@ -178,13 +192,14 @@ function projectHttpOperation(
     ...(requestBody ? { requestBody } : {}),
     responses,
     "x-ship-access": operation.access as unknown as JsonValue,
-    "x-ship-transaction": operation.transaction as unknown as JsonValue,
+    ...(transaction !== undefined
+      ? { "x-ship-transaction": transaction as unknown as JsonValue }
+      : {}),
     ...(operation.transport?.metadata?.queryParsing
       ? { "x-ship-query-parsing": operation.transport.metadata.queryParsing }
       : {}),
     ...(operation.cache ? { "x-ship-cache": operation.cache as unknown as JsonValue } : {}),
     ...(operation.invalidates ? { "x-ship-invalidates": [...operation.invalidates] } : {}),
-    "x-ship-contract-fingerprint": contract.fingerprint,
   });
 }
 
@@ -242,7 +257,7 @@ function projectStreamResponse(
  */
 function projectWebhookOperation(
   operation: ClientContractOperation,
-  contract: ClientContract,
+  transaction: OperationGraphNode["transaction"] | undefined,
 ): JsonObject {
   const webhook = operation.transport?.metadata?.webhook;
   if (!isJsonObject(webhook)) {
@@ -328,8 +343,9 @@ function projectWebhookOperation(
     requestBody: projectRequestBody(operation, { type: "string", format: "binary" }),
     responses,
     "x-ship-access": operation.access as unknown as JsonValue,
-    "x-ship-transaction": operation.transaction as unknown as JsonValue,
-    "x-ship-contract-fingerprint": contract.fingerprint,
+    ...(transaction !== undefined
+      ? { "x-ship-transaction": transaction as unknown as JsonValue }
+      : {}),
     "x-ship-webhook": webhook,
   });
 }

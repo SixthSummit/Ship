@@ -98,6 +98,16 @@ consumer's contract fingerprint changes; declaring a non-default policy changes
 the fingerprint, which is intended because the behaviour the contract describes
 changed.
 
+> **Amended 2026-11.** The client contract and the default OpenAPI document no
+> longer carry the transaction declaration at all. It is executor policy that no
+> browser client acts on, and a consumer that moved many operations onto the
+> unit of work saw every slice regenerate the committed `.ship/*` artifacts and
+> re-conflict every unrelated frontend branch. The compiled graph keeps the
+> resolved policy (`ship-api check --emit`, `ship-api inspect operation`), and
+> `projectOpenApi(app, { includeServerMetadata: true })` documents it for
+> operators. `createHttpOperationClient` accepts contracts with or without the
+> legacy field. The projection rule above still governs the graph.
+
 ## Consequences
 
 - Isolation and retry are declared next to the transaction they govern and

@@ -67,7 +67,7 @@ ship-api inspect operation <id> [--format json]
 ship-api inspect provider <id> [--format json]
 ```
 
-Inspection reports ownership, dependencies, access, transaction mode, transport binding, and declared failures as applicable. This is the bounded-context entry point for understanding an unfamiliar operation without reading the whole repository.
+Inspection reports ownership, dependencies, access, the resolved transaction policy (`transaction: write serializable retry=serialization x3` when isolation or retry is declared, the mode string otherwise), transport binding, and declared failures as applicable. This is the bounded-context entry point for understanding an unfamiliar operation without reading the whole repository. The policy lives here and in `.ship/graph.json` (`ship-api check --emit`), not in the client contract, so operators and transaction ratchets read the graph.
 
 ### `affected` — project downstream impact
 
@@ -88,14 +88,21 @@ ship-api contract \
   [--openapi .ship/openapi.json] \
   [--openapi-title "My API"] \
   [--api-version 1.0.0] \
+  [--include-server-metadata] \
   [--format human|json]
 ```
 
-Both artifacts derive from the same compiled operation graph and carry the
-same deterministic fingerprint. The command writes each file atomically and
-fails before writing if the output paths collide. ShipAngular and other clients
-consume the client-safe manifest; API documentation and external integrations
-consume the OpenAPI 3.1 projection.
+`--include-server-metadata` adds `x-ship-transaction` (the resolved executor policy) to every OpenAPI operation for an operator-facing document. It is off by default so a server-only change leaves the committed artifacts alone.
+
+Both artifacts derive from the same compiled operation graph and are
+deterministic for the same declarations. The files store no digest of
+themselves, so two branches that change different operations merge cleanly;
+the command reports the contract's SHA-256 on stdout (`fingerprint` in
+`--format json`) for builds that want a label. The command writes each file
+atomically and fails before writing if the output paths collide. ShipAngular
+and other clients consume the client-safe manifest; API documentation and
+external integrations consume the OpenAPI 3.1 projection. To verify committed
+artifacts in CI, run the command and `git diff --exit-code -- .ship/`.
 
 The `check`, `inspect`, `affected`, and `contract` implementations are also
 available programmatically from `@sixthsummit/ship-cli`. Structured diagnostics

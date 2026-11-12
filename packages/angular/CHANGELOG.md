@@ -1,5 +1,11 @@
 # @sixthsummit/ship-angular
 
+## 5.0.1
+
+### Patch Changes
+
+- 84f1a04: Accept ShipAPI client manifests that carry no `fingerprint`. `@sixthsummit/ship-contract` 1.6 stops storing the contract's digest in `.ship/contract.json` so regenerated contracts merge cleanly; `ShipApiClientContractManifest` and `ShipStreamManifest` now list `fingerprint` as optional, and `createShipApiClientExecutor` and `resolveShipStreamOperation` accept the field when present (a malformed one is still rejected) and no longer require it.
+
 ## 5.0.0
 
 ### Major Changes

@@ -1,7 +1,10 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { projectOpenApi } from "@sixthsummit/ship-contract/openapi";
-import { projectClientContract } from "@sixthsummit/ship-contract/project";
+import {
+  fingerprintClientContract,
+  projectClientContract,
+} from "@sixthsummit/ship-contract/project";
 import { GraphCliError, loadApplication } from "./graph.js";
 
 /**
@@ -15,13 +18,14 @@ import { GraphCliError, loadApplication } from "./graph.js";
  * @property {string=} version
  * @property {string=} description
  * @property {readonly string[]=} serverUrls
+ * @property {boolean=} includeServerMetadata Document executor policy (`x-ship-transaction`) in OpenAPI; off by default so server-only changes leave the artifacts alone.
  */
 /**
  * @typedef {object} ContractArtifactResult
  * @property {"contract"} command
  * @property {true} ok
  * @property {string} appId
- * @property {`sha256:${string}`} fingerprint
+ * @property {`sha256:${string}`} fingerprint Digest of the emitted contract, reported here only; the files carry none so unrelated regenerations merge cleanly.
  * @property {number} operations
  * @property {string} contract
  * @property {string} openapi
@@ -45,6 +49,7 @@ export async function generateContractArtifacts(options = {}) {
     version: options.version?.trim() || "0.0.0",
     ...(options.description ? { description: options.description } : {}),
     ...(options.serverUrls ? { serverUrls: options.serverUrls } : {}),
+    ...(options.includeServerMetadata === true ? { includeServerMetadata: true } : {}),
   });
   const contractPath = resolve(cwd, options.out ?? DEFAULT_CONTRACT_PATH);
   const openapiPath = resolve(cwd, options.openapi ?? DEFAULT_OPENAPI_PATH);
@@ -71,7 +76,7 @@ export async function generateContractArtifacts(options = {}) {
     command: "contract",
     ok: true,
     appId: application.id,
-    fingerprint: contract.fingerprint,
+    fingerprint: fingerprintClientContract(contract),
     operations: contract.operations.length,
     contract: contractPath,
     openapi: openapiPath,

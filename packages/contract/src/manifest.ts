@@ -27,7 +27,15 @@ export type ClientContractAccess =
 export interface ClientContract {
   readonly schemaVersion: 1;
   readonly appId: string;
-  readonly fingerprint: `sha256:${string}`;
+  /**
+   * Legacy: projectors before `@sixthsummit/ship-contract` 1.6 stored the
+   * contract's own SHA-256 here, which made every pair of regenerated
+   * contracts conflict on this one line. The field is no longer emitted;
+   * `fingerprintClientContract()` from `@sixthsummit/ship-contract/project`
+   * computes the same digest on demand. Clients ignore the value and accept
+   * both shapes, so already-committed contracts still load.
+   */
+  readonly fingerprint?: `sha256:${string}`;
   readonly operations: readonly ClientContractOperation[];
   /** Declared realtime channels keyed by id. Carries no transport detail. Absent in pre-realtime manifests. */
   readonly channels?: Readonly<Record<string, ClientContractChannel>>;
@@ -115,8 +123,10 @@ export type ClientContractTransactionIsolation =
   | "serializable";
 
 /**
- * The resolved transaction policy, projected only when it carries more than
- * the defaults. `on` lists `serialization`, `deadlock` and declared error codes.
+ * The resolved transaction policy as contracts emitted before
+ * `@sixthsummit/ship-contract` 1.6 carried it, projected only when it carried
+ * more than the defaults. `on` lists `serialization`, `deadlock` and declared
+ * error codes. Kept so those contracts still type-check and load.
  */
 export interface ClientContractTransactionPolicy {
   readonly mode: ClientContractTransactionMode;
@@ -124,7 +134,7 @@ export interface ClientContractTransactionPolicy {
   readonly retry?: { readonly on: readonly string[]; readonly attempts: number };
 }
 
-/** The mode string for a default policy, so existing fingerprints are unchanged; otherwise the resolved policy. */
+/** The mode string for a default policy, otherwise the resolved policy; legacy, see `ClientContractOperation.transaction`. */
 export type ClientContractTransaction =
   | ClientContractTransactionMode
   | ClientContractTransactionPolicy;
@@ -135,7 +145,15 @@ export interface ClientContractOperation {
   readonly success: readonly ClientContractSuccess[];
   readonly errors: readonly ClientContractError[];
   readonly access: ClientContractAccess;
-  readonly transaction: ClientContractTransaction;
+  /**
+   * Legacy: projectors before `@sixthsummit/ship-contract` 1.6 copied the
+   * operation's transaction declaration (mode, isolation, retry) here. That is
+   * executor policy no browser client acts on, and carrying it meant a
+   * server-only change regenerated the client contract. It is no longer
+   * emitted; the compiled graph (`ship-api check --emit`, `ship-api inspect
+   * operation`) is where operators read it. Clients accept both shapes.
+   */
+  readonly transaction?: ClientContractTransaction;
   readonly transport?: ClientContractTransport;
   /** Present when the executor enforces an idempotency window for this operation. */
   readonly idempotency?: { readonly windowMs: number };

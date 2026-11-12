@@ -6,7 +6,6 @@ import type { ClientTypeContract } from "./type-contract.js";
 const manifest = {
   schemaVersion: 1,
   appId: "generated-type-fixture",
-  fingerprint: `sha256:${"0".repeat(64)}`,
   operations: [
     {
       id: "accounts.read",
@@ -53,7 +52,6 @@ const manifest = {
         },
       ],
       access: { kind: "authenticated" },
-      transaction: "read",
       transport: {
         kind: "http",
         binding: "hono",
@@ -78,7 +76,6 @@ const manifest = {
       ],
       errors: [],
       access: { kind: "public" },
-      transaction: "none",
       transport: {
         kind: "http",
         binding: "hono",
@@ -120,7 +117,6 @@ const manifest = {
       ],
       errors: [],
       access: { kind: "authenticated" },
-      transaction: "read",
       transport: {
         kind: "http",
         binding: "GET /files/export",

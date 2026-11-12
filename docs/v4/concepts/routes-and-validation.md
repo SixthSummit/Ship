@@ -195,10 +195,34 @@ policy (`SHIP_OPERATION_TRANSACTION_RETRY_FORBIDDEN`); an empty `on`, an
 attempt count outside 1 to 5, a repeated reason, or an error code the operation
 does not declare is `SHIP_OPERATION_TRANSACTION_RETRY_INVALID`.
 
-The compiled graph, the client contract, and OpenAPI (`x-ship-transaction`)
-project the resolved `{ mode, isolation, retry? }` only when it carries more
-than the defaults; a string declaration, or an object form with default values,
-projects as the mode string, so existing contract fingerprints are unchanged.
+The compiled graph projects the resolved `{ mode, isolation, retry? }` only
+when it carries more than the defaults; a string declaration, or an object form
+with default values, projects as the mode string. `ship-api check --emit` writes
+it to `.ship/graph.json` for every operation and `ship-api inspect operation
+<id>` renders it (`transaction: write serializable retry=serialization x3`), so
+operators and any repository-level ratchet over transaction declarations read
+the graph.
+
+The client contract (`.ship/contract.json`, `.ship/contract.ts`) and the OpenAPI
+document carry no transaction declaration. It is executor policy that no
+browser client acts on, and copying it meant that moving an operation onto the
+unit of work, or tuning its isolation or retry, regenerated the artifacts every
+frontend copies. Changing a declaration now produces no diff in the three
+`.ship/*` files. An operator-facing OpenAPI document can opt back in:
+`projectOpenApi(app, { includeServerMetadata: true })` or
+`ship-api contract --include-server-metadata` adds `x-ship-transaction` to every
+operation and changes nothing else.
+
+#### Upgrading from contracts that carried `transaction`
+
+Contracts emitted before `@sixthsummit/ship-contract` 1.6 list `transaction` on
+every operation and `x-ship-transaction` in OpenAPI. They keep loading:
+`createHttpOperationClient` accepts an operation with the mode string, with the
+resolved policy, or without the field, and still rejects a malformed value.
+Upgrade `@sixthsummit/ship-contract` and `@sixthsummit/ship-cli` together, run
+`ship-api contract` once, and commit; that regeneration removes the
+`transaction` lines and nothing else, and it is the only one the upgrade needs.
+Tooling that read the policy from the contract reads `.ship/graph.json` instead.
 
 ## Responses and expected failures
 

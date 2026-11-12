@@ -12,7 +12,7 @@ import { z } from "zod";
 import type { ApplicationContractOf } from "./application.js";
 import { createHttpOperationClient, OperationClientError } from "./client.js";
 import { projectOpenApi } from "./openapi.js";
-import { projectClientContract } from "./project.js";
+import { fingerprintClientContract, projectClientContract } from "./project.js";
 import { contractSchema } from "./schema.js";
 import { STREAM_INTERRUPTED } from "./stream.js";
 
@@ -116,7 +116,7 @@ async function collect<TValue>(iterable: AsyncIterable<TValue>): Promise<TValue[
 }
 
 describe("stream contract projection", () => {
-  it("marks streaming operations with a fingerprinted response declaration", () => {
+  it("marks streaming operations with a response declaration that participates in the digest", () => {
     const operation = contract.operations.find((item) => item.id === "clock.ticks");
     expect(operation?.transport?.metadata).toMatchObject({
       response: "stream",
@@ -162,7 +162,9 @@ describe("stream contract projection", () => {
         }),
       ],
     });
-    expect(projectClientContract(changedFrame).fingerprint).not.toBe(contract.fingerprint);
+    expect(fingerprintClientContract(projectClientContract(changedFrame))).not.toBe(
+      fingerprintClientContract(contract),
+    );
   });
 
   it("projects the event stream response and extensions into OpenAPI", () => {
